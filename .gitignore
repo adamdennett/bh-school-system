@@ -17,3 +17,5 @@ slides.knit.md
 # Scratch
 *.tmp
 *.carto_tmp
+
+**/*.quarto_ipynb

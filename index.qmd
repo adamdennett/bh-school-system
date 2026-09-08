@@ -33,8 +33,49 @@ perf   <- bh_data("performance_panel.rds")
 lsoa   <- bh_data("lsoa.geojson")
 catch  <- bh_data("catchments_current.geojson") %>% st_transform(4326)
 
+# Loaded here as well as in the sections that use them, so the executive
+# summary can quote figures that are computed further down the document.
+rc     <- bh_data("reception_cohort.rds")
+os     <- bh_data("open_scenarios.rds")
+conv   <- bh_data("adjudicator_conversion.rds")
+fp     <- bh_data("factsheet_panel.rds")
+
 fmt_n   <- function(x, d = 0) formatC(round(x, d), big.mark = ",", format = "f", digits = d)
 fmt_pct <- function(x, d = 0) paste0(formatC(x, format = "f", digits = d), "%")
+```
+
+```{r exec-figures}
+#| include: false
+
+# Headline figures for the executive summary. Every one of these is
+# recomputed in the section it belongs to; they are gathered here only
+# so the summary can quote them before those sections run.
+
+ex_now      <- rc$secondary_city %>% slice_max(year, n = 1)
+ex_peak     <- rc$secondary_city %>% slice_max(y7_offers, n = 1)
+ex_proj     <- rc$projection %>% slice_max(entry_year, n = 1)
+ex_fall     <- 100 * (ex_proj$central - ex_now$y7_offers) / ex_now$y7_offers
+ex_places   <- sum(oi$schools$pan2026[oi$schools$name != "Peacehaven Community School"])
+ex_surplus  <- ex_places - ex_proj$central
+
+ex_zero30   <- acc$lsoa %>% filter(places_30 < 1)
+ex_corner   <- acc$worst_corner
+
+ex_rat <- conv$conv %>%
+  group_by(school) %>%
+  summarise(rate = sum(p1_offered) / sum(p1_named), .groups = "drop")
+ex_open <- sum(ex_rat$rate > 0.999)
+
+ex_r2_att8 <- os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"]
+ex_r2_va   <- os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"]
+
+ex_nat  <- perf$national %>% filter(!is.na(ATT8SCR))
+ex_prior <- summary(lm(ATT8SCR ~ PTPRIORLO, data = ex_nat))$r.squared
+ex_fsm   <- summary(lm(ATT8SCR ~ PTFSM6CLA1A, data = ex_nat))$r.squared
+
+ex_lh <- brt$at_original_beta %>%
+  filter(str_detect(name, "Longhill")) %>%
+  mutate(fill_2026 = modelled / pan2026, fill_2024 = modelled / pan2024)
 ```
 
 ::: {.callout-note appearance="simple"}
@@ -50,8 +91,96 @@ releases would be.
 
 # Executive summary {#sec-exec}
 
-*To be written once the sections below are settled --- it should be the
-last thing drafted, not the first.*
+## The situation
+
+Brighton & Hove has a secondary school system built for more children
+than it now has, and the shortfall is going to get worse before anything
+the council decides can affect it. Year 7 offers peaked at
+`r fmt_n(ex_peak$y7_offers)` in `r ex_peak$year` and stood at
+`r fmt_n(ex_now$y7_offers)` in `r ex_now$year`. The children who will
+enter Year 7 in `r ex_proj$entry_year` are already in the city's primary
+schools, and there are about **`r fmt_n(ex_proj$central)`** of them ---
+a further fall of `r fmt_pct(abs(ex_fall), 0)`. Against roughly
+`r fmt_n(ex_places)` published places, that implies something like
+**`r fmt_n(ex_surplus)` surplus places**, or two and a half average
+secondary schools' worth.
+
+The council's own catchment forecasts sit above that projection in
+almost every year, and the gap is widest in the Longhill catchment ---
+the place where the consequences of being wrong are largest.
+
+## What the evidence says
+
+**This is not a school quality problem.** Across English secondaries,
+the share of pupils arriving with low prior attainment explains
+`r fmt_pct(100 * ex_prior, 0)` of the variation in Attainment 8;
+deprivation explains `r fmt_pct(100 * ex_fsm, 0)`. Once intake is
+accounted for, Brighton's schools mostly perform above what their intake
+predicts. The largest lever available to the city is **absence**, not
+social mixing --- established in detail in
+[How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html).
+
+**Admissions criteria only bind at some schools.**
+`r ex_open` of the `r nrow(ex_rat)` schools offered a place to every
+first-preference applicant. For those schools the catchment rule, the
+sibling rule and the free school meals quota do nothing at all. The city
+runs two admissions systems under one set of rules, and public argument
+about criteria concerns only one of them.
+
+**Families are choosing on the wrong number.** Headline Attainment 8
+explains `r fmt_pct(100 * ex_r2_att8, 0)` of the variation in how
+heavily each school is preferred. The value-added measure --- what the
+school actually contributes --- explains
+`r fmt_pct(100 * ex_r2_va, 0)`. Because the headline score is largely a
+description of the existing intake, choice becomes self-fulfilling.
+
+**Physical access is unequal, and unequal in the worst direction.**
+`r nrow(ex_zero30)` of `r nrow(acc$lsoa)` neighbourhoods --- about
+`r fmt_n(sum(ex_zero30$Oi))` cohort-aged children --- can reach **no**
+secondary school place within 30 minutes by walking and bus.
+Accessibility and child poverty correlate at
+`r sprintf("%.2f", acc$acc_dep_spearman)`: `r nrow(ex_corner)`
+neighbourhoods sit in both the least-reachable third and the most
+deprived third.
+
+**Longhill has already been shrunk to about what geography supports.**
+A model of where children would go if only distance and school size
+mattered gives it `r fmt_n(ex_lh$modelled)` children ---
+`r fmt_pct(100 * ex_lh$fill_2024, 0)` of its former admission number of
+`r fmt_n(ex_lh$pan2024)`, but `r fmt_pct(100 * ex_lh$fill_2026, 0)` of
+the reduced `r fmt_n(ex_lh$pan2026)` now in force. The reduction has
+already done most of what a reduction can do, and the remaining problem
+is a falling cohort against a reserve that supports about
+`r sprintf("%.1f", os$years_left)` more years.
+
+## What follows
+
+1. **Decide about Longhill on the financial timetable**, not the
+   consultation one. The horizon is about
+   `r sprintf("%.1f", os$years_left)` years.
+2. **Treat the instruments as a package.** Moving the school, changing
+   its admission number and redrawing catchments each fall short alone
+   and compose when combined. Picking one and waiting is the worst
+   available option.
+3. **Publish a contextualised measure alongside Attainment 8.** It costs
+   nothing and begins to unwind a loop the authority currently sustains
+   through its own admissions guide.
+4. **Treat the bus network as an admissions instrument.** It is the only
+   lever here that widens choice without taking anything from anyone.
+5. **Release six tables** (§9) that would convert most of the bands in
+   this document into estimates.
+
+## How confident to be
+
+The demographic findings are the firmest: they are counts of children
+already in school, adjusted by a transfer rate that has varied by under
+two percentage points in a decade. The accessibility findings are firm
+in direction and approximate in magnitude --- modelled journey times,
+not measured ones. The model results in sections 7 and 8 are the
+softest: the model is swept rather than calibrated, because calibration
+needs data the council has not released. Every comparison there is
+robust across the swept range; no individual number should be read as a
+prediction.
 
 # The secondary school system {#sec-system}
 
@@ -971,3 +1100,531 @@ between the two is precisely the quantity that would tell the city
 whether its transport network is a real constraint on choice or merely a
 theoretical one. Section 9 sets out what that request would look like.
 :::
+
+# Admissions rules, and what families actually do {#sec-demand}
+
+## How a place is allocated {#sec-rules}
+
+Families name up to three schools in order. Each school then ranks its
+applicants against its own criteria, and the authority runs an
+equal-preference matching so that a child is offered the highest-ranked
+school that will take them. The catchment criterion sits partway down
+most schools' lists, below looked-after children and siblings and, since
+2023, below a quota for children eligible for free school meals.
+
+The critical point is one the rules themselves obscure. **A criterion
+only does something if a school has to turn someone away.**
+
+```{r fig-rationing}
+#| fig-cap: "For each school, the proportion of first-preference applicants who were offered a place. A school at 100% turned nobody away, so its admission criteria did no work at all."
+#| fig-height: 5
+
+conv <- bh_data("adjudicator_conversion.rds")
+
+rat <- conv$conv %>%
+  group_by(school) %>%
+  summarise(p1_named = sum(p1_named), p1_offered = sum(p1_offered),
+            .groups = "drop") %>%
+  mutate(rate = p1_offered / p1_named,
+         rations = rate < 0.999) %>%
+  arrange(rate)
+
+ggplot(rat, aes(reorder(school, rate), rate, fill = rations)) +
+  geom_col(width = 0.7) +
+  geom_hline(yintercept = 1, colour = "grey40", linetype = "31") +
+  geom_text(aes(label = fmt_pct(100 * rate, 0)), hjust = -0.15, size = 3.2) +
+  coord_flip() +
+  scale_y_continuous(labels = label_percent(), limits = c(0, 1.12),
+                     breaks = seq(0, 1, 0.25)) +
+  scale_fill_manual(values = c(`TRUE` = "#b2182b", `FALSE` = "#4d9221"),
+                    labels = c(`TRUE` = "Rations places",
+                               `FALSE` = "Turns nobody away"), name = NULL) +
+  labs(x = NULL, y = "First preferences that received an offer",
+       title = "Only some of these schools ration anything",
+       subtitle = "Pooled across three admissions rounds",
+       caption = "Source: BHCC evidence to the Schools Adjudicator.") +
+  theme_bh() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+```{r rationing-stats}
+#| include: false
+n_open  <- sum(!rat$rations)
+n_ration <- sum(rat$rations)
+open_names <- rat %>% filter(!rations) %>% pull(school)
+```
+
+**`r n_open` of the `r nrow(rat)` schools offered a place to every single
+first-preference applicant.** For those schools --- `r paste(open_names, collapse = ", ")`
+--- the catchment criterion, the sibling criterion and the free school
+meals quota are all inert. They admit everyone who asks.
+
+The city therefore runs two admissions systems under one set of rules.
+In `r n_ration` schools the criteria bind and the lottery matters. In
+the other `r n_open` they are decoration. Debate about admissions
+criteria is, in practice, debate about a minority of the city's schools
+--- and never about the schools with the most spare capacity.
+
+## Sixteen years of demand {#sec-demand-history}
+
+```{r fig-demand-history}
+#| fig-cap: "First preferences expressed for each school, 2010 onwards. The two church schools admit city-wide and are shown separately."
+#| fig-height: 6.5
+
+fp <- bh_data("factsheet_panel.rds")
+
+fs <- fp$factsheets %>%
+  filter(!is.na(pref1), name != "Total") %>%
+  mutate(kind = ifelse(name %in% c("King's School", "Cardinal Newman Catholic School"),
+                       "Faith schools (city-wide)", "Catchment schools"))
+
+ggplot(fs, aes(year, pref1, colour = name)) +
+  geom_line(linewidth = 0.95) +
+  geom_point(size = 1.4) +
+  facet_wrap(~ kind, ncol = 1, scales = "free_y") +
+  scale_colour_brewer(palette = "Paired", name = NULL) +
+  labs(x = NULL, y = "First preferences",
+       title = "Demand has moved a long way between schools",
+       subtitle = "First preferences expressed, by school",
+       caption = "Source: BHCC published allocation factsheets.") +
+  theme_bh() +
+  theme(legend.position = "right", legend.text = element_text(size = 8))
+```
+
+## Who gained and who lost {#sec-winners-losers}
+
+```{r fig-demand-change}
+#| fig-cap: "Change in first preferences between the first and last five-year windows in the published series."
+#| fig-height: 5
+
+yr_rng <- range(fs$year)
+early <- fs %>% filter(year <= yr_rng[1] + 4) %>%
+  group_by(name) %>% summarise(early = mean(pref1), .groups = "drop")
+late  <- fs %>% filter(year >= yr_rng[2] - 4) %>%
+  group_by(name) %>% summarise(late = mean(pref1), .groups = "drop")
+
+chg <- inner_join(early, late, by = "name") %>%
+  mutate(change = late - early, pct = 100 * change / early) %>%
+  arrange(change)
+
+ggplot(chg, aes(reorder(name, change), change, fill = change > 0)) +
+  geom_col(width = 0.7) +
+  geom_hline(yintercept = 0, colour = "grey30") +
+  coord_flip() +
+  scale_fill_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b"),
+                    guide = "none") +
+  labs(x = NULL, y = "Change in average first preferences",
+       title = "The winners and losers of sixteen years of choice",
+       subtitle = sprintf("Average of %d-%d against average of %d-%d",
+                          yr_rng[1], yr_rng[1] + 4, yr_rng[2] - 4, yr_rng[2]),
+       caption = "Source: BHCC published allocation factsheets.") +
+  theme_bh() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+```{r chg-stats}
+#| include: false
+biggest_loss <- chg %>% slice_min(change, n = 2)
+biggest_gain <- chg %>% slice_max(change, n = 2)
+```
+
+The largest falls are at **`r paste(biggest_loss$name, collapse = " and ")`**;
+the largest rises at **`r paste(biggest_gain$name, collapse = " and ")`**.
+This is not a system in equilibrium. It is one where a shrinking cohort
+is being redistributed towards a small number of schools, and away from
+others, faster than the cohort itself is shrinking.
+
+## What families are actually choosing on {#sec-choice}
+
+The council's admissions guide points families at published performance
+data. It is worth asking which published number they respond to.
+
+```{r fig-choice}
+#| fig-cap: "First preferences per place against headline attainment and against value added. Each point is a school."
+#| fig-height: 4.8
+
+os <- bh_data("open_scenarios.rds")
+ch <- os$choice
+
+p1 <- ggplot(ch, aes(att8, prefs_per_place)) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+              colour = "grey35", linewidth = 0.7, linetype = "22") +
+  geom_point(colour = "#b2182b", size = 3) +
+  ggrepel::geom_text_repel(aes(label = school), size = 2.7, seed = 1,
+                           max.overlaps = 20) +
+  labs(x = "Attainment 8 (headline)", y = "First preferences per place",
+       subtitle = sprintf("Headline attainment (R² = %.2f)",
+                          os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"])) +
+  theme_bh(11)
+
+p2 <- ggplot(ch, aes(va, prefs_per_place)) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+              colour = "grey35", linewidth = 0.7, linetype = "22") +
+  geom_point(colour = "#2166ac", size = 3) +
+  ggrepel::geom_text_repel(aes(label = school), size = 2.7, seed = 1,
+                           max.overlaps = 20) +
+  labs(x = "Value added (Lever report)", y = NULL,
+       subtitle = sprintf("Value added (R² = %.2f)",
+                          os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"])) +
+  theme_bh(11)
+
+(p1 | p2) +
+  plot_annotation(
+    title = "Families track the headline score, not the school's contribution",
+    caption = "Sources: BHCC factsheets; DfE performance tables; How to Pull the Right Lever.",
+    theme = theme_bh())
+```
+
+```{r tbl-choice}
+#| tbl-cap: "Explaining first preferences per place."
+os$choice_tbl %>%
+  transmute(Specification = spec,
+            `R²` = sprintf("%.2f", r2),
+            Coefficients = terms) %>%
+  knitr::kable()
+```
+
+The result is stark. Headline Attainment 8 explains
+**`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"], 0)`**
+of the variation in how heavily each school is preferred. The
+value-added measure --- the one that actually isolates what the school
+contributes --- explains
+**`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"], 0)`**.
+Adding value added to the attainment model barely moves the fit, and its
+coefficient turns *negative*.
+
+Families are choosing on a number that is mostly a description of the
+existing intake. That makes school choice partly self-fulfilling: a
+school with a difficult intake posts a low headline score, is chosen
+less, and receives a still more difficult intake next year. Section 2
+showed that Hove Park and BACA are among the schools most penalised by
+this conflation. This is a communications problem before it is an
+admissions problem, and the authority is not a neutral party in it,
+because the authority publishes the guide.
+
+::: {.callout-note appearance="simple"}
+## What pupil-level data would add here
+
+This is a school-level association across ten schools --- ten points.
+It cannot distinguish families responding to attainment from families
+responding to something correlated with it, and it cannot say whether
+different kinds of family respond differently. The council holds the
+preference ordering of every applicant. With it, the same question
+becomes a discrete-choice model over thousands of decisions, and the
+answer would be worth acting on rather than merely worth noting.
+:::
+
+# Money {#sec-money}
+
+A school's finances follow its roll, because funding is overwhelmingly
+per-pupil. A school losing children is therefore losing income against a
+cost base that does not shrink at the same rate --- the building, the
+leadership team and the curriculum offer are all substantially fixed.
+
+```{r fig-size-finance}
+#| fig-cap: "Income per pupil and the proportion of schools in deficit, by size band, nationally."
+#| fig-height: 4.8
+
+sf_ <- os$size_fin %>%
+  mutate(size_band = factor(size_band, levels = size_band))
+
+pa <- ggplot(sf_, aes(size_band, income_pp)) +
+  geom_col(fill = "#2166ac", width = 0.7) +
+  scale_y_continuous(labels = label_dollar(prefix = "£", accuracy = 1)) +
+  labs(x = NULL, y = NULL, subtitle = "Income per pupil") +
+  theme_bh(11) + theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+pb <- ggplot(sf_, aes(size_band, pct_deficit)) +
+  geom_col(fill = "#b2182b", width = 0.7) +
+  scale_y_continuous(labels = label_percent(scale = 1)) +
+  labs(x = NULL, y = NULL, subtitle = "Schools in deficit") +
+  theme_bh(11) + theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+(pa | pb) +
+  plot_annotation(
+    title = "Small schools receive more per pupil and are still likelier to be in deficit",
+    subtitle = "Secondary schools in England, by roll",
+    caption = "Source: DfE school income and expenditure data.",
+    theme = theme_bh())
+```
+
+Small schools are not starved of money per head --- they receive
+**`r fmt_n(sf_$income_pp[1] - sf_$income_pp[nrow(sf_)])` more per pupil**
+than the largest band. They are nonetheless the likeliest to be in
+deficit: `r fmt_pct(sf_$pct_deficit[1], 0)` of schools under 500 pupils,
+against `r fmt_pct(min(sf_$pct_deficit), 0)` at the most favourable size.
+Extra funding per head does not compensate for the loss of scale.
+
+## Longhill's position {#sec-longhill-money}
+
+```{r tbl-longhill-finance}
+#| tbl-cap: "Longhill High School: roll, per-pupil income and expenditure, in-year balance and accumulated reserve."
+os$lh_fin %>%
+  transmute(Year = year_label,
+            Roll = ifelse(is.na(roll), "--", fmt_n(roll)),
+            `Income / pupil` = paste0("£", fmt_n(income_pp)),
+            `Spend / pupil` = paste0("£", fmt_n(expenditure_pp)),
+            `In-year balance` = paste0("£", fmt_n(balance)),
+            `Reserve` = paste0("£", fmt_n(reserve))) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+Longhill's roll fell from `r fmt_n(os$lh_fin$roll[1])` to
+`r fmt_n(os$lh_fin$roll[nrow(os$lh_fin)])` across four years. Its
+per-pupil income rose over the same period --- the funding system is
+doing what it is meant to do --- and its per-pupil spending rose
+faster. The accumulated reserve has fallen from
+`r paste0("£", fmt_n(os$lh_fin$reserve[1]))` to
+`r paste0("£", fmt_n(os$lh_fin$reserve[nrow(os$lh_fin)]))`.
+
+At the recent rate of depletion --- about
+**`r paste0("£", fmt_n(os$reserve_burn))` a year** --- the reserve
+supports roughly **`r sprintf("%.1f", os$years_left)` more years**.
+That is the constraint that makes this a decision with a deadline rather
+than a decision that can be deferred.
+
+# Brightopia: a model of the whole system {#sec-brightopia}
+
+## Why model at all {#sec-why-model}
+
+Every argument in the sections above is about one part of the system:
+where the children are, how far the schools are, what families prefer.
+A model is what lets you ask what happens when you change one part and
+everything else adjusts. Close a school and its children do not vanish;
+they appear somewhere else, displacing others. Shrink one school's
+admission number and demand redistributes to its neighbours. Nothing in
+a spreadsheet of admission numbers captures that.
+
+**Brightopia** is a production-constrained spatial interaction model. It
+takes the children in each neighbourhood, the attractiveness of each
+school, and the travel cost between them, and predicts the flow:
+
+$$T_{ij} = A_i O_i W_j^{\alpha} c_{ij}^{-\beta}$$
+
+$O_i$ is the number of cohort-aged children in neighbourhood $i$; $W_j$
+is school $j$'s attractiveness; $c_{ij}$ is the routed walk-and-bus
+cost; $\beta$ governs how sharply demand falls away with travel time;
+and $A_i$ is a balancing factor ensuring every child goes somewhere.
+
+The model deliberately contains **no catchment term**. That is the
+point. It answers the question "where would children go if only
+geography and school size mattered?" --- and the gap between that answer
+and reality is a measure of what the admissions system is doing.
+
+```{r fig-brightopia}
+#| fig-cap: "Modelled intake against published admission number. A school above the line is one that geography alone would fill; below it, one that geography alone would not."
+#| fig-height: 5.5
+
+bt <- brt$at_original_beta %>%
+  mutate(fill_rate = modelled / pan2026,
+         short = str_remove(name, " (School|High School|Community Academy|Catholic School).*"))
+
+ggplot(bt, aes(pan2026, modelled)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey45", linetype = "31") +
+  geom_point(aes(colour = fill_rate >= 1), size = 3.5) +
+  ggrepel::geom_text_repel(aes(label = name), size = 2.8, seed = 1,
+                           max.overlaps = 20) +
+  scale_colour_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b"),
+                      labels = c(`TRUE` = "Geography would fill it",
+                                 `FALSE` = "Geography would not"), name = NULL) +
+  scale_x_continuous(limits = c(0, NA)) + scale_y_continuous(limits = c(0, NA)) +
+  labs(x = "Published admission number, 2026", y = "Modelled intake",
+       title = "What the map alone would do",
+       subtitle = sprintf("Distance decay β = %.1f. The dashed line is a school exactly full.",
+                          brt$beta_original),
+       caption = "Brightopia, open-data specification.") +
+  theme_bh()
+```
+
+```{r brightopia-stats}
+#| include: false
+lh_bt <- bt %>%
+  filter(str_detect(name, "Longhill")) %>%
+  mutate(fill_2024 = modelled / pan2024)
+hp_bt <- bt %>% filter(str_detect(name, "Hove Park"))
+lh_rng <- range(brt$lh_sweep$modelled_now)
+```
+
+City-wide there are `r fmt_n(brt$city_places)` places for
+`r fmt_n(brt$city_children)` children --- a fill rate of
+`r fmt_pct(100 * brt$city_fill, 0)` before any child expresses a
+preference. The system is not short of capacity; it is short of children.
+
+Two schools are worth reading off this chart carefully, and they point
+in opposite directions.
+
+**Longhill has already been resized to roughly what geography supports.**
+Its modelled intake is **`r fmt_n(lh_bt$modelled)`** children. Against
+its former admission number of `r fmt_n(lh_bt$pan2024)` that is
+`r fmt_pct(100 * lh_bt$fill_2024, 0)`; against the reduced number of
+`r fmt_n(lh_bt$pan2026)` now in force it is
+`r fmt_pct(100 * lh_bt$fill_rate, 0)`. The distinction matters, and it
+is easy to quote the wrong one. Geography can fill 210 places at
+Ovingdean; it could not fill 270. The reduction has already done most of
+the work that a reduction can do --- which is why section 8 is about
+what remains, and why the modelled intake is remarkably insensitive to
+the decay parameter, varying only between
+`r fmt_n(lh_rng[1])` and `r fmt_n(lh_rng[2])` across the entire swept
+range. Longhill's catchment simply does not contain many more children
+to attract.
+
+**Hove Park's problem is not its location.** Geography alone would fill
+`r fmt_pct(100 * hp_bt$fill_rate, 0)` of its places --- it is the most
+over-subscribed school on the map, sitting in the densest part of the
+child population. Yet section 5 shows it among the largest losers of
+real demand over sixteen years. A school that the map says should be
+full and that families are nonetheless leaving is not a geography
+problem, and no catchment or relocation policy reaches it. That gap
+between what location predicts and what families do is the clearest
+evidence in this document that choice is operating on something other
+than distance.
+
+::: {.callout-warning appearance="simple"}
+## This is an open-data model, and it is not calibrated
+
+$\beta$ cannot be estimated without pupil-level flows, so it is swept
+across a plausible range rather than fitted. Figures here use the
+reference value; the range is
+`r sprintf("%.1f to %.1f", min(env$betas), max(env$betas))`, and section
+8 reports the band rather than a point wherever the conclusion depends
+on it. A calibrated model built on the council's own allocation records
+would replace every band in this document with an estimate.
+:::
+
+# Longhill {#sec-longhill}
+
+Longhill High School sits at Ovingdean, at the eastern edge of both its
+catchment and the city. Its roll has fallen by
+`r fmt_pct(100 * (os$lh_fin$roll[1] - os$lh_fin$roll[nrow(os$lh_fin)]) / os$lh_fin$roll[1], 0)`
+in four years and its reserve supports about
+`r sprintf("%.1f", os$years_left)` more years.
+
+Section 7 established the constraint this section has to work inside.
+The school draws about `r fmt_n(lh_bt$modelled)` children on geography
+alone, and that figure barely moves across the swept parameter range.
+Reducing the admission number to `r fmt_n(lh_bt$pan2026)` has already
+closed most of the gap between capacity and catchment. What remains is a
+cohort that keeps falling (section 3) and a reserve that runs out
+(section 6).
+
+So the question is not whether something must change, nor whether the
+admission number should come down again --- that lever is largely spent.
+It is whether any *combination* of the available changes produces a
+school that is viable at the end of the projection period rather than
+merely smaller.
+
+```{r fig-longhill-configs}
+#| fig-cap: "Modelled Longhill intake under seven configurations, across the projection period. Bands show the range across the swept parameter space."
+#| fig-height: 6
+
+lb <- os$lh_band %>%
+  mutate(config = factor(config, levels = os$configs))
+
+ggplot(lb, aes(entry_year, med)) +
+  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "#2166ac", alpha = 0.2) +
+  geom_line(colour = "#2166ac", linewidth = 1) +
+  geom_point(colour = "#2166ac", size = 1.8) +
+  facet_wrap(~ config, ncol = 2, labeller = label_wrap_gen(38)) +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(x = "Year of Year 7 entry", y = "Modelled intake",
+       title = "Seven futures for Longhill",
+       subtitle = "Median and full range across the swept parameter space",
+       caption = "Brightopia, open-data specification.") +
+  theme_bh(11) +
+  theme(strip.text = element_text(size = 8.5))
+```
+
+```{r longhill-config-stats}
+#| include: false
+cfg_2030 <- lb %>% filter(entry_year == 2030) %>% arrange(desc(med))
+best <- cfg_2030 %>% slice_max(med, n = 1)
+base <- cfg_2030 %>% filter(str_detect(as.character(config), "^A\\."))
+```
+
+By 2030 the configurations separate clearly. The status quo
+(`r as.character(base$config)`) gives a median modelled intake of
+**`r fmt_n(base$med)`**; the strongest option
+(`r as.character(best$config)`) gives **`r fmt_n(best$med)`**.
+
+The important point is not which single option wins. It is that **no
+single instrument is sufficient, and the instruments compose.** Moving
+the school changes its position in the travel network. Reducing its
+admission number changes what "full" means. Redrawing catchments changes
+which children are steered towards it. Each on its own leaves a school
+that is still under-filled on the central specification; taken together
+they reach a configuration that works. A decision that picks one lever
+and rejects the others is choosing the worst of the available futures.
+
+::: {.callout-important appearance="simple"}
+## Read these figures with the open model's limits in mind
+
+These are modelled intakes from an uncalibrated model with no catchment
+term, and they are systematically more optimistic about relocation than
+a calibrated model would be. The direction of every comparison here is
+robust across the swept range; the magnitudes are not. Nothing in this
+section should be read as a prediction of a roll.
+:::
+
+# What the council needs to do {#sec-council}
+
+## Decisions {#sec-decisions}
+
+**Decide about Longhill on a deadline, not on a consultation cycle.**
+The reserve supports about `r sprintf("%.1f", os$years_left)` more years.
+A decision deferred past that point is a decision taken by insolvency
+rather than by the council.
+
+**Treat the instruments as a package.** Section 8 shows they compose.
+Section 3 shows the cohort keeps falling regardless. Adjusting a single
+admission number and waiting to see what happens will consume years the
+finances do not have.
+
+**Stop pointing families at Attainment 8.** The council publishes the
+admissions guide. Section 5 shows families track the headline score at
+`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"], 0)`
+and the value-added measure at
+`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"], 0)`.
+Publishing a contextualised measure alongside the headline would cost
+nothing and would begin to unwind a self-fulfilling loop the authority
+currently sustains.
+
+**Treat transport as an admissions instrument.** Section 4 found
+`r nrow(acc$lsoa %>% filter(places_30 < 1))` neighbourhoods that can
+reach no school place inside 30 minutes, concentrated in the more
+deprived third of the city. A bus timetable can widen real choice
+without taking anything from anyone --- which is more than can be said
+for any boundary change.
+
+## Data the council could simply publish {#sec-data-asks}
+
+Every "this cannot be done on published data" note in this document
+resolves to a small number of releases. None requires new collection;
+all are aggregates of data the council already holds.
+
+| # | What | What it would settle |
+|---|------|---------------------|
+| 1 | Home LSOA of every applicant, by year and allocated school | Calibrate $\beta$; replace every band in section 8 with an estimate |
+| 2 | Full preference ordering, anonymised, by year | Turn section 5's ten-point association into a discrete-choice model |
+| 3 | Allocated school by home LSOA, including schools outside the city | Measure the actual outflow the council's forecasts assume |
+| 4 | Criterion under which each place was allocated | Establish directly which criteria bind, rather than inferring it |
+| 5 | Children allocated a school they did not name, and which | Test the council's stated "nearest school with places" practice |
+| 6 | Journey actually made, or at least distance, per allocation | Separate potential accessibility from realised accessibility |
+
+LSOAs average about 1,500 residents and 650 households. A cohort-year
+count at LSOA level is not disclosive in the way a postcode-level count
+would be, and the council already publishes LSOA-level material
+elsewhere.
+
+## Why now {#sec-why-now}
+
+The cohort projections in section 3 are not forecasts. Those children
+are in the city's primary schools today. The financial position in
+section 6 has a horizon of about
+`r sprintf("%.1f", os$years_left)` years. The decisions in front of the
+council will shape the school system for the next fifteen to twenty
+years, and they are being taken without a picture of the whole system.
+
+This document is an attempt to supply as much of that picture as
+published data allows. It stops well short of what the council's own
+records would support --- and the offer to do that work, properly and in
+the open, stands.
