@@ -1,0 +1,973 @@
+---
+title: "The Brighton Secondary School System"
+subtitle: "A strategic view"
+author: "Adam Dennett, UCL Centre for Advanced Spatial Analysis"
+date: today
+abstract: |
+  Brighton & Hove is deciding what to do about a secondary school system
+  that is losing children faster than it is losing places. This document
+  assembles what can be established about that system from published
+  data alone: where the schools and the children are, how reachable the
+  schools actually are by bus, how demand has moved over sixteen years,
+  and what a model of the whole system says about the choices in front
+  of the council. It is written to be argued with.
+---
+
+```{r setup}
+#| include: false
+
+source(here::here("R", "00_core.R"))
+
+library(scales)
+library(patchwork)
+
+knitr::opts_chunk$set(dev = "ragg_png", dpi = 150)
+
+# ---- Everything the document draws on --------------------------------
+oi     <- bh_data("open_inputs.rds")
+acc    <- bh_data("accessibility.rds")
+dep    <- bh_data("deprivation_open.rds")
+brt    <- bh_data("brightopia.rds")
+env    <- bh_data("sensitivity_envelope.rds")
+perf   <- bh_data("performance_panel.rds")
+lsoa   <- bh_data("lsoa.geojson")
+catch  <- bh_data("catchments_current.geojson") %>% st_transform(4326)
+
+fmt_n   <- function(x, d = 0) formatC(round(x, d), big.mark = ",", format = "f", digits = d)
+fmt_pct <- function(x, d = 0) paste0(formatC(x, format = "f", digits = d), "%")
+```
+
+::: {.callout-note appearance="simple"}
+## Everything here is built from published data
+
+No pupil-level record is used anywhere in this document. Every figure
+comes from data the council, the DfE or the ONS has already published,
+or from a model built on top of it. Where a question can only be
+answered with data the council holds but has not released, that is said
+plainly rather than glossed over --- and section 9 lists what those
+releases would be.
+:::
+
+# Executive summary {#sec-exec}
+
+*To be written once the sections below are settled --- it should be the
+last thing drafted, not the first.*
+
+# The secondary school system {#sec-system}
+
+Ten secondary schools serve Brighton & Hove: six community schools run
+by the local authority, two academies (Brighton Aldridge and Portslade
+Aldridge) and two church schools (King's and Cardinal Newman) that set
+their own admissions. An eleventh, Peacehaven Community School, sits
+just outside the boundary but inside the travel-to-school geography, and
+is included throughout because families on the eastern edge of the city
+treat it as a real option.
+
+The city allocates places by **catchment area with a lottery tie-break**
+for oversubscribed schools --- an arrangement that is very unusual in
+England, where distance from the school gate usually decides priority.
+It dates from the closure of CoMArt in the east of the city in 2005, and
+the catchment system that replaced distance-based allocation in 2008.
+CoMArt is marked on the map below because the shape of the system is
+still partly the shape of that closure.
+
+## Where the schools, the catchments and the children are {#sec-orientation}
+
+```{r fig-orientation}
+#| fig-cap: "Schools, catchment boundaries and the cohort-aged child population. Use the control at the top right to turn each layer on and off."
+
+# ---- Schools ---------------------------------------------------------
+schools_sf <- oi$schools %>%
+  filter(!is.na(easting), !is.na(northing)) %>%
+  st_as_sf(coords = c("easting", "northing"), crs = 27700) %>%
+  st_transform(4326)
+sch_xy <- st_coordinates(schools_sf)
+schools_sf$lon <- sch_xy[, 1]; schools_sf$lat <- sch_xy[, 2]
+
+schools_sf <- schools_sf %>%
+  mutate(boundary_catchment = as_boundary_catchment(catchment),
+         marker_col = ifelse(is.na(boundary_catchment), "#444444",
+                             unname(CATCH_COLOURS[boundary_catchment])))
+
+# ---- Children per LSOA ----------------------------------------------
+# Oi is the cohort-aged child estimate per zone; zones are LSOA x
+# catchment, so an LSOA split by a boundary has to be summed back up.
+children <- oi$zones %>%
+  group_by(lsoa) %>%
+  summarise(children = sum(Oi, na.rm = TRUE), .groups = "drop")
+
+lsoa_pts <- lsoa %>%
+  left_join(children, by = c("lsoa21cd" = "lsoa")) %>%
+  filter(!is.na(children), children > 0) %>%
+  st_point_on_surface() %>%
+  suppressWarnings()
+pt_xy <- st_coordinates(lsoa_pts)
+lsoa_pts$lon <- pt_xy[, 1]; lsoa_pts$lat <- pt_xy[, 2]
+
+# Radius on the square root of the count, so circle *area* is
+# proportional to the number of children rather than the radius being -
+# the latter exaggerates big areas by a factor of the count.
+r_scale <- function(n) 3 + 17 * sqrt(n / max(n, na.rm = TRUE))
+
+pal_catch <- colorFactor(unname(CATCH_COLOURS), names(CATCH_COLOURS))
+
+m <- leaflet(width = "100%", height = 620) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  setView(lng = -0.10, lat = 50.84, zoom = 12) %>%
+  addPolygons(
+    data = catch, group = "Catchments",
+    fillColor = ~pal_catch(catchment), fillOpacity = 0.13,
+    color = ~pal_catch(catchment), weight = 2.5, opacity = 0.85,
+    label = ~unname(CATCH_LABELS[catchment]),
+    highlightOptions = highlightOptions(weight = 4, fillOpacity = 0.25,
+                                        bringToFront = FALSE)) %>%
+  addCircleMarkers(
+    data = lsoa_pts, lng = ~lon, lat = ~lat, group = "Children",
+    radius = ~r_scale(children),
+    fillColor = "#1f4e79", fillOpacity = 0.35,
+    color = "#1f4e79", weight = 1, opacity = 0.55,
+    label = ~sprintf("%s: about %s children in the cohort",
+                     lsoa21nm, round(children)))
+
+# School markers, then logos on top. Both go in the same layer group so
+# the control turns the pair on and off together.
+for (i in seq_len(nrow(schools_sf))) {
+  s <- schools_sf[i, ]
+  popup <- sprintf(
+    "<b>%s</b><br>Admission number 2024: %s<br>Planned 2030: %s%s",
+    s$name, s$pan2024, s$pan2030,
+    if (is.na(s$catchment)) "<br><i>Faith school, admits city-wide</i>" else
+      paste0("<br>Catchment: ", CATCH_LABELS[s$boundary_catchment]))
+
+  m <- m %>% addCircleMarkers(
+    lng = s$lon, lat = s$lat, group = "Schools",
+    radius = 6, fillColor = s$marker_col, fillOpacity = 0.95,
+    color = "white", weight = 2, popup = popup, label = s$name)
+
+  ic <- logo_icon(LOGO_FILES[as.character(s$urn)])
+  if (!is.null(ic))
+    m <- m %>% addMarkers(lng = s$lon, lat = s$lat, icon = ic,
+                          group = "Schools", popup = popup, label = s$name)
+}
+
+# CoMArt, closed 2005
+m <- m %>% addCircleMarkers(
+  lng = COMART$lon, lat = COMART$lat, group = "CoMArt (closed 2005)",
+  radius = 6, fillColor = "#b2182b", fillOpacity = 0.9,
+  color = "white", weight = 2,
+  popup = "<b>CoMArt</b><br>Closed 2005. Its closure is why the city moved to catchments with a lottery tie-break.",
+  label = COMART$name)
+ic <- logo_icon(COMART$logo)
+if (!is.null(ic))
+  m <- m %>% addMarkers(lng = COMART$lon, lat = COMART$lat, icon = ic,
+                        group = "CoMArt (closed 2005)",
+                        label = COMART$name)
+
+legend_html <- paste0(
+  '<div style="background:white;padding:8px 12px;border-radius:4px;',
+  'box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;font-size:12px;line-height:1.6">',
+  '<div style="font-weight:bold;margin-bottom:4px">Catchment areas, 2025/26</div>',
+  paste0('<div style="display:flex;align-items:center;gap:6px">',
+         '<span style="display:inline-block;width:14px;height:14px;background:',
+         unname(CATCH_COLOURS), ';border-radius:2px;flex-shrink:0"></span><span>',
+         unname(CATCH_LABELS), '</span></div>', collapse = ''),
+  '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd">',
+  '<span style="display:inline-block;width:14px;height:14px;background:#1f4e79;',
+  'opacity:.35;border-radius:50%;margin-right:6px"></span>Children per LSOA',
+  ' <span style="color:#777">(area &prop; count)</span></div></div>')
+
+m %>%
+  addLayersControl(
+    overlayGroups = c("Catchments", "Schools", "Children", "CoMArt (closed 2005)"),
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  hideGroup("CoMArt (closed 2005)") %>%
+  addControl(html = legend_html, position = "bottomright")
+```
+
+Three things are worth noticing on that map before any analysis begins.
+
+**The catchments are not equivalent objects.** Four of them contain a
+single school; two contain a pair. A child in the Varndean / Dorothy
+Stringer or Hove Park / Blatchington Mill catchment has two schools to
+name and a realistic chance of one of them. A child in the Longhill,
+Patcham, BACA or PACA catchment has one. That asymmetry does more work
+in this system than almost anything else, and section 5 returns to it.
+
+**The children are not spread evenly.** The cohort is concentrated in
+the centre and west; the east of the city, which contains Longhill's
+entire catchment, is thin. Longhill's problem is visible on this map
+before any model is run.
+
+**Two schools sit outside the geography entirely.** King's and Cardinal
+Newman admit city-wide on faith criteria. Together they hold
+`r fmt_n(sum(oi$schools$pan2026[is.na(oi$schools$catchment)]))` places,
+about
+`r fmt_pct(100 * sum(oi$schools$pan2026[is.na(oi$schools$catchment)]) / sum(oi$schools$pan2026[oi$schools$name != "Peacehaven Community School"]))`
+of the city total. Any statement about what catchments do has to be read
+against that.
+
+## What the attainment data actually says {#sec-lever}
+
+The debate about Brighton's schools is usually conducted in the currency
+of headline attainment --- Attainment 8, league table position, "good"
+and "bad" schools. That currency is close to worthless for the question
+the council actually faces, and it is worth being precise about why,
+because the usual explanation is also wrong.
+
+```{r lever-models}
+#| include: false
+
+nat <- perf$national %>% filter(!is.na(ATT8SCR))
+
+m_fsm   <- lm(ATT8SCR ~ PTFSM6CLA1A, data = nat)
+m_prior <- lm(ATT8SCR ~ PTPRIORLO, data = nat)
+m_both  <- lm(ATT8SCR ~ PTFSM6CLA1A + PTPRIORLO, data = nat)
+m_abs   <- lm(ATT8SCR ~ PTFSM6CLA1A + PTPRIORLO + PPERSABS10, data = nat)
+R2 <- function(m) 100 * summary(m)$r.squared
+
+bh_latest <- perf$bh %>%
+  filter(year_label == perf$latest, !is.na(ATT8SCR), !is.na(PTPRIORLO))
+bh_resid <- bh_latest %>%
+  mutate(pred = predict(m_both, newdata = .), resid = ATT8SCR - pred)
+above <- sum(bh_resid$resid > 0, na.rm = TRUE)
+```
+
+The common account is that attainment tracks deprivation. It does, but
+weakly, and stopping there points the city at the wrong lever. Across
+`r fmt_n(nobs(m_fsm))` mainstream secondaries in England, the proportion
+of disadvantaged pupils explains **`r fmt_pct(R2(m_fsm))`** of the
+variation in Attainment 8. The proportion arriving with *low prior
+attainment* explains **`r fmt_pct(R2(m_prior))`** --- twice as much. Put
+both in together and you get `r fmt_pct(R2(m_both))`: deprivation adds
+almost nothing once you know what the intake could already do at age
+eleven. Add persistent absence and the figure reaches
+**`r fmt_pct(R2(m_abs))`**.
+
+```{r fig-att8-prior}
+#| fig-cap: "Attainment 8 against two features of intake, every mainstream secondary in England in the latest year, with Brighton & Hove schools highlighted. Prior attainment and absence both order schools far more sharply than deprivation does."
+#| fig-height: 5
+
+panel <- function(xvar, xlab, ttl) {
+  d <- nat %>% filter(!is.na(.data[[xvar]]))
+  b <- bh_latest %>% filter(!is.na(.data[[xvar]]))
+  ggplot(d, aes(.data[[xvar]], ATT8SCR)) +
+    geom_point(colour = "grey80", size = 0.9, alpha = 0.5) +
+    geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+                colour = "grey30", linewidth = 0.7, linetype = "22") +
+    geom_point(data = b, colour = "#b2182b", size = 2.4) +
+    ggrepel::geom_text_repel(
+      data = b %>% filter(SCHNAME %in% c("Longhill High School", "King's School")),
+      aes(label = SCHNAME), size = 2.9, colour = "#7f0f22",
+      min.segment.length = 0, segment.size = 0.3, seed = 1) +
+    scale_x_continuous(labels = label_percent(scale = 1)) +
+    labs(x = xlab, y = "Attainment 8", subtitle = ttl) +
+    theme_bh(11)
+}
+
+(panel("PTFSM6CLA1A", "Disadvantaged pupils",
+       sprintf("Deprivation (R² = %.2f)", summary(m_fsm)$r.squared) ) |
+ panel("PTPRIORLO", "Pupils with low prior attainment",
+       sprintf("Prior attainment (R² = %.2f)", summary(m_prior)$r.squared)) |
+ panel("PPERSABS10", "Persistently absent pupils",
+       sprintf("Absence (R² = %.2f)",
+               summary(lm(ATT8SCR ~ PPERSABS10, data = nat))$r.squared))) +
+  plot_annotation(
+    title = "Attainment is a description of intake, and of who turns up",
+    subtitle = sprintf("Mainstream secondaries in England, %s. Red points are Brighton & Hove.", perf$latest),
+    caption = "Source: DfE performance tables.",
+    theme = theme_bh())
+```
+
+Two consequences follow, and they point in the same direction.
+
+**A headline score is mostly a description of who walks through the
+door.** Once prior attainment and deprivation are accounted for,
+**`r above` of the `r nrow(bh_resid)`** Brighton & Hove schools score
+above what the national relationship predicts for their intake. On the
+measure that isolates the school's own contribution, this is not a city
+with a school quality problem.
+
+**The lever that moves is attendance, not social mix.** Persistent
+absence alone correlates with Attainment 8 at
+`r sprintf("%.2f", cor(nat$ATT8SCR, nat$PPERSABS10, use = "complete.obs"))`
+--- more strongly than any intake measure here. Absence and deprivation
+travel together, and absence is the mechanism through which much of the
+deprivation effect actually operates, which is why redistributing
+disadvantaged children between schools is a far weaker instrument than
+it is usually assumed to be.
+
+::: {.callout-important appearance="simple"}
+## One caution about that last figure
+
+Absence is partly an outcome as well as a cause: a child who is
+disengaged attends less *and* attains less, so a single-equation fit
+overstates how much of that `r fmt_pct(R2(m_abs))` is absence doing the
+causal work. The Lever report models this properly, with school and year
+effects, rather than reading it off a scatterplot. The ordering of the
+three panels above survives that treatment; the exact numbers should not
+be quoted as causal effects.
+:::
+
+::: {.callout-tip}
+## The detail behind this is published separately
+
+The contextualised analysis --- value-added modelling across every local
+authority in England, and what it says about where Brighton's schools
+really sit --- is set out in
+[How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html).
+Its central findings are that Brighton's schools perform well once
+intake is accounted for, and that **absence, not social mixing, is the
+largest single lever available to the city**. This document takes those
+findings as given and turns to the spatial and demographic questions the
+Lever report does not address.
+:::
+
+::: {.callout-tip}
+## The detail behind this is published separately
+
+The contextualised analysis --- value-added modelling across every
+local authority in England, and what it says about where Brighton's
+schools really sit --- is set out in
+[How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html).
+Its central findings are that Brighton's schools perform well once
+intake is accounted for, that **absence, not social mixing, is the
+largest single lever available to the city**, and that absence is the
+mechanism through which much of the deprivation effect operates. This
+document takes those findings as given and turns to the spatial and
+demographic questions the Lever report does not address.
+:::
+
+```{r fig-ranking-flip}
+#| fig-cap: "The same ten schools ranked two ways: by headline Attainment 8, and by the value-added measure from the Lever report. Lines crossing means the two measures disagree about which schools are doing well."
+#| fig-height: 5.5
+
+flip <- oi$attract %>%
+  filter(!is.na(att8), !is.na(va_lever), name != "Peacehaven Community School") %>%
+  mutate(rank_att8 = rank(-att8), rank_va = rank(-va_lever)) %>%
+  select(name, rank_att8, rank_va) %>%
+  pivot_longer(starts_with("rank_"), names_to = "measure", values_to = "rank") %>%
+  mutate(measure = factor(measure, c("rank_att8", "rank_va"),
+                          c("Attainment 8\n(headline)", "Value added\n(Lever report)")))
+
+moved <- flip %>%
+  pivot_wider(names_from = measure, values_from = rank) %>%
+  rename(att8 = 2, va = 3) %>%
+  mutate(shift = att8 - va)
+
+ggplot(flip, aes(measure, rank, group = name)) +
+  geom_line(aes(colour = name), linewidth = 1.1, alpha = 0.85, show.legend = FALSE) +
+  geom_point(aes(colour = name), size = 3, show.legend = FALSE) +
+  ggrepel::geom_text_repel(
+    data = flip %>% filter(measure == levels(flip$measure)[1]),
+    aes(label = name), hjust = 1, nudge_x = -0.08, size = 3,
+    direction = "y", segment.size = 0.2, seed = 1) +
+  ggrepel::geom_text_repel(
+    data = flip %>% filter(measure == levels(flip$measure)[2]),
+    aes(label = name), hjust = 0, nudge_x = 0.08, size = 3,
+    direction = "y", segment.size = 0.2, seed = 1) +
+  scale_y_reverse(breaks = 1:10) +
+  scale_x_discrete(expand = expansion(add = c(0.85, 0.85))) +
+  labs(x = NULL, y = "Rank (1 = highest)",
+       title = "Which schools look good depends on which measure you use",
+       subtitle = "Ranked by headline attainment, and by contribution to progress once intake is accounted for",
+       caption = "Sources: DfE performance tables; How to Pull the Right Lever.") +
+  theme_bh() +
+  theme(panel.grid.major.x = element_blank())
+```
+
+```{r flip-stats}
+#| include: false
+# Ties are real here - two schools fall by the same four places - so
+# collapse to a list rather than letting slice_min pick one silently.
+and_list <- function(x) if (length(x) < 2) x else
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+
+up   <- moved %>% filter(shift == max(shift))
+down <- moved %>% filter(shift == min(shift))
+n_moved3 <- sum(abs(moved$shift) >= 3)
+```
+
+The lines cross a great deal. **`r and_list(up$name)`** rises
+`r abs(up$shift[1])` places when you move from the headline measure to
+the value-added one; **`r and_list(down$name)`** falls
+`r abs(down$shift[1])`. `r n_moved3` of the ten schools move by three
+places or more.
+
+The schools that fall are not bad schools, and the schools that rise are
+not suddenly good ones. The two measures are answering different
+questions: one asks what pupils at this school achieved, the other asks
+how much of that the school is responsible for. Families reading the
+published headline are answering the first question while believing they
+are answering the second --- and section 5 shows that this has a
+measurable effect on where demand actually goes.
+
+# Demographic futures {#sec-demography}
+
+The single most important fact about this system is that it is shrinking,
+and that the shrinkage is already locked in. The children who will enter
+Year 7 in 2033 have already started primary school. Their number is not
+a forecast in any meaningful sense --- it is a count, adjusted for a
+transfer rate that has been remarkably stable for a decade.
+
+## What has already happened {#sec-cohort-history}
+
+```{r cohort-data}
+#| include: false
+rc <- bh_data("reception_cohort.rds")
+
+y7    <- rc$secondary_city
+rec   <- rc$reception_city
+peak  <- y7 %>% slice_max(y7_offers, n = 1)
+now   <- y7 %>% slice_max(year, n = 1)
+proj  <- rc$projection
+last_proj <- proj %>% slice_max(entry_year, n = 1)
+drop_pct <- 100 * (last_proj$central - now$y7_offers) / now$y7_offers
+```
+
+Year 7 offers across the city peaked at **`r fmt_n(peak$y7_offers)`** in
+`r peak$year`. In `r now$year` the figure was
+**`r fmt_n(now$y7_offers)`** --- a fall of
+`r fmt_pct(100 * (peak$y7_offers - now$y7_offers) / peak$y7_offers, 1)`
+from the peak. That decline is not a projection. It has happened.
+
+```{r fig-cohort-history}
+#| fig-cap: "Reception and Year 7 offers made across Brighton & Hove. The reception line leads the Year 7 line by seven years, so it is a preview of secondary demand rather than a separate story."
+#| fig-height: 5
+
+bind_rows(
+  y7  %>% transmute(year, offers = y7_offers, phase = "Year 7 offers"),
+  rec %>% transmute(year, offers = rec_offers, phase = "Reception offers")) %>%
+  ggplot(aes(year, offers, colour = phase)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2) +
+  scale_colour_manual(values = c("Reception offers" = "#2c7fb8",
+                                 "Year 7 offers" = "#b2182b"), name = NULL) +
+  scale_y_continuous(labels = label_comma(), limits = c(0, NA)) +
+  labs(x = NULL, y = "Offers made",
+       title = "Both phases are past their peak",
+       subtitle = "Reception offers turn down first, and Year 7 follows seven years later",
+       caption = "Source: BHCC published allocation factsheets.") +
+  theme_bh()
+```
+
+## The cohort already in school {#sec-projection}
+
+The transfer rate from a reception cohort to the Year 7 cohort seven
+years later has been strikingly stable. Across the six cohorts where
+both ends are observable, **`r fmt_pct(100 * rc$survival_recent, 1)`** of
+reception offers reappear as Year 7 offers, with a standard deviation of
+just `r fmt_pct(100 * rc$survival_sd, 1)`. The city loses about one child
+in nine between ages four and eleven --- to independent schools, to
+moves out of the area, and to schools across the boundary.
+
+Applying that rate to reception cohorts already in school gives a
+projection that depends on almost no assumptions:
+
+```{r fig-projection}
+#| fig-cap: "Year 7 demand projected from reception cohorts already in school. The band is the range implied by the observed year-to-year variation in the transfer rate."
+#| fig-height: 5
+
+ggplot() +
+  geom_ribbon(data = proj, aes(entry_year, ymin = lo, ymax = hi),
+              fill = "#b2182b", alpha = 0.18) +
+  geom_line(data = proj, aes(entry_year, central),
+            colour = "#b2182b", linewidth = 1.1, linetype = "22") +
+  geom_point(data = proj, aes(entry_year, central), colour = "#b2182b", size = 2) +
+  geom_line(data = y7, aes(year, y7_offers), colour = "grey25", linewidth = 1.1) +
+  geom_point(data = y7, aes(year, y7_offers), colour = "grey25", size = 2) +
+  annotate("text", x = 2016, y = 2480, label = "Observed", colour = "grey25",
+           hjust = 0, fontface = "bold", size = 3.6) +
+  annotate("text", x = 2029.5, y = 2180, label = "Projected from\nchildren already in school",
+           colour = "#b2182b", hjust = 0, size = 3.4, lineheight = 0.95) +
+  scale_y_continuous(labels = label_comma(), limits = c(0, NA)) +
+  labs(x = NULL, y = "Year 7 offers",
+       title = sprintf("A further %s fall is already in the primary schools",
+                       fmt_pct(abs(drop_pct), 0)),
+       subtitle = sprintf("From %s in %s to about %s by %s",
+                          fmt_n(now$y7_offers), now$year,
+                          fmt_n(last_proj$central), last_proj$entry_year),
+       caption = "Sources: BHCC allocation factsheets; transfer rate estimated from six observed cohorts.") +
+  theme_bh()
+```
+
+By **`r last_proj$entry_year`** the city should expect about
+**`r fmt_n(last_proj$central)`** Year 7 children, against
+`r fmt_n(now$y7_offers)` today --- a further fall of
+`r fmt_pct(abs(drop_pct), 0)`. Against a current published admission
+capacity of about
+`r fmt_n(sum(oi$schools$pan2026[oi$schools$name != "Peacehaven Community School"]))`
+places, that is roughly
+`r fmt_n(sum(oi$schools$pan2026[oi$schools$name != "Peacehaven Community School"]) - last_proj$central)`
+surplus places --- the equivalent of two and a half average-sized
+secondary schools standing empty.
+
+## Where the council's forecast differs {#sec-council-forecast}
+
+The council publishes its own catchment-level forecasts. They are
+consistently **higher** than what the primary cohorts support, and the
+gap widens with distance.
+
+```{r fig-forecast-gap}
+#| fig-cap: "The council's own demand forecast against a projection built from reception cohorts already in school. Positive values mean the council expects more children than the primary registers contain."
+#| fig-height: 4.6
+
+rc$comparison %>%
+  mutate(gap = ons_demand - reception_based) %>%
+  ggplot(aes(entry_year, gap)) +
+  geom_col(fill = "#7b3294", alpha = 0.85, width = 0.65) +
+  geom_hline(yintercept = 0, colour = "grey30") +
+  geom_text(aes(label = sprintf("%+.0f", gap),
+                vjust = ifelse(gap >= 0, -0.4, 1.3)), size = 3.2) +
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.18))) +
+  labs(x = "Year of Year 7 entry", y = "Council forecast minus cohort projection",
+       title = "The council expects more children than the primary registers hold",
+       subtitle = "Difference in Year 7 places, city-wide",
+       caption = "Sources: BHCC published forecasts; reception-based projection as above.") +
+  theme_bh()
+```
+
+```{r lh-gap}
+#| include: false
+lh_council <- rc$council %>%
+  mutate(catchment = as_model_catchment(CatchmentGroup)) %>%
+  filter(catchment == "Longhill")
+lh_cohort <- rc$by_catchment %>% filter(catchment == "Longhill")
+lh_join <- lh_council %>%
+  inner_join(lh_cohort %>% select(entry_year, projected), by = "entry_year") %>%
+  mutate(gap = council - projected)
+stopifnot(nrow(lh_join) > 0)
+```
+
+The city-wide gap is modest in most years. Broken down by catchment it
+is not, and Longhill is where it opens widest.
+
+```{r fig-longhill-gap}
+#| fig-cap: "Longhill catchment: the council's forecast, the projection from its own primary cohorts, and the school's admission number."
+#| fig-height: 4.6
+
+lh_join %>%
+  select(entry_year, Council = council, `From primary cohorts` = projected) %>%
+  pivot_longer(-entry_year, names_to = "series", values_to = "children") %>%
+  ggplot(aes(entry_year, children, colour = series)) +
+  geom_hline(yintercept = rc$council_lh_pan, linetype = "31", colour = "grey45") +
+  annotate("text", x = min(lh_join$entry_year), y = rc$council_lh_pan + 7,
+           label = sprintf("Admission number (%s)", rc$council_lh_pan),
+           hjust = 0, size = 3.1, colour = "grey35") +
+  geom_line(linewidth = 1.1) + geom_point(size = 2.4) +
+  scale_colour_manual(values = c("Council" = "#7b3294",
+                                 "From primary cohorts" = "#008837"), name = NULL) +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(x = "Year of Year 7 entry", y = "Children",
+       title = "Longhill: the two forecasts disagree, and both sit below the admission number",
+       subtitle = sprintf("Mean gap of %.0f children a year",
+                          mean(lh_join$gap, na.rm = TRUE)),
+       caption = "Sources: BHCC catchment forecasts; reception-based projection.") +
+  theme_bh()
+```
+
+The council's forecast for the Longhill catchment runs an average of
+**`r fmt_n(mean(lh_join$gap, na.rm = TRUE))` children a year above** what
+that catchment's own primary cohorts support. Both series sit below the
+school's admission number of `r rc$council_lh_pan` in every year. This
+matters because decisions about Longhill's future are being taken
+against the higher of two numbers, and the higher one is the one the
+primary registers do not support.
+
+## The Peacehaven accession {#sec-peacehaven}
+
+```{r peacehaven}
+#| include: false
+area_children <- oi$zones %>%
+  group_by(area) %>%
+  summarise(lsoas = n_distinct(lsoa), children = sum(Oi, na.rm = TRUE),
+            .groups = "drop")
+exp_area <- area_children %>% filter(area == "Expansion area")
+tot_children <- sum(area_children$children)
+ph_pan <- oi$schools$pan2026[oi$schools$name == "Peacehaven Community School"]
+```
+
+The catchment system reaches beyond the city boundary. The Peacehaven
+and Telscombe area contributes **`r exp_area$lsoas` LSOAs** and about
+**`r fmt_n(exp_area$children)` cohort-aged children**, roughly
+`r fmt_pct(100 * exp_area$children / tot_children, 0)`
+of the total the model covers.
+
+In headcount terms this is close to self-supporting: Peacehaven
+Community School has an admission number of `r ph_pan`, against about
+`r fmt_n(exp_area$children)` children in its area. The difficulty is not
+the arithmetic but the direction of travel. These families sit at the
+eastern end of a transport network that runs east--west along the coast,
+and section 4 shows that they are among the least well served in the
+whole study area --- not because they are far from *a* school, but
+because they are far from *most* schools, and therefore have the fewest
+alternatives if their first choice is full.
+
+# How reachable are the schools? {#sec-access}
+
+Almost all of the public argument about Brighton's schools is conducted
+in terms of admissions rules --- catchments, priorities, tie-breaks.
+Underneath the rules sits a physical constraint that no rule can undo:
+how long it actually takes a eleven-year-old to get to each school on a
+bus. This section establishes that constraint before section 5 returns
+to the rules.
+
+All journey times here are routed with `r5r` over the merged street
+network and bus timetable for the area, for a weekday morning arrival.
+They include walking to the stop, waiting, the ride itself, and any
+transfer.
+
+## Journey time to a single school {#sec-one-school}
+
+```{r fig-one-school}
+#| fig-cap: "Walk-and-bus journey time to Longhill High School from every neighbourhood in the study area, for a weekday morning arrival."
+#| fig-height: 6
+
+nm <- bh_data("network_maps.rds")
+
+# The surface object carries one point per zone, and zones are
+# LSOA x catchment. Collapse to LSOA on the child population and join
+# the times onto the LSOA polygons, so this draws as a surface rather
+# than as a scatter of centroids.
+surf_lsoa <- nm$surface %>%
+  st_drop_geometry() %>%
+  group_by(lsoa) %>%
+  summarise(mins = weighted.mean(ovingdean, pmax(Oi, 1e-6), na.rm = TRUE),
+            .groups = "drop")
+
+surf <- lsoa %>%
+  inner_join(surf_lsoa, by = c("lsoa21cd" = "lsoa")) %>%
+  filter(is.finite(mins))
+
+pal_time <- colorNumeric("magma", domain = surf$mins, reverse = TRUE)
+
+leaflet(width = "100%", height = 560) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(data = surf,
+              fillColor = ~pal_time(mins), fillOpacity = 0.78,
+              color = "white", weight = 0.4,
+              label = ~sprintf("%s: %.0f minutes", lsoa21nm, mins)) %>%
+  addCircleMarkers(
+    lng = st_coordinates(st_transform(
+      st_as_sf(oi$schools %>% filter(short == "longhill"),
+               coords = c("easting", "northing"), crs = 27700), 4326))[, 1],
+    lat = st_coordinates(st_transform(
+      st_as_sf(oi$schools %>% filter(short == "longhill"),
+               coords = c("easting", "northing"), crs = 27700), 4326))[, 2],
+    radius = 7, fillColor = "#1a9850", fillOpacity = 1,
+    color = "white", weight = 2, label = "Longhill High School") %>%
+  addLegend(pal = pal_time, values = surf$mins, title = "Minutes",
+            position = "bottomright", opacity = 0.85)
+```
+
+The median neighbourhood is
+**`r fmt_n(median(nm$surface$ovingdean, na.rm = TRUE))` minutes** from
+Longhill's current site. The school sits at the edge of its own
+catchment and at the edge of the city, which is the geometric fact
+underneath most of section 8.
+
+## What one of those journeys actually looks like {#sec-legs}
+
+A single number in minutes hides what the journey involves. These are
+seven real routed journeys, drawn leg by leg: walking legs follow the
+street network, bus legs follow the service's own shape.
+
+```{r fig-legs}
+#| fig-cap: "Seven worked journeys, routed leg by leg. Walking legs in orange, bus legs in blue. Each can be checked against local knowledge."
+#| fig-height: 6
+
+rg <- bh_data("route_geometries.rds")
+legs <- rg$legs %>% st_transform(4326)
+
+pal_mode <- colorFactor(c("BUS" = "#2166ac", "WALK" = "#e08214"),
+                        domain = c("BUS", "WALK"))
+
+mleg <- leaflet(width = "100%", height = 560) %>%
+  addProviderTiles(providers$CartoDB.Positron)
+
+for (j in sort(unique(legs$journey))) {
+  d <- legs %>% filter(journey == j)
+  tot <- rg$summary$total_minutes[rg$summary$journey == j]
+  mleg <- mleg %>%
+    addPolylines(data = d, group = j,
+                 color = ~pal_mode(leg_mode), weight = 5, opacity = 0.85,
+                 label = ~sprintf("%s - %s leg, %.0f min%s", j, leg_mode, minutes,
+                                  ifelse(nzchar(route), paste0(" (service ", route, ")"), "")),
+                 popup = ~sprintf("<b>%s</b><br>%s minutes in total", j, tot))
+}
+
+mleg %>%
+  addLayersControl(overlayGroups = sort(unique(legs$journey)),
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  addLegend(pal = pal_mode, values = c("BUS", "WALK"), title = "Leg",
+            position = "bottomright", opacity = 0.9)
+```
+
+```{r tbl-journeys}
+#| tbl-cap: "The same seven journeys, summarised."
+rg$summary %>%
+  transmute(Journey = journey,
+            `Total minutes` = total_minutes,
+            Legs = legs,
+            `Bus services used` = ifelse(nzchar(services), services, "walk only")) %>%
+  arrange(`Total minutes`) %>%
+  knitr::kable()
+```
+
+Woodingdean to Longhill takes 11 minutes. Whitehawk to Dorothy Stringer
+takes 52, for a journey of about the same straight-line distance. The
+network is not symmetric, and neither is opportunity.
+
+## Which school is actually nearest {#sec-nearest}
+
+```{r fig-nearest}
+#| fig-cap: "The nearest secondary school to each neighbourhood by routed walk-and-bus time, regardless of catchment."
+#| fig-height: 6
+
+near <- lsoa %>%
+  left_join(acc$lsoa %>% select(lsoa, nearest_school, nearest_min),
+            by = c("lsoa21cd" = "lsoa")) %>%
+  filter(!is.na(nearest_school))
+
+pal_near <- colorFactor("Set3", domain = sort(unique(near$nearest_school)))
+
+leaflet(width = "100%", height = 560) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(data = near,
+              fillColor = ~pal_near(nearest_school), fillOpacity = 0.72,
+              color = "white", weight = 0.4,
+              label = ~sprintf("%s: %s, %.0f min", lsoa21nm, nearest_school, nearest_min)) %>%
+  addLegend(pal = pal_near, values = near$nearest_school, title = "Nearest school",
+            position = "bottomright", opacity = 0.85)
+```
+
+```{r nearest-stats}
+#| include: false
+near_tab <- acc$lsoa %>%
+  count(nearest_school, wt = Oi, name = "children") %>%
+  arrange(desc(children)) %>%
+  mutate(pct = 100 * children / sum(children))
+```
+
+This map is worth comparing with the catchment map in section 2. They
+are not the same shape. The nearest school by bus is not always the
+catchment school, and for
+`r fmt_pct(100 * mean(acc$lsoa$nearest_min > 25), 0)`
+of neighbourhoods even the nearest school is more than 25 minutes away.
+
+## Potential accessibility: how much school is within reach {#sec-potential}
+
+Nearest-school distance answers a narrow question. It says nothing about
+whether a neighbourhood has *one* school within reach or *five* --- and
+that difference is the whole of what a family's realistic options
+amount to when their first preference is full.
+
+Two measures are used here, deliberately, because they fail in opposite
+directions.
+
+::: {.panel-tabset}
+### Gravity
+
+$$A_i = \sum_j W_j \, c_{ij}^{-\beta}$$
+
+Every school counts, discounted by how far away it is. $W_j$ is the
+school's attractiveness (its admission number), $c_{ij}$ the routed
+walk-and-bus time, and $\beta$ the distance decay --- set here at
+`r sprintf("%.1f", acc$beta$ref)`, the reference value from the model in
+section 7. The number has no units, so it is indexed with the
+child-weighted city average at 100.
+
+### Cumulative opportunity
+
+$$P_i(t) = \sum_j \mathrm{PAN}_j \cdot \mathbf{1}(c_{ij} \le t)$$
+
+The number of school places reachable inside $t$ minutes. Trivial to
+explain --- "how many places can you get to in half an hour" --- but it
+treats a 29-minute journey and a 31-minute journey as entirely different
+things.
+:::
+
+```{r fig-accessibility}
+#| fig-cap: "Potential accessibility to secondary school places, by neighbourhood. Indexed so that the child-weighted city average is 100. Darker means less school within reach."
+#| fig-height: 6
+
+acc_map <- lsoa %>%
+  inner_join(acc$lsoa, by = c("lsoa21cd" = "lsoa"))
+
+pal_acc <- colorNumeric("viridis", domain = acc_map$A_index, reverse = TRUE)
+
+leaflet(width = "100%", height = 560) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(data = acc_map,
+              fillColor = ~pal_acc(A_index), fillOpacity = 0.8,
+              color = "white", weight = 0.4,
+              label = ~sprintf(
+                "%s | index %.0f | %.0f places within 30 min | nearest %s, %.0f min",
+                lsoa21nm, A_index, places_30, nearest_school, nearest_min)) %>%
+  addLegend(pal = pal_acc, values = acc_map$A_index,
+            title = "Accessibility<br>index", position = "bottomright",
+            opacity = 0.85)
+```
+
+```{r acc-stats}
+#| include: false
+zero30 <- acc$lsoa %>% filter(places_30 < 1)
+rng <- range(acc$lsoa$A_index)
+```
+
+Three findings come out of this, and the first is the one that should
+change the conversation.
+
+**`r nrow(zero30)` of the `r nrow(acc$lsoa)` neighbourhoods --- about
+`r fmt_n(sum(zero30$Oi))` cohort-aged children --- cannot reach a single
+secondary school place within 30 minutes** by walking and bus on a
+weekday morning. Not their catchment school; *any* school. For those
+neighbourhoods the admissions debate is somewhat beside the point.
+
+**The spread is nearly fivefold.** The best-served neighbourhood scores
+`r fmt_n(rng[2])` on the index against `r fmt_n(rng[1])` for the worst.
+A child in the centre of the city has several schools genuinely within
+reach; a child at either end has one, or none.
+
+**The two measures broadly agree, but not closely.** They correlate at
+`r sprintf("%.2f", acc$agreement$spearman)` (Spearman), yet only
+`r fmt_pct(100 * acc$agreement$within_one, 0)` of neighbourhoods land
+within one decile of each other on both. Where they agree, the finding
+is robust to how you define access. Where they disagree, it is because
+one is counting a school just over the threshold that the other is
+discounting smoothly.
+
+```{r fig-acc-compare}
+#| fig-cap: "The two measures against each other. Neighbourhoods along the bottom can reach no places at all inside 30 minutes."
+#| fig-height: 4.8
+
+acc$lsoa %>%
+  mutate(grp = ifelse(places_30 < 1, "No places within 30 min", "Some places within 30 min")) %>%
+  ggplot(aes(A_index, places_30, colour = grp, size = Oi)) +
+  geom_point(alpha = 0.75) +
+  scale_colour_manual(values = c("No places within 30 min" = "#b2182b",
+                                 "Some places within 30 min" = "#2166ac"),
+                      name = NULL) +
+  scale_size_area(max_size = 6, guide = "none") +
+  scale_y_continuous(labels = label_comma()) +
+  labs(x = "Gravity accessibility index (city average = 100)",
+       y = "Places reachable within 30 minutes",
+       title = "Two ways of asking the same question",
+       subtitle = "Each point is a neighbourhood, sized by the number of cohort-aged children",
+       caption = "Routed walk-and-bus times, weekday morning arrival.") +
+  theme_bh()
+```
+
+::: {.callout-warning appearance="simple"}
+## Two caveats that bear on these numbers
+
+**Journey times are modelled, not measured.** They come from `r5r`
+routing over the merged street network and published timetables for one
+weekday morning. They do not know about school buses, parental lifts,
+walking routes children actually use, or a bus that is full when it
+arrives.
+
+**One school's times are suspect.** Dorothy Stringer and Varndean are
+470 metres apart, yet the routed matrix makes Stringer slower from most
+of the city by a median of about five and a half minutes. That may be
+real, or it may be an artefact of where the router snapped each school
+onto the network. It has not been established which, and it inflates the
+apparent inaccessibility of the areas whose nearest school is Stringer.
+:::
+
+## Accessibility and child poverty together {#sec-bivariate}
+
+The question that matters for policy is not where access is poor, nor
+where deprivation is high, but where the two coincide --- because those
+are the neighbourhoods where a difficult journey is least likely to be
+solved by a car in the family.
+
+```{r fig-bivariate}
+#| fig-cap: "Accessibility and income deprivation affecting children, mapped together. The darkest blue is the corner that matters: least reachable school places, highest child poverty."
+#| fig-height: 7
+
+# Stevens-style bivariate palette. Keyed "access-deprivation", each on a
+# tercile: access 1 is the least reachable third, deprivation 3 the most
+# deprived third. The concerning corner is therefore 1-3, and it is the
+# darkest colour.
+BIV <- c(
+  "1-1" = "#be64ac", "1-2" = "#8c62aa", "1-3" = "#3b4994",
+  "2-1" = "#dfb0d6", "2-2" = "#a5add3", "2-3" = "#5698b9",
+  "3-1" = "#e8e8e8", "3-2" = "#ace4e4", "3-3" = "#5ac8c8")
+
+biv_map <- lsoa %>%
+  inner_join(acc$bivariate %>% select(lsoa, acc_t, dep_t, biv_key,
+                                      idaci_score, A_index, places_30, Oi),
+             by = c("lsoa21cd" = "lsoa")) %>%
+  mutate(fill = unname(BIV[biv_key]))
+
+main <- ggplot(biv_map) +
+  geom_sf(aes(fill = fill), colour = "white", linewidth = 0.12) +
+  scale_fill_identity() +
+  labs(title = "Where poor access and child poverty coincide",
+       subtitle = "Each neighbourhood classed on both axes at once",
+       caption = "Sources: routed walk-and-bus accessibility; IDACI 2019.") +
+  theme_void(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(colour = "grey30"),
+        plot.caption = element_text(colour = "grey45", hjust = 0))
+
+key <- expand_grid(acc_t = 1:3, dep_t = 1:3) %>%
+  mutate(fill = unname(BIV[paste0(acc_t, "-", dep_t)])) %>%
+  ggplot(aes(acc_t, dep_t, fill = fill)) +
+  geom_tile(colour = "white", linewidth = 0.7) +
+  scale_fill_identity() +
+  scale_x_continuous(breaks = c(1, 3), labels = c("least", "most"),
+                     expand = c(0, 0)) +
+  scale_y_continuous(breaks = c(1, 3), labels = c("least", "most"),
+                     expand = c(0, 0)) +
+  labs(x = "Accessible →", y = "Deprived →") +
+  coord_equal() +
+  theme_minimal(base_size = 8) +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 7.5, colour = "grey25"),
+        axis.text = element_text(size = 6.5, colour = "grey40"))
+
+main + inset_element(key, left = 0.72, bottom = 0.02, right = 0.99, top = 0.32)
+```
+
+```{r biv-stats}
+#| include: false
+corner <- acc$worst_corner
+best_corner <- acc$bivariate %>% filter(acc_t == 3, dep_t == 3)
+cells <- acc$bivariate %>%
+  count(acc_t, dep_t, wt = Oi, name = "children")
+low_acc_high_dep <- cells %>% filter(acc_t == 1, dep_t == 3) %>% pull(children)
+hi_acc_high_dep  <- cells %>% filter(acc_t == 3, dep_t == 3) %>% pull(children)
+```
+
+There is a real gradient here, and it runs the wrong way. Accessibility
+and child poverty correlate at
+`r sprintf("%.2f", acc$acc_dep_spearman)` (Spearman): the more deprived
+a neighbourhood, the less school it can reach.
+
+**`r nrow(corner)` neighbourhoods --- about `r fmt_n(low_acc_high_dep)`
+cohort-aged children --- sit in the worst corner**, in the least
+accessible third of the city and the most deprived third at the same
+time. At the other end, only `r nrow(best_corner)` neighbourhoods
+(`r fmt_n(hi_acc_high_dep)` children) combine high deprivation with good
+access.
+
+This is the strongest argument in the document for treating transport as
+a school-admissions instrument rather than a separate departmental
+concern. A city that wanted to widen real choice for its poorest
+families could do more with a bus timetable than with a catchment
+boundary --- and unlike a boundary change, it would take nothing away
+from anyone else.
+
+::: {.callout-note appearance="simple"}
+## What pupil-level data would add here
+
+This section works entirely with modelled journey times between
+neighbourhood centroids and school gates. The council holds the home
+postcode of every applicant and the school each was allocated. With
+that, the same analysis could be run on **journeys children actually
+make** rather than journeys they could in principle make --- and the gap
+between the two is precisely the quantity that would tell the city
+whether its transport network is a real constraint on choice or merely a
+theoretical one. Section 9 sets out what that request would look like.
+:::

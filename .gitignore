@@ -1,0 +1,19 @@
+# Quarto working files
+/.quarto/
+/_freeze/
+*_files/
+index.knit.md
+slides.knit.md
+
+# R session
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# The rendered site lives in docs/ and IS committed - GitHub Pages
+# serves from there. Nothing below docs/ should be ignored.
+
+# Scratch
+*.tmp
+*.carto_tmp

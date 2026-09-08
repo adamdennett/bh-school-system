@@ -1,0 +1,8 @@
+---
+title: "Brighton Secondary Schools"
+format: revealjs
+---
+
+## Placeholder
+
+Slides to follow once the analysis page is settled.

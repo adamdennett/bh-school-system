@@ -1,0 +1,44 @@
+project:
+  type: website
+  output-dir: docs
+  render:
+    - index.qmd
+    - slides.qmd
+
+website:
+  title: "Brighton Secondary Schools"
+  description: "A strategic view of the secondary school system in Brighton & Hove"
+  navbar:
+    left:
+      - href: index.qmd
+        text: "The analysis"
+      - href: slides.qmd
+        text: "Slides"
+    right:
+      - icon: github
+        href: https://github.com/adamdennett/bh-school-system
+  page-footer:
+    left: "Adam Dennett, UCL Centre for Advanced Spatial Analysis"
+    right: "Built from published data only"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    fig-cap-location: bottom
+    fig-width: 9
+    fig-height: 5.5
+    tbl-cap-location: top
+    link-external-newwindow: true
+    smooth-scroll: true
+
+execute:
+  warning: false
+  message: false
+  freeze: auto
