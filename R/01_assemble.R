@@ -182,8 +182,24 @@ sed_src <- file.path(SRC$sat, "data", "cache", "school_effect_decomp.rds")
 if (!file.exists(sed_src)) {
   say("! school_effect_decomp.rds not found; section 2.4 will fall back to the literature range")
 } else {
-  file.copy(sed_src, file.path(DATA, "school_effect_decomp.rds"), overwrite = TRUE)
   sed <- readRDS(sed_src)
+
+  # decomp_non was added by a later script and kept the original column
+  # names: it has "~Attainment 8 points" and an extra Variance column
+  # where decomp_all and decomp_dis have "Att8 points". Left alone this
+  # does not error - it returns NULL, then numeric(0), and fails much
+  # later somewhere unrelated. Normalise on the way in.
+  norm_decomp <- function(d) {
+    names(d)[names(d) == "~Attainment 8 points"] <- "Att8 points"
+    d[, intersect(c("Component", "Share of total %", "SD (log Att8)",
+                    "Att8 points"), names(d)), drop = FALSE]
+  }
+  for (k in c("decomp_all", "decomp_dis", "decomp_non"))
+    if (!is.null(sed[[k]])) sed[[k]] <- norm_decomp(sed[[k]])
+
+  cols <- lapply(sed[c("decomp_all", "decomp_dis", "decomp_non")], names)
+  stopifnot(length(unique(lapply(cols, sort))) == 1)
+  saveRDS(sed, file.path(DATA, "school_effect_decomp.rds"))
   say("copied: ", paste(intersect(names(sed), c("decomp_all", "decomp_dis", "decomp_non")),
                         collapse = ", "))
   wf <- sed$decomp_all[["Share of total %"]][
