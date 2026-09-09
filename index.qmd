@@ -88,6 +88,14 @@ ex_lh <- brt$at_original_beta %>%
 # here. Defined at the top because both the executive summary and
 # section 2.4 use it.
 SCHOOL_LO <- 8; SCHOOL_HI <- 15
+
+# Variance decomposition from the Lever model, for the summary. Section
+# 2.4 recomputes these from the same object.
+ex_sed <- bh_data("school_effect_decomp.rds")
+.pick <- function(d, pat) d[["Share of total %"]][grepl(pat, d$Component)][1]
+ex_wf_all <- .pick(ex_sed$decomp_all, "^Endogenous")
+ex_ex_all <- .pick(ex_sed$decomp_all, "^Exogenous")
+ex_wf_dis <- .pick(ex_sed$decomp_dis, "^Endogenous")
 ```
 
 ::: {.callout-note appearance="simple"}
@@ -133,19 +141,18 @@ social mixing --- established in detail in
 [How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html).
 
 **Moving children between schools is a weak instrument, and this is the
-single most important point for admissions policy.** Sixty years of
-school-effectiveness research puts the share of variation in pupil
-outcomes attributable to differences *between schools* at
-`r SCHOOL_LO`--`r SCHOOL_HI` per cent. Most of what separates one
-school's results from another's arrives with the children. A
-redistribution policy therefore works on the smallest term available
-while leaving the intake characteristics and circumstances that account
-for the other `r 100 - SCHOOL_HI`--`r 100 - SCHOOL_LO` per cent
-untouched. Nor can the measured drivers be separated: of the school-level
-variation deprivation, absence and prior attainment jointly explain,
-about three quarters is variance they *share*. This is not an argument
-that schools do not matter --- it is an argument that the council should
-not expect admissions changes to move attainment much.
+single most important point for admissions policy.** Decomposing the
+variance in Attainment 8 puts the part a school directly controls --- its
+workforce --- at **`r ex_wf_all`%**, against **`r ex_ex_all`%** inherited
+with the intake. For disadvantaged pupils, the group any mixing policy is
+aimed at, the school-controllable share falls to **`r ex_wf_dis`%**. Most
+of what separates one school's results from another's arrives with the
+children, and a redistribution policy works on the smallest term while
+leaving the rest untouched. Nor can the measured drivers be separated: of
+the school-level variation deprivation, absence and prior attainment
+jointly explain, about three quarters is variance they *share*. This is
+not an argument that schools do not matter --- it is an argument that the
+council should not expect admissions changes to move attainment much.
 
 **Admissions criteria only bind at some schools.**
 `r ex_open` of the `r nrow(ex_rat)` schools offered a place to every
@@ -406,12 +413,19 @@ band_sf <- st_sf(
   st_make_valid() %>%
   st_intersection(city) %>%
   filter(!st_is_empty(geometry)) %>%
+  # Simplify while still in metres. Contour bands off a 320 x 320 grid
+  # carry far more vertices than a screen can show; 15 m is invisible at
+  # any zoom this map offers and cuts the embedded geometry sharply.
+  # This has to happen before the transform - in 4326 the tolerance
+  # would be read as degrees and flatten the whole surface.
+  st_simplify(dTolerance = 15, preserveTopology = TRUE) %>%
   st_transform(4326)
 
 band_sf$col <- pal_d[seq_len(nrow(band_sf))]
 band_sf$lab <- sprintf("%g - %g children per hectare", band_sf$lo, band_sf$hi)
 
-leaflet(width = "100%", height = 600) %>%
+leaflet(width = "100%", height = 600,
+        options = leafletOptions(preferCanvas = TRUE)) %>%
   addProviderTiles(providers$CartoDB.Positron) %>%
   addPolygons(data = band_sf, fillColor = ~col, fillOpacity = 0.72,
               color = NA, weight = 0, label = ~lab, group = "Children") %>%
@@ -443,7 +457,13 @@ pal_idaci <- colorFactor("RdYlBu", domain = sort(unique(pcd_sf$idaci_decile)))
 # 4,229 postcodes against 179 LSOAs, so the same per-circle size would
 # cover the city in a single wash of ink. The median postcode draws at
 # about 3.5 px and the largest at about 9.
-leaflet(width = "100%", height = 600) %>%
+#
+# preferCanvas matters here rather than being a nicety. Leaflet's
+# default renderer gives every marker its own SVG element, and four
+# thousand of them is enough to hang or crash a browser tab. On canvas
+# they are drawn into a single element and the map stays responsive.
+leaflet(width = "100%", height = 600,
+        options = leafletOptions(preferCanvas = TRUE)) %>%
   addProviderTiles(providers$CartoDB.Positron) %>%
   addPolygons(data = catch, fill = FALSE, color = "#333333",
               weight = 1.6, opacity = 0.7, group = "Catchments",
@@ -780,68 +800,115 @@ schools* --- as opposed to differences in the pupils they admit and the
 circumstances those pupils bring with them --- is somewhere in the order
 of **`r SCHOOL_LO` to `r SCHOOL_HI` per cent**. The landmark English
 study settled on about a tenth [@SmithTomlinson1989], and the finding
-has held up across countries and phases [@TeddlieReynolds2000]. The
-decomposition in *How to Pull the Right Lever* recovers the same order
-of magnitude.
+has held up across countries and phases [@TeddlieReynolds2000].
+
+The multilevel model behind *How to Pull the Right Lever* decomposes
+that variance directly, and lands in the same place.
 
 ```{r fig-school-share}
-#| fig-cap: "Left: the share of variation in pupil outcomes attributable to differences between schools, from the school-effectiveness literature. Right: how the explained variance in school-level Attainment 8 divides between the three main intake measures, by Shapley decomposition."
-#| fig-height: 4.2
+#| fig-cap: "Where the variance in school-level Attainment 8 sits, decomposed from the multilevel model. The workforce term is the part a school directly controls. The persistent school effect is what remains once everything measured is accounted for, and is an upper bound: it bundles genuine school ethos and management with anything unmeasured about the catchment, such as cultural capital or parental motivation."
+#| fig-height: 6.4
 
-share_df <- tibble(
-  part = factor(c("Between schools", "Pupils, homes, circumstances"),
-                levels = c("Between schools", "Pupils, homes, circumstances")),
-  lo = c(SCHOOL_LO, 100 - SCHOOL_HI), hi = c(SCHOOL_HI, 100 - SCHOOL_LO),
-  mid = (lo + hi) / 2)
+sed <- bh_data("school_effect_decomp.rds")
 
-pA <- ggplot(share_df, aes(x = 1, y = mid, fill = part)) +
-  geom_col(width = 0.55, colour = "white") +
-  geom_text(aes(label = ifelse(part == "Between schools",
-                               sprintf("%g-%g%%", lo, hi),
-                               sprintf("%g-%g%%", lo, hi))),
-            position = position_stack(vjust = 0.5),
-            colour = "white", fontface = "bold", size = 3.6) +
-  scale_fill_manual(values = c("Between schools" = "#b2182b",
-                               "Pupils, homes, circumstances" = "#9aa5b1"),
-                    name = NULL) +
-  coord_flip() +
-  labs(x = NULL, y = "Share of variation in pupil outcomes (%)",
-       subtitle = "What a school itself accounts for\n(pupil level, from the literature)") +
+GRP_COL <- c("Inherited (exogenous)"    = "#49a0c4",
+             "Persistent school effect" = "#6A4C93",
+             "Workforce"                = "#ED357D",
+             "Place / noise"            = "#BBBBBB")
+
+prep <- function(d, who) {
+  d %>%
+    mutate(grp_type = case_when(
+             grepl("^Exogenous", Component)  ~ "Inherited (exogenous)",
+             grepl("^Endogenous", Component) ~ "Workforce",
+             Component == "School (persistent, unexplained)" ~ "Persistent school effect",
+             TRUE ~ "Place / noise"),
+           grp_type = factor(grp_type, levels = names(GRP_COL)),
+           who = who)
+}
+
+decomp <- bind_rows(prep(sed$decomp_all, "All pupils"),
+                    prep(sed$decomp_dis, "Disadvantaged pupils")) %>%
+  mutate(who = factor(who, c("All pupils", "Disadvantaged pupils")),
+         # Order components by the all-pupil share so both panels read
+         # in the same order and can be compared row by row.
+         Component = fct_reorder(Component,
+                                 ifelse(who == "All pupils", `Share of total %`, 0),
+                                 .fun = max))
+
+ggplot(decomp, aes(`Share of total %`, Component, fill = grp_type)) +
+  geom_col(width = 0.72) +
+  geom_text(aes(label = paste0(`Share of total %`, "%")),
+            hjust = -0.15, size = 3.1) +
+  facet_wrap(~ who, ncol = 1) +
+  scale_fill_manual(values = GRP_COL, name = NULL) +
+  scale_x_continuous(limits = c(0, 72), expand = expansion(mult = c(0, 0.02))) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(x = "Share of total outcome variance (%)", y = NULL,
+       title = "Most of what separates schools' results arrives with the children",
+       subtitle = "Variance decomposition from the multilevel model in How to Pull the Right Lever",
+       caption = "Source: How to Pull the Right Lever, school effect decomposition.") +
   theme_bh(11) +
-  theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank(),
-        legend.position = "bottom", legend.text = element_text(size = 8))
+  theme(legend.position = "bottom", panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(size = 8.5),
+        strip.text = element_text(face = "bold", hjust = 0))
+```
 
-pB <- tibble(term = LAB[three], share = shap_share) %>%
+```{r decomp-stats}
+#| include: false
+pick <- function(d, pat) d[["Share of total %"]][grepl(pat, d$Component)][1]
+wf_all  <- pick(sed$decomp_all, "^Endogenous")
+ex_all  <- pick(sed$decomp_all, "^Exogenous")
+sch_all <- pick(sed$decomp_all, "^School \\(persistent")
+wf_dis  <- pick(sed$decomp_dis, "^Endogenous")
+ex_dis  <- pick(sed$decomp_dis, "^Exogenous")
+sch_dis <- pick(sed$decomp_dis, "^School \\(persistent")
+```
+
+For all pupils, the part a school **directly controls** --- its
+workforce --- accounts for **`r wf_all`%** of the variance. The hand it
+is dealt accounts for **`r ex_all`%**. Even the persistent school
+effect, at `r sch_all`%, is an upper bound: it is what is left once
+everything measured is accounted for, so it bundles genuine school
+ethos and leadership together with anything unmeasured about the
+catchment --- cultural capital, parental motivation, and the rest.
+
+**For disadvantaged pupils --- the group any mixing policy is aimed at
+--- the workforce term falls to `r wf_dis`%**, against `r ex_dis`%
+inherited, with a persistent school effect of `r sch_dis`%. The lever
+gets *smaller*, not larger, precisely where the policy is pointed.
+
+```{r fig-shapley}
+#| fig-cap: "How the explained variance in school-level Attainment 8 divides between the three main intake measures, by Shapley decomposition."
+#| fig-height: 3
+
+tibble(term = LAB[three], share = shap_share) %>%
   ggplot(aes(reorder(term, share), share)) +
-  geom_col(fill = "#2166ac", width = 0.62) +
+  geom_col(fill = "#2166ac", width = 0.6) +
   geom_text(aes(label = fmt_pct(share, 0)), hjust = -0.18, size = 3.4) +
   coord_flip() +
   scale_y_continuous(limits = c(0, max(shap_share) * 1.22)) +
   labs(x = NULL, y = "Share of explained variance (%)",
-       subtitle = sprintf("How that intake divides\n(school level, R² = %.2f)", r2_all)) +
+       title = "And within that inherited share, how it divides",
+       subtitle = sprintf("Shapley decomposition of school-level Attainment 8 (R² = %.2f)", r2_all),
+       caption = "Source: DfE performance tables.") +
   theme_bh(11) +
   theme(panel.grid.major.y = element_blank())
-
-(pA | pB) +
-  plot_annotation(
-    title = "Most of what separates schools' results arrives with the children",
-    caption = "Sources: Coleman (1966); Smith & Tomlinson (1989); Teddlie & Reynolds (2000); DfE performance tables.",
-    theme = theme_bh())
 ```
 
 Two things follow, and together they are the most important finding in
 this section for the decisions in front of the council.
 
-**Moving children between schools operates on the small term.** If
-`r SCHOOL_LO`--`r SCHOOL_HI` per cent of the variation in outcomes is
-attributable to schools, then redistributing pupils works on that share
-while leaving untouched the `r 100 - SCHOOL_HI`--`r 100 - SCHOOL_LO` per
-cent that arrives with them. It changes *which* school a child attends
-without changing the intake characteristics and social circumstances
-that account for most of the rest. A policy of social mixing through
-admissions is therefore working on the smaller term by construction ---
-not because mixing is undesirable, but because the arithmetic limits
-what it can deliver.
+**Moving children between schools operates on the small term.**
+Redistributing pupils changes *which* school a child attends. It does
+not change the intake characteristics and social circumstances that
+account for `r ex_all`% of the variance, and it does not touch the
+workforce that accounts for `r wf_all`%. A policy of social mixing
+through admissions is therefore working on the smaller term by
+construction --- not because mixing is undesirable, but because the
+arithmetic limits what it can deliver. And the limit is tightest for
+disadvantaged pupils, where the school-controllable share is
+`r wf_dis`%.
 
 **And the measured drivers cannot be cleanly separated anyway.** Of the
 `r fmt_pct(100 * r2_all, 0)` of school-level variation the three
@@ -859,12 +926,12 @@ attached to the other two.
 ::: {.callout-important}
 ## What this does and does not say
 
-It does **not** say schools do not matter. A tenth of the variance
-across three and a half thousand secondary schools is a great deal, and
-section 2.3 showed Brighton's schools mostly performing above what their
-intakes predict. Nor does it say that segregation between schools is
-acceptable; there are fairness arguments for mixed intakes that have
-nothing to do with attainment.
+It does **not** say schools do not matter. A persistent school effect of
+`r sch_all`% across three and a half thousand secondary schools is a
+great deal, and section 2.3 showed Brighton's schools mostly performing
+above what their intakes predict. Nor does it say that segregation
+between schools is acceptable; there are fairness arguments for mixed
+intakes that have nothing to do with attainment.
 
 What it says is narrower and harder to argue with: **the council should
 not expect a redistribution policy to move attainment much**, because

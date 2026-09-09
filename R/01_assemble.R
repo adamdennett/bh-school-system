@@ -169,6 +169,30 @@ if (!file.exists(panel_src)) {
 # Brighton & Hove only - it does not extend to the Peacehaven area, so
 # anything built from it is a city map, not a study-area map.
 
+# ---- 5b. Variance decomposition -------------------------------------
+# Where the variance in school-level Attainment 8 actually sits, from
+# the multilevel model behind "How to Pull the Right Lever". This is the
+# model-derived version of the school-effects question: what share is
+# inherited with the intake, what share is the workforce the school
+# directly controls, and what is left over as a persistent school effect.
+
+message("\n=== variance decomposition ===")
+sed_src <- file.path(SRC$sat, "data", "cache", "school_effect_decomp.rds")
+
+if (!file.exists(sed_src)) {
+  say("! school_effect_decomp.rds not found; section 2.4 will fall back to the literature range")
+} else {
+  file.copy(sed_src, file.path(DATA, "school_effect_decomp.rds"), overwrite = TRUE)
+  sed <- readRDS(sed_src)
+  say("copied: ", paste(intersect(names(sed), c("decomp_all", "decomp_dis", "decomp_non")),
+                        collapse = ", "))
+  wf <- sed$decomp_all[["Share of total %"]][
+    grepl("^Endogenous", sed$decomp_all$Component)]
+  ex <- sed$decomp_all[["Share of total %"]][
+    grepl("^Exogenous", sed$decomp_all$Component)]
+  say("all pupils: workforce ", wf, "%, inherited ", ex, "%")
+}
+
 message("\n=== postcode child population ===")
 pcd_src <- file.path(SRC$consult, "bn_postcodes_pop1.csv")
 
