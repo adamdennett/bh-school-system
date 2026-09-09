@@ -75,7 +75,8 @@ prefs <- fp$factsheets %>%
   group_by(name) %>%
   summarise(p1 = mean(pref1, na.rm = TRUE),
             p2 = mean(pref2, na.rm = TRUE),
-            p3 = mean(pref3, na.rm = TRUE), .groups = "drop")
+            p3 = mean(pref3, na.rm = TRUE),
+            allocated = mean(off_total, na.rm = TRUE), .groups = "drop")
 
 attr_ <- oi$attract %>%
   select(name, pan, W_pan) %>%
@@ -89,10 +90,24 @@ attr_ <- oi$attract %>%
          # record that it is imputed.
          imputed = is.na(pref_score))
 
-ppp <- with(attr_, mean(pref_score / pan, na.rm = TRUE))
+ppp  <- with(attr_, mean(pref_score / pan, na.rm = TRUE))
+apc  <- with(attr_, mean(allocated / pan, na.rm = TRUE))
+p1pc <- with(attr_, mean(p1 / pan, na.rm = TRUE))
+
 attr_ <- attr_ %>%
-  mutate(pref_score = if_else(imputed, pan * ppp, pref_score),
-         W_pref = pref_score / mean(pref_score))
+  mutate(
+    pref_score = if_else(imputed, pan * ppp, pref_score),
+    p1_f       = if_else(imputed, pan * p1pc, p1),
+    alloc_f    = if_else(imputed, pan * apc, allocated),
+    # Four candidate specifications, each normalised to mean 1 so they
+    # are on a common footing:
+    #   W_pan    admission number - what the authority decided to offer
+    #   W_p1     first preferences - what families asked for first
+    #   W_alloc  places actually allocated - what the system delivered
+    #   W_pref   rank-weighted preferences - the specification used here
+    W_p1    = p1_f / mean(p1_f),
+    W_alloc = alloc_f / mean(alloc_f),
+    W_pref  = pref_score / mean(pref_score))
 
 message(sprintf("  Attractiveness from %d years of published preferences, decay %.2f",
                 PREF_YEARS, PREF_DECAY))
@@ -116,9 +131,16 @@ stopifnot(all(costs$name %in% attr_$name))
 # value where there is one, and report the surface at the ends of the
 # swept range too, so a reader can see how much the choice matters.
 
-beta_ref <- suppressWarnings(as.numeric(env$reference_beta))
-if (!length(beta_ref) || !is.finite(beta_ref)) beta_ref <- as.numeric(br$beta_original)
-if (!is.finite(beta_ref)) beta_ref <- stats::median(env$betas)
+# Set explicitly rather than taken from the open model's default of 1.5.
+# 1.7 is a reasonable central value for distance decay in a system of
+# this kind: journeys are short, alternatives are close together, and
+# the published sweep runs from 1.5 to 3.2. It is a judgement, not an
+# estimate - calibrating beta needs pupil-level flows the council has
+# not released - and the surface is reported across the swept range as
+# well, so nothing here rests on the exact figure.
+BETA_REF <- 1.7
+
+beta_ref <- BETA_REF
 beta_lo <- min(env$betas); beta_hi <- max(env$betas)
 message(sprintf("  beta reference %.2f (swept range %.1f to %.1f)",
                 beta_ref, beta_lo, beta_hi))
@@ -311,6 +333,18 @@ message(sprintf(
   "  Preference-weighted vs admission-number W: Spearman %.3f, same decile %.0f%%, within one %.0f%%",
   w_rho, 100 * w_dec, 100 * w_dec1))
 
+# The same comparison across all four specifications, at LSOA level.
+w_specs <- c("W_pan", "W_p1", "W_alloc", "W_pref")
+w_surface <- purrr::map_dfc(w_specs, function(w) {
+  s <- hansen(beta_ref, w) %>%
+    inner_join(zones %>% select(zone, lsoa, Oi), by = "zone") %>%
+    group_by(lsoa) %>% summarise(A = wmean(A, Oi), .groups = "drop")
+  setNames(tibble(s$A), w)
+})
+w_cor <- cor(w_surface, method = "spearman")
+message("\n  Accessibility surface under each attractiveness specification (Spearman):")
+print(round(w_cor, 3))
+
 decile_flip <- acc_lsoa %>%
   mutate(d_grav = ntile(A_hansen, 10), d_cum = ntile(places_30, 10)) %>%
   summarise(same = mean(d_grav == d_cum), within1 = mean(abs(d_grav - d_cum) <= 1))
@@ -348,6 +382,7 @@ saveRDS(list(
   pref = list(decay = PREF_DECAY, years = PREF_YEARS,
               imputed = attr_$name[attr_$imputed]),
   w_check = list(spearman = w_rho, same_decile = w_dec, within_one = w_dec1),
+  w_cor = w_cor, w_specs = w_specs,
   city = city,
   thresh_grid = THRESH_GRID,
   thresh_long = thresh_long,

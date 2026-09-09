@@ -2077,6 +2077,140 @@ acc_scenario_map <- function(col_now, col_elm, pal, legend_title) {
 }
 ```
 
+### First, what makes a school attractive? {#sec-attractiveness}
+
+Both measures need a weight for each school --- some number saying how
+much school is there. The choice is not obvious, and it is worth setting
+out before the maps rather than burying it in a footnote afterwards.
+
+There are four candidates, each answering a different question.
+
+| Specification | What it measures | Question it answers |
+|:--|:--|:--|
+| **Admission number** | places the school is allowed to fill | What did the authority decide to provide? |
+| **First preferences** | families naming it first | What did families ask for? |
+| **Places allocated** | offers actually made | What did the system deliver? |
+| **Weighted preferences** | ranks 1--3 with geometric decay | What did families want, allowing for the ordering the rules force on them? |
+
+The **admission number** is the obvious choice and the weakest. It is an
+administrative decision, revised occasionally by the authority, and it
+says nothing about whether anyone wants the places. Longhill has the
+third-largest admission number in the city and the fewest first
+preferences of any school; on a PAN weighting it counts as one of
+Brighton's more attractive destinations, which is plainly wrong.
+
+**First preferences** fix that but introduce a different distortion. In
+the two paired catchments a family has to rank the two local schools
+against each other, so the catchment's first preferences are split
+between them while its second preferences accumulate. The signature is
+unmistakable in the data, and it means counting firsts alone marks down
+precisely the schools whose catchment obliges families to put them
+second.
+
+**Places allocated** measures what happened rather than what was wanted.
+That makes it a poor attractiveness measure for exactly the schools this
+document is about: an undersubscribed school allocates every place it is
+asked for, so allocation tracks capacity rather than desire at the
+bottom of the range.
+
+**Weighted preferences** --- counting all three ranks with a geometric
+decay of $\alpha = `r acc$pref$decay`$ --- is what the maps below use. It
+keeps the information in the second and third choices without treating
+them as equal to a first.
+
+```{r tbl-attractiveness}
+#| tbl-cap: "The four specifications, normalised so each averages 1 across the eleven schools. The ratio of second to first preferences separates the paired catchments from the single-school ones almost perfectly."
+
+acc$attract %>%
+  left_join(oi$schools %>% select(name, catchment), by = "name") %>%
+  mutate(kind = case_when(
+           is.na(catchment) ~ "Faith, city-wide",
+           catchment %in% c("DS_Varndean", "Hove_Blatch") ~ "Paired",
+           TRUE ~ "Single-school")) %>%
+  arrange(desc(W_pref)) %>%
+  transmute(School = name, Catchment = kind,
+            `2nd / 1st` = ifelse(imputed, "--", sprintf("%.2f", p2 / p1)),
+            `Admission no.` = sprintf("%.2f", W_pan),
+            `1st prefs` = sprintf("%.2f", W_p1),
+            `Allocated` = sprintf("%.2f", W_alloc),
+            `Weighted prefs` = sprintf("%.2f", W_pref)) %>%
+  knitr::kable(align = "llrrrrr")
+```
+
+The four schools in paired catchments have second-to-first ratios
+between 1.0 and 2.0; the four in single-school catchments, between 0.4
+and 0.6.
+
+```{r fig-attractiveness}
+#| fig-cap: "The four specifications compared. Schools are ordered by the weighted-preference weight. Where the points for a school spread out, the choice of specification matters for that school."
+#| fig-height: 5.6
+
+wlong <- acc$attract %>%
+  select(name, W_pan, W_p1, W_alloc, W_pref) %>%
+  pivot_longer(-name, names_to = "spec", values_to = "w") %>%
+  mutate(spec = factor(spec, c("W_pan", "W_p1", "W_alloc", "W_pref"),
+                       c("Admission number", "First preferences",
+                         "Places allocated", "Weighted preferences")))
+
+ord <- acc$attract %>% arrange(W_pref) %>% pull(name)
+
+wlong %>%
+  mutate(name = factor(name, ord)) %>%
+  ggplot(aes(w, name)) +
+  geom_line(aes(group = name), colour = "grey72", linewidth = 0.8) +
+  geom_point(aes(colour = spec), size = 2.8) +
+  geom_vline(xintercept = 1, linetype = "31", colour = "grey45") +
+  scale_colour_manual(values = c("Admission number"    = "#999999",
+                                 "First preferences"   = "#2166ac",
+                                 "Places allocated"    = "#4daf4a",
+                                 "Weighted preferences" = "#b2182b"),
+                      name = NULL) +
+  labs(x = "Attractiveness weight (1 = city average)", y = NULL,
+       title = "The four specifications broadly agree, and disagree where it matters",
+       subtitle = "Each school's four weights, joined by a grey line. The dashed line is the city average.",
+       caption = "Sources: BHCC allocation factsheets; published admission numbers.") +
+  theme_bh(11) +
+  theme(legend.position = "top", panel.grid.major.y = element_blank())
+```
+
+```{r w-stats}
+#| include: false
+wsp <- acc$attract %>%
+  mutate(spread = pmax(W_pan, W_p1, W_alloc, W_pref) -
+                  pmin(W_pan, W_p1, W_alloc, W_pref)) %>%
+  arrange(desc(spread))
+w_off <- acc$w_cor[upper.tri(acc$w_cor)]   # the six off-diagonal pairs
+```
+
+The lines are mostly short: for most schools the four specifications
+agree closely, and the choice would not matter much. They spread
+furthest for **`r and_list(head(wsp$name, 3))`**, for three different
+reasons --- Longhill because its admission number is generous relative
+to any measure of demand, Varndean because the paired catchment splits
+its first preferences with Dorothy Stringer, and Cardinal Newman because
+it admits city-wide on faith criteria, so what it is asked for and what
+it allocates diverge from what it is sized for.
+
+::: {.callout-note appearance="simple"}
+## And the surface barely notices
+
+It is worth knowing how little of this propagates. Recomputing the
+accessibility surface under each of the four weightings gives
+neighbourhood-level rankings that correlate between
+`r sprintf("%.3f", min(w_off))` and
+`r sprintf("%.3f", max(w_off))` across all six pairs. The weighting
+matters a great deal for what you say about an individual school and
+very little for the map, because the measure sums over eleven of them.
+
+Two limitations do matter more than the choice between the four.
+**Peacehaven Community School is in Lewes district** and does not appear
+in the council's factsheets, so it has no preference or allocation data;
+its weight is imputed from its admission number at the city-average
+rate. And none of these counts is divided by the admission number,
+because what should be within reach is *places families want*, which
+scales with the size of the school.
+:::
+
 ### Measure one: gravity accessibility {#sec-acc-gravity}
 
 $$A_i = \sum_j W_j \, c_{ij}^{-\beta}$$
@@ -2085,7 +2219,7 @@ $$A_i = \sum_j W_j \, c_{ij}^{-\beta}$$
 |:--|:--|
 | $A_i$ | the accessibility of neighbourhood $i$ --- the quantity mapped below |
 | $j$ | a school; the sum runs over all `r nrow(acc$attract)` in the study area |
-| $W_j$ | how much *wanted* school there is at $j$, from expressed preferences |
+| $W_j$ | the weighted-preference attractiveness set out above |
 | $c_{ij}$ | routed walk-and-bus minutes from $i$ to $j$, weekday morning |
 | $\beta$ | distance decay: how sharply demand falls away with travel time, set at `r sprintf("%.1f", acc$beta$ref)` |
 
@@ -2094,6 +2228,20 @@ how far away it is. A neighbourhood with one school ten minutes away and
 nothing else scores lower than one with three schools at fifteen
 minutes, which is the point of the measure. The result has no units, so
 it is indexed with today's child-weighted city average at 100.
+
+::: {.callout-note appearance="simple"}
+## Where $\beta$ comes from
+
+$\beta$ is set at **`r sprintf("%.1f", acc$beta$ref)`**. This is a
+judgement rather than an estimate: calibrating it properly needs
+pupil-level flows, which the council has not released. It is a
+reasonable central value for a system of this kind --- journeys are
+short and the alternatives sit close together --- and it lies inside the
+`r sprintf("%.1f", acc$beta$lo)`--`r sprintf("%.1f", acc$beta$hi)` range
+the open model sweeps in section 7. Nothing in this section turns on the
+exact figure; the surface is stored at the ends of that range as well,
+and the ordering of neighbourhoods is stable across it.
+:::
 
 ```{r fig-acc-gravity}
 #| fig-cap: "Gravity accessibility to secondary school places. Indexed so today's child-weighted city average is 100, and both scenarios use that same base, so the Elm Grove layer can be read against it directly."
@@ -2442,63 +2590,6 @@ acc$lsoa %>%
   theme_bh()
 ```
 
-::: {.callout-note}
-## Why attractiveness is measured from preferences, not admission numbers
-
-An admission number is set by the authority. It says how many places
-exist, not whether anyone wants them. Longhill has the third-largest
-admission number in the city and the fewest first preferences of any
-school --- on a PAN-based weighting it would count as one of the most
-attractive destinations in Brighton, which is plainly wrong.
-
-Expressed preferences are the better signal, but **first preferences
-alone will not do either**, because the catchment structure distorts
-them. In the two paired catchments a family has to rank the two local
-schools against each other, so the catchment's first preferences are
-split between them while its second preferences accumulate. The
-signature is unmistakable:
-
-```{r tbl-attractiveness}
-#| tbl-cap: "Attractiveness weights. The ratio of second to first preferences separates the paired catchments from the single-school ones almost perfectly."
-
-acc$attract %>%
-  left_join(oi$schools %>% select(name, catchment), by = "name") %>%
-  mutate(kind = case_when(
-           is.na(catchment) ~ "Faith, city-wide",
-           catchment %in% c("DS_Varndean", "Hove_Blatch") ~ "Paired catchment",
-           TRUE ~ "Single-school catchment")) %>%
-  arrange(desc(W_pref)) %>%
-  transmute(School = name, Catchment = kind, PAN = pan,
-            `1st prefs` = ifelse(imputed, "--", sprintf("%.0f", p1)),
-            `2nd prefs` = ifelse(imputed, "--", sprintf("%.0f", p2)),
-            `2nd / 1st` = ifelse(imputed, "--", sprintf("%.2f", p2 / p1)),
-            `W (admission no.)` = sprintf("%.2f", W_pan),
-            `W (preferences)` = sprintf("%.2f", W_pref)) %>%
-  knitr::kable(align = "llrrrrrr")
-```
-
-The four schools in paired catchments have second-to-first ratios
-between 1.0 and 2.0; the four in single-school catchments, between 0.4
-and 0.6. Counting first preferences alone would mark down precisely the
-schools whose catchment obliges families to put them second --- Hove
-Park and Dorothy Stringer most of all.
-
-Two limitations follow, and both matter more than the choice of
-$\alpha$. **Peacehaven Community School is in Lewes district** and does
-not appear in the council's factsheets, so it has no preference data;
-its weight is imputed from its admission number at the city-average
-rate. And the count is deliberately **not** divided by the admission
-number, because what should be within reach is *places families want*,
-which scales with the size of the school.
-
-**The surface is not sensitive to any of this.** Recomputed on
-admission-number weights instead, it correlates with the version mapped
-here at
-`r sprintf("%.2f", acc$w_check$spearman)`, with
-`r fmt_pct(100 * acc$w_check$within_one, 0)` of neighbourhoods within one
-decile. The weighting changes individual schools a great deal and the
-map very little, because the measure sums over eleven of them.
-:::
 
 ::: {.callout-warning appearance="simple"}
 ## Two caveats that bear on these numbers
