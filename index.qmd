@@ -2025,7 +2025,31 @@ amount to when their first preference is full.
 Two measures are used here, deliberately, because they fail in opposite
 directions.
 
+```{r acc-map-data}
+#| include: false
+
+acc_map <- lsoa_lite %>%
+  inner_join(acc$lsoa, by = c("lsoa21cd" = "lsoa"))
+
+# Both measures share the same label, so a reader switching tabs can see
+# the two numbers for whichever neighbourhood they are hovering over.
+acc_lab <- sprintf(
+  "%s | gravity index %.0f | %.0f places within 30 min | nearest %s, %.0f min",
+  acc_map$lsoa21nm, acc_map$A_index, acc_map$places_30,
+  acc_map$nearest_school, acc_map$nearest_min)
+
+pal_grav <- colorNumeric("viridis", domain = acc_map$A_index, reverse = TRUE)
+pal_cum  <- colorNumeric("viridis", domain = acc_map$places_30, reverse = TRUE)
+
+acc_base <- function() {
+  leaflet(width = "100%", height = 560,
+          options = leafletOptions(preferCanvas = TRUE)) %>%
+    addProviderTiles(providers$CartoDB.Positron)
+}
+```
+
 ::: {.panel-tabset}
+
 ### Gravity
 
 $$A_i = \sum_j W_j \, c_{ij}^{-\beta}$$
@@ -2037,6 +2061,19 @@ walk-and-bus time, and $\beta$ the distance decay --- set here at
 section 7. The number has no units, so it is indexed with the
 child-weighted city average at 100.
 
+```{r fig-acc-gravity}
+#| fig-cap: "Gravity accessibility to secondary school places. Indexed so the child-weighted city average is 100. Darker means less school within reach."
+#| fig-height: 6
+
+acc_base() %>%
+  addPolygons(data = acc_map, fillColor = ~pal_grav(A_index),
+              fillOpacity = 0.8, color = "white", weight = 0.3,
+              label = acc_lab) %>%
+  addLegend(pal = pal_grav, values = acc_map$A_index,
+            title = "Gravity index<br>(city average = 100)",
+            position = "bottomright", opacity = 0.85)
+```
+
 ### Cumulative opportunity
 
 $$P_i(t) = \sum_j \mathrm{PAN}_j \cdot \mathbf{1}(c_{ij} \le t)$$
@@ -2045,29 +2082,53 @@ The number of school places reachable inside $t$ minutes. Trivial to
 explain --- "how many places can you get to in half an hour" --- but it
 treats a 29-minute journey and a 31-minute journey as entirely different
 things.
-:::
 
-```{r fig-accessibility}
-#| fig-cap: "Potential accessibility to secondary school places, by neighbourhood. Indexed so that the child-weighted city average is 100. Darker means less school within reach."
+```{r fig-acc-cumulative}
+#| fig-cap: "School places reachable within 30 minutes by walking and bus. Darker means fewer places within reach; the darkest areas can reach none at all."
 #| fig-height: 6
 
-acc_map <- lsoa %>%
-  inner_join(acc$lsoa, by = c("lsoa21cd" = "lsoa"))
-
-pal_acc <- colorNumeric("viridis", domain = acc_map$A_index, reverse = TRUE)
-
-leaflet(width = "100%", height = 560) %>%
-  addProviderTiles(providers$CartoDB.Positron) %>%
-  addPolygons(data = acc_map,
-              fillColor = ~pal_acc(A_index), fillOpacity = 0.8,
-              color = "white", weight = 0.4,
-              label = ~sprintf(
-                "%s | index %.0f | %.0f places within 30 min | nearest %s, %.0f min",
-                lsoa21nm, A_index, places_30, nearest_school, nearest_min)) %>%
-  addLegend(pal = pal_acc, values = acc_map$A_index,
-            title = "Accessibility<br>index", position = "bottomright",
-            opacity = 0.85)
+acc_base() %>%
+  addPolygons(data = acc_map, fillColor = ~pal_cum(places_30),
+              fillOpacity = 0.8, color = "white", weight = 0.3,
+              label = acc_lab) %>%
+  addLegend(pal = pal_cum, values = acc_map$places_30,
+            title = "Places within<br>30 minutes",
+            position = "bottomright", opacity = 0.85)
 ```
+
+:::
+
+```{r acc-disagree}
+#| include: false
+dec <- acc$lsoa %>%
+  mutate(d_grav = ntile(A_index, 10), d_cum = ntile(places_30, 10),
+         diff = d_cum - d_grav)
+mean_dec <- mean(abs(dec$diff))
+# The sharpest kind of disagreement: comfortable on the gravity measure,
+# nothing at all reachable on the cumulative one.
+stranded <- dec %>% filter(places_30 < 1, d_grav >= 6)
+```
+
+The two maps agree on the broad shape of the city --- they correlate at
+`r sprintf("%.2f", acc$agreement$spearman)` --- and disagree
+substantially in the detail, which is exactly what makes showing both
+worthwhile. A neighbourhood sits an average of
+**`r sprintf("%.1f", mean_dec)` deciles apart** between the two, and some
+sit six deciles apart.
+
+The disagreement is not random. The cumulative map has a hard edge the
+gravity map does not: **`r nrow(stranded)` neighbourhoods score in the
+better half of the city on the gravity measure and can still reach no
+school place at all within 30 minutes.** Their nearest school sits a few
+minutes the wrong side of the threshold, so the gravity measure --- which
+discounts smoothly rather than cutting off --- records them as adequately
+served while a parent with a bus timetable would not.
+
+Which map is right depends on the question. If you are asking how much
+school is notionally within reach, the gravity surface is the better
+description. If you are asking whether a child can get to a school in a
+morning, the threshold is the thing that matters, and the cumulative map
+is showing you something real that the gravity map hides.
 
 ```{r acc-stats}
 #| include: false
