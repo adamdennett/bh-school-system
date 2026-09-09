@@ -1771,6 +1771,126 @@ network and bus timetable for the area, for a weekday morning arrival.
 They include walking to the stop, waiting, the ride itself, and any
 transfer.
 
+## What counts as a long journey to school? {#sec-benchmarks}
+
+Before mapping anything it is worth fixing what these minutes mean,
+because a number like "twenty-eight minutes" is only interpretable
+against something.
+
+```{r benchmark-stats}
+#| include: false
+bm  <- acc$benchmarks
+sta <- acc$statutory
+```
+
+| Benchmark | Figure | Source |
+|:--|:--|:--|
+| Average one-way school trip, England | **`r bm$nts_min` minutes** | National Travel Survey, five-year average to 2019 |
+| Average one-way trip distance | **`r bm$nts_miles` miles** | as above |
+| Statutory maximum, secondary age | **`r bm$dfe_max_sec` minutes** each way | DfE home-to-school travel guidance |
+| Statutory maximum, primary age | **`r bm$dfe_max_pri` minutes** each way | as above |
+
+Two cautions about the `r bm$nts_min`-minute average. It covers **ages 5
+to 16 together**, and secondary journeys are longer than primary ones,
+so it understates the secondary figure. And it counts **all modes**,
+including the car --- which carries
+`r 30`% of secondary school trips nationally against
+`r 18`% by local bus. The journeys modelled here are walking and bus
+only, so they describe the trip facing a family without a car. That is
+the right comparison for this document, but it is not a like-for-like
+one with the national number.
+
+The `r bm$dfe_max_sec`-minute figure is firmer. It is the Department for
+Education's guidance on how long a home-to-school journey should
+reasonably take for a child of secondary age, each way, including
+walking to a pick-up point.
+
+::: {.callout-important}
+## A correction to the routed times, and why it matters
+
+The routed matrix returns a walk-and-bus itinerary for every
+neighbourhood-school pair. Where the bus network is awkward it returns a
+poor one: **`r fmt_pct(100 * acc$walk_fallback$share, 0)` of the
+`r fmt_n(acc$walk_fallback$total)` neighbourhood-school pairs were
+modelled as taking longer than simply walking the distance would**. In
+the worst case a journey of about four kilometres came out at 99
+minutes.
+
+That is a property of the router, not of the city. A family facing a
+99-minute bus ride to a school four kilometres away walks instead. So
+every journey is now the **lesser of the routed bus time and the time it
+would take to walk**, and the bus is used only where it is genuinely
+faster.
+
+The walking pace is not invented. Kent et al. [-@Kent2026], a systematic
+review of active school travel, finds children's mean walking trip to
+school is **`r fmt_n(acc$walk_fallback$review$dist_m)` metres in
+`r sprintf("%.1f", acc$walk_fallback$review$time_min)` minutes** ---
+`r sprintf("%.2f", acc$walk_fallback$kmh)` km/h --- and that is the speed
+used, with a circuity factor of `r acc$walk_fallback$circuity` to turn
+straight-line distance into street distance.
+
+::: {.callout-note appearance="simple"}
+## This is a ceiling, not a claim about how children travel
+
+The same review finds children walk about a kilometre on average and
+seldom beyond `r fmt_n(acc$walk_fallback$review$dist_range[2])` metres.
+Capping a four-kilometre journey at its walking time does **not** assert
+that a child walks four kilometres. It asserts that no journey should be
+*modelled* as costing more than walking would, because a family with
+that option would take it. The cap is an upper bound on modelled cost,
+not a mode assumption.
+:::
+
+The correction is not cosmetic, and it is applied **upstream, in the
+open model's own inputs** --- so every section of this document and of
+the technical companion now uses the corrected costs. Sections 7 and 8
+were re-run against them. It is worth being open that an earlier version
+of this analysis overstated the headline figures:
+
+| | Uncorrected | With the walk fallback |
+|:--|--:|--:|
+| Journey to the nearest school, child-weighted | 22.8 min | **`r sprintf("%.1f", acc$city$near_now)` min** |
+| Neighbourhoods reaching no place within 30 min | 37 | **`r acc$city$zero30_now`** |
+| Children in those neighbourhoods | 474 | **`r sprintf("%.0f", acc$city$zero30_children_now)`** |
+:::
+
+The corrected figure is a useful check in itself. A child-weighted mean
+of **`r sprintf("%.1f", acc$city$near_now)` minutes** to the nearest
+school sits almost exactly on the national average of `r bm$nts_min`
+minutes --- which is reassuring for a model built from timetables and
+street networks rather than from observed journeys.
+
+### Against the statutory guidance {#sec-statutory}
+
+The DfE limit applies to the journey a child actually has to make, so
+the test is the time to the school their catchment entitles them to ---
+not to the nearest school of any kind.
+
+```{r tbl-statutory}
+#| tbl-cap: "Journey to the nearest school in the child's own catchment, by catchment, against the DfE guidance."
+
+acc$by_catch_stat %>%
+  transmute(Catchment = unname(CATCH_DISPLAY[catchment]),
+            `Mean minutes` = sprintf("%.1f", mean_min),
+            `Worst zone` = sprintf("%.0f", max_min),
+            `Zones over 45 min` = over_45,
+            `Children affected` = sprintf("%.0f", children_over_45)) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+**No neighbourhood in the city exceeds the
+`r bm$dfe_max_sec`-minute secondary limit** to its own catchment school.
+The worst is `r sprintf("%.0f", sta$worst)` minutes. On that test the
+city passes, and it is worth saying so plainly given how much of this
+document is critical.
+
+`r sta$over_45` zones --- about `r sprintf("%.0f", sta$over_45_children)`
+children --- exceed the `r bm$dfe_max_pri`-minute figure that applies to
+primary-age children. That is not a breach for secondary pupils, but it
+is a reasonable marker of a long journey, and it identifies where the
+pressure sits.
+
 ## Journey time to a single school {#sec-one-school}
 
 ```{r journey-surfaces}

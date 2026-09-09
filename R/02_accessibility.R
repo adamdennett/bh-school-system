@@ -38,7 +38,23 @@ fp    <- bh_data("factsheet_panel.rds")
 idaci <- bh_data("deprivation_open.rds")$idaci
 
 zones <- oi$zones %>% select(zone, lsoa, catchment, area, Oi, zone_e, zone_n)
-costs <- oi$costs_now
+
+# ---- Walking is always available -------------------------------------
+# The walk fallback is applied upstream now, in the open model's own
+# 01_open_inputs.R, so every section of this document and of the
+# technical companion uses the same corrected costs. Where the routed
+# bus itinerary is slower than simply walking the distance, the walking
+# time is used instead. See build_costs_open() there for the reasoning
+# and the speed, which comes from Kent et al. (2026).
+#
+# Read the flag rather than recomputing it, so the two cannot drift.
+
+costs     <- oi$costs_now
+costs_elm <- oi$costs_elm
+
+message(sprintf(
+  "  Walk fallback (applied upstream) binds on %d of %d pairs (%.0f%%)",
+  sum(costs$walk_capped), nrow(costs), 100 * mean(costs$walk_capped)))
 
 # ---- Attractiveness --------------------------------------------------
 # W_j is how much wanted school there is at j. An admission number is a
@@ -150,7 +166,26 @@ THRESHOLDS <- c(30, 45)
 # A finer grid of thresholds, for the interactive version of the
 # cumulative measure. Precomputed here because the alternative is
 # shipping the whole zone x school cost matrix to the browser.
-THRESH_GRID <- seq(10, 60, by = 5)
+THRESH_GRID <- seq(10, 75, by = 5)
+
+# ---- National benchmarks ---------------------------------------------
+# Context for what these journey times mean. All three are published.
+#
+#   NTS_MEAN_MIN   average one-way school trip, England. National Travel
+#                  Survey five-year average to 2019, ages 5-16, ALL modes
+#                  including car. Not secondary-specific, and not
+#                  public-transport-specific, so it is a floor rather
+#                  than a like-for-like comparator.
+#   NTS_MEAN_MILES the same, in distance.
+#   DFE_MAX_SEC    the Department for Education's statutory guidance on
+#                  home-to-school travel: as a general guide the maximum
+#                  journey time each way should be 75 minutes for a child
+#                  of secondary age, 45 for primary, including time
+#                  walking to a pick-up point.
+NTS_MEAN_MIN   <- 19
+NTS_MEAN_MILES <- 2.4
+DFE_MAX_SEC    <- 75
+DFE_MAX_PRI    <- 45
 
 # ---- Zone-level measures ---------------------------------------------
 
@@ -192,11 +227,11 @@ acc_zone <- hansen(beta_ref) %>% rename(A_hansen = A) %>%
 # recomputed from the alternative site. Everything else is unchanged, so
 # any difference in the surface is attributable to the move alone.
 
-elm_zone <- hansen(beta_ref, ct = oi$costs_elm) %>% rename(A_elm = A) %>%
-  left_join(cumulative(oi$costs_elm) %>%
+elm_zone <- hansen(beta_ref, ct = costs_elm) %>% rename(A_elm = A) %>%
+  left_join(cumulative(costs_elm) %>%
               rename_with(~ paste0(.x, "_elm"), starts_with("places_")),
             by = "zone") %>%
-  left_join(nearest_of(oi$costs_elm) %>%
+  left_join(nearest_of(costs_elm) %>%
               rename(nearest_school_elm = nearest_school,
                      nearest_min_elm = nearest_min), by = "zone")
 
@@ -277,6 +312,54 @@ message(sprintf(
   city$zero30_now, city$zero30_children_now,
   city$zero30_elm, city$zero30_children_elm))
 
+# ---- Against the statutory guidance ----------------------------------
+# The DfE limit applies to the journey a child actually has to make, so
+# the right test is the time to the school their catchment entitles them
+# to - the nearest of that catchment's schools - not to the nearest
+# school of any kind.
+
+catch_sch <- tibble::enframe(oi$catchment_schools, name = "catchment",
+                             value = "name") %>%
+  tidyr::unnest(name) %>%
+  filter(lengths(name) > 0 | nzchar(name))
+
+catch_time <- costs %>%
+  inner_join(zones %>% select(zone, catchment, Oi), by = "zone") %>%
+  inner_join(catch_sch, by = c("catchment", "name")) %>%
+  group_by(zone, catchment) %>%
+  summarise(catch_min = min(cij), catch_school = name[which.min(cij)],
+            Oi = first(Oi), .groups = "drop")
+
+statutory <- catch_time %>%
+  summarise(
+    zones = n(),
+    children = sum(Oi),
+    mean_min = weighted.mean(catch_min, Oi),
+    over_45 = sum(catch_min > DFE_MAX_PRI),
+    over_45_children = sum(Oi[catch_min > DFE_MAX_PRI]),
+    over_75 = sum(catch_min > DFE_MAX_SEC),
+    over_75_children = sum(Oi[catch_min > DFE_MAX_SEC]),
+    worst = max(catch_min))
+
+by_catch_stat <- catch_time %>%
+  group_by(catchment) %>%
+  summarise(mean_min = weighted.mean(catch_min, Oi),
+            max_min = max(catch_min),
+            over_45 = sum(catch_min > DFE_MAX_PRI),
+            children_over_45 = sum(Oi[catch_min > DFE_MAX_PRI]),
+            .groups = "drop") %>%
+  arrange(desc(mean_min))
+
+message("\n  Journey to the catchment's own school, against DfE guidance:")
+message(sprintf("    child-weighted mean %.1f min; worst zone %.0f min",
+                statutory$mean_min, statutory$worst))
+message(sprintf("    over 45 min (primary limit): %d zones, %.0f children",
+                statutory$over_45, statutory$over_45_children))
+message(sprintf("    over 75 min (secondary limit): %d zones, %.0f children",
+                statutory$over_75, statutory$over_75_children))
+print(as.data.frame(by_catch_stat %>%
+  mutate(across(where(is.numeric), ~ round(.x, 1)))), row.names = FALSE)
+
 # ---- Cumulative opportunity across a grid of thresholds --------------
 # Long format, LSOA x threshold x scenario, for the interactive map.
 
@@ -300,7 +383,7 @@ places_at <- function(ct, scenario) {
 # that.
 
 thresh_long <- bind_rows(places_at(costs, "now"),
-                         places_at(oi$costs_elm, "elm")) %>%
+                         places_at(costs_elm, "elm")) %>%
   mutate(per_child = places / pmax(Oi, 1))
 
 thresh_city <- thresh_long %>%
@@ -383,6 +466,16 @@ saveRDS(list(
               imputed = attr_$name[attr_$imputed]),
   w_check = list(spearman = w_rho, same_decile = w_dec, within_one = w_dec1),
   w_cor = w_cor, w_specs = w_specs,
+  benchmarks = list(nts_min = NTS_MEAN_MIN, nts_miles = NTS_MEAN_MILES,
+                    dfe_max_sec = DFE_MAX_SEC, dfe_max_pri = DFE_MAX_PRI),
+  walk_fallback = list(
+    n = sum(costs$walk_capped), total = nrow(costs),
+    share = mean(costs$walk_capped),
+    kmh = 1.030 / (14.22 / 60), circuity = 1.3,
+    review = list(dist_m = 1030, time_min = 14.22,
+                  dist_range = c(349, 1800), time_range = c(6.9, 26.7))),
+  catch_time = catch_time, statutory = statutory,
+  by_catch_stat = by_catch_stat,
   city = city,
   thresh_grid = THRESH_GRID,
   thresh_long = thresh_long,
