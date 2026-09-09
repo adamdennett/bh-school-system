@@ -817,25 +817,51 @@ The multilevel model behind *How to Pull the Right Lever* decomposes
 that variance directly, and lands in the same place.
 
 ```{r fig-school-share}
-#| fig-cap: "Where the variance in school-level Attainment 8 sits, decomposed from the multilevel model, for all pupils and for the two pupil groups separately. The workforce term is the part a school directly controls. The persistent school effect is what remains once everything measured is accounted for, and is an upper bound: it bundles genuine school ethos and management with anything unmeasured about the catchment, such as cultural capital or parental motivation."
-#| fig-height: 8.6
+#| fig-cap: "Where the variance in school-level Attainment 8 sits, decomposed from the multilevel model, for all pupils and for the two pupil groups separately. Absence is shown as its own row rather than buried in the inherited block, split into the structural share a first-stage model predicts from intake and area, and the school-level residual it does not. The persistent school effect is an upper bound: it bundles genuine school ethos and management with anything unmeasured about the catchment, such as cultural capital or parental motivation."
+#| fig-height: 9.4
 
 sed <- bh_data("school_effect_decomp.rds")
+lev <- bh_data("school_leverage.rds")
+LV  <- lev$leverage
 
-GRP_COL <- c("Inherited (exogenous)"    = "#49a0c4",
-             "Persistent school effect" = "#6A4C93",
-             "Workforce"                = "#ED357D",
-             "Place / noise"            = "#BBBBBB")
+GRP_COL <- c("Inherited (exogenous)"      = "#49a0c4",
+             "Absence: structural"        = "#7FB3D5",
+             "Absence: school-reachable"  = "#F2A03D",
+             "Persistent school effect"   = "#6A4C93",
+             "Workforce"                  = "#ED357D",
+             "Place / noise"              = "#BBBBBB")
 
-prep <- function(d, who) {
-  d %>%
-    mutate(grp_type = case_when(
-             grepl("^Exogenous", Component)  ~ "Inherited (exogenous)",
-             grepl("^Endogenous", Component) ~ "Workforce",
-             Component == "School (persistent, unexplained)" ~ "Persistent school effect",
-             TRUE ~ "Place / noise"),
-           grp_type = factor(grp_type, levels = names(GRP_COL)),
-           who = who)
+ABS_LAB <- "Absence (part inherited, part school-reachable)"
+EXO_LAB <- "Inherited: cohort, prior attainment, neighbourhood"
+
+# Absence is published inside the exogenous block, but it is the one
+# term that is partly within a school's control. Split it out as its own
+# row. The published totals are kept; the share of the exogenous block
+# that is absence is taken from the fitted model, and the split of that
+# absence into structural and school-reachable from the stage-1 model.
+prep <- function(d, who_lab) {
+  r        <- LV[LV$who == who_lab, ]
+  abs_frac <- r$absence / r$exogenous
+  exo_tot  <- d[["Share of total %"]][grepl("^Exogenous", d$Component)]
+  abs_tot  <- exo_tot * abs_frac
+
+  bind_rows(
+    d %>%
+      filter(!grepl("^Exogenous", Component)) %>%
+      transmute(Component, share = `Share of total %`,
+                grp_type = case_when(
+                  grepl("^Endogenous", Component) ~ "Workforce",
+                  Component == "School (persistent, unexplained)" ~ "Persistent school effect",
+                  TRUE ~ "Place / noise")),
+    tibble(Component = EXO_LAB, share = exo_tot - abs_tot,
+           grp_type = "Inherited (exogenous)"),
+    tibble(Component = ABS_LAB,
+           share = c(abs_tot * lev$struct_share, abs_tot * lev$school_share),
+           grp_type = c("Absence: structural", "Absence: school-reachable"))
+  ) %>%
+    mutate(who = who_lab,
+           Component = sub("^Endogenous, within-school \\(workforce\\)$",
+                           "Workforce (the part a school hires)", Component))
 }
 
 decomp <- bind_rows(prep(sed$decomp_all, "All pupils"),
@@ -843,27 +869,37 @@ decomp <- bind_rows(prep(sed$decomp_all, "All pupils"),
                     prep(sed$decomp_non, "Non-disadvantaged pupils")) %>%
   mutate(who = factor(who, c("All pupils", "Disadvantaged pupils",
                              "Non-disadvantaged pupils")),
-         # Order components by the all-pupil share so both panels read
-         # in the same order and can be compared row by row.
-         Component = fct_reorder(Component,
-                                 ifelse(who == "All pupils", `Share of total %`, 0),
-                                 .fun = max))
+         grp_type = factor(grp_type, levels = names(GRP_COL)))
 
-ggplot(decomp, aes(`Share of total %`, Component, fill = grp_type)) +
+# Order rows by the all-pupil total for each component, so the three
+# panels read in the same order and can be compared row by row.
+ord <- decomp %>%
+  filter(who == "All pupils") %>%
+  group_by(Component) %>% summarise(t = sum(share), .groups = "drop") %>%
+  arrange(t) %>% pull(Component)
+decomp <- decomp %>% mutate(Component = factor(Component, ord))
+
+# One label per row, placed at the row total rather than per segment, so
+# the split absence bar reads as a single quantity.
+tot_lab <- decomp %>%
+  group_by(who, Component) %>% summarise(share = sum(share), .groups = "drop")
+
+ggplot(decomp, aes(share, Component, fill = grp_type)) +
   geom_col(width = 0.72) +
-  geom_text(aes(label = paste0(`Share of total %`, "%")),
-            hjust = -0.15, size = 3.1) +
+  geom_text(data = tot_lab, inherit.aes = FALSE, hjust = -0.15, size = 3,
+            mapping = aes(x = share, y = Component,
+                          label = sprintf("%.1f%%", share))) +
   facet_wrap(~ who, ncol = 1) +
   scale_fill_manual(values = GRP_COL, name = NULL) +
-  scale_x_continuous(limits = c(0, 72), expand = expansion(mult = c(0, 0.02))) +
+  scale_x_continuous(limits = c(0, 52), expand = expansion(mult = c(0, 0.02))) +
   guides(fill = guide_legend(nrow = 2)) +
   labs(x = "Share of total outcome variance (%)", y = NULL,
        title = "Most of what separates schools' results arrives with the children",
-       subtitle = "Variance decomposition from the multilevel model in How to Pull the Right Lever",
-       caption = "Source: How to Pull the Right Lever, school effect decomposition.") +
+       subtitle = "Absence shown separately: it is the one term that is partly inherited and partly within a school's reach",
+       caption = "Sources: How to Pull the Right Lever, school effect decomposition; RPE paper two-stage absence model.") +
   theme_bh(11) +
   theme(legend.position = "bottom", panel.grid.major.y = element_blank(),
-        axis.text.y = element_text(size = 8.5),
+        axis.text.y = element_text(size = 8),
         strip.text = element_text(face = "bold", hjust = 0))
 ```
 
@@ -880,13 +916,22 @@ wf_non  <- pick(sed$decomp_non, "^Endogenous")
 ex_non  <- pick(sed$decomp_non, "^Exogenous")
 ```
 
-For all pupils, the part a school **directly controls** --- its
-workforce --- accounts for **`r wf_all`%** of the variance. The hand it
-is dealt accounts for **`r ex_all`%**. Even the persistent school
-effect, at `r sch_all`%, is an upper bound: it is what is left once
-everything measured is accounted for, so it bundles genuine school
-ethos and leadership together with anything unmeasured about the
-catchment --- cultural capital, parental motivation, and the rest.
+For all pupils, the part a school **directly controls** through the
+staff it hires accounts for about **`r fmt_pct(LV$workforce[LV$who == "All pupils"], 1)`**
+of the variance. What it inherits with the intake --- cohort composition,
+prior attainment, neighbourhood --- accounts for roughly
+**`r fmt_pct(LV$exogenous[LV$who == "All pupils"] - LV$absence[LV$who == "All pupils"], 0)`**.
+Even the persistent school effect, at `r sch_all`%, is an upper bound: it
+is what is left once everything measured is accounted for, so it bundles
+genuine school ethos and leadership together with anything unmeasured
+about the catchment --- cultural capital, parental motivation, and the
+rest.
+
+Absence has its own row because it is the one term that will not sit in
+either camp. The published decomposition files it with the inherited
+block, but a school's attendance is partly a fact about its intake and
+partly a fact about what it does. The next section takes that apart, and
+it turns out to matter more than anything else on the chart.
 
 **For disadvantaged pupils --- the group any mixing policy is aimed at
 --- the workforce term falls to `r wf_dis`%**, against `r ex_dis`%
@@ -896,18 +941,17 @@ non-disadvantaged pupils it is `r wf_non`% against `r ex_non`% --- so
 the pattern is not an artefact of one group, and the school-controllable
 share is smallest for the children the policy is meant to help.
 
-## But absence is not really inherited {#sec-absence-split}
+## Absence is the term that moves {#sec-absence-split}
 
-There is a problem with reading the chart above literally, and it cuts
-against the conclusion just drawn.
-
-The exogenous block is labelled "cohort, prior attainment, absence,
-neighbourhood", and absence is filed there as though a school simply
-receives it. The two-stage work in the RPE paper shows that it does not.
-A first-stage model of school absence on intake, area and segregation
-explains only about half of its variation; the rest is a residual that
-pastoral systems, attendance officers, family liaison and
-persistent-absentee follow-up act on directly.
+The published decomposition files absence inside the exogenous block ---
+"cohort, prior attainment, absence, neighbourhood" --- as though a school
+simply receives its attendance rate. The two-stage work in the RPE paper
+shows that it does not. A first-stage model of school absence on intake,
+area and segregation explains only about half of its variation; the rest
+is a residual that pastoral systems, attendance officers, family liaison
+and persistent-absentee follow-up act on directly. That is why it is
+drawn as its own split row above, and it is worth being precise about
+the size of each part.
 
 ```{r leverage-stats}
 #| include: false
