@@ -38,6 +38,9 @@ format:
     link-external-newwindow: true
     smooth-scroll: true
 
+bibliography: references.bib
+citation-location: document
+
 execute:
   warning: false
   message: false

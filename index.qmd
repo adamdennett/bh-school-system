@@ -81,6 +81,13 @@ ex_absn  <- summary(lm(log(ATT8SCR) ~ log(PERCTOT), data = ex_nat))$r.squared
 ex_lh <- brt$at_original_beta %>%
   filter(str_detect(name, "Longhill")) %>%
   mutate(fill_2026 = modelled / pan2026, fill_2024 = modelled / pan2024)
+
+# The between-school share of *pupil-level* variance. This cannot be
+# computed from school-level aggregates - it needs pupil records - so it
+# is quoted from the school-effectiveness literature, not estimated
+# here. Defined at the top because both the executive summary and
+# section 2.4 use it.
+SCHOOL_LO <- 8; SCHOOL_HI <- 15
 ```
 
 ::: {.callout-note appearance="simple"}
@@ -124,6 +131,21 @@ accounted for, Brighton's schools mostly perform above what their intake
 predicts. The largest lever available to the city is **absence**, not
 social mixing --- established in detail in
 [How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html).
+
+**Moving children between schools is a weak instrument, and this is the
+single most important point for admissions policy.** Sixty years of
+school-effectiveness research puts the share of variation in pupil
+outcomes attributable to differences *between schools* at
+`r SCHOOL_LO`--`r SCHOOL_HI` per cent. Most of what separates one
+school's results from another's arrives with the children. A
+redistribution policy therefore works on the smallest term available
+while leaving the intake characteristics and circumstances that account
+for the other `r 100 - SCHOOL_HI`--`r 100 - SCHOOL_LO` per cent
+untouched. Nor can the measured drivers be separated: of the school-level
+variation deprivation, absence and prior attainment jointly explain,
+about three quarters is variance they *share*. This is not an argument
+that schools do not matter --- it is an argument that the council should
+not expect admissions changes to move attainment much.
 
 **Admissions criteria only bind at some schools.**
 `r ex_open` of the `r nrow(ex_rat)` schools offered a place to every
@@ -535,9 +557,18 @@ because the usual explanation is also wrong.
 # Absence here is PERCTOT, the overall absence rate, again matching the
 # house model rather than the persistent-absence measure.
 
+# Every model in this section is fitted on the same rows. lm() drops
+# incomplete cases silently, so without this the figures would not be
+# comparable with each other or with the decomposition below - and the
+# difference is not cosmetic. Deprivation's R2 alone is 0.21 across all
+# schools reporting it, and 0.37 across the schools that also report a
+# KS2 score, because the ones missing a KS2 score are not a random
+# sample of schools.
 nat <- perf$national %>%
   filter(!is.na(ATT8SCR), ATT8SCR > 0) %>%
-  mutate(ks2_c = KS2ASS - 100)
+  mutate(ks2_c = KS2ASS - 100) %>%
+  filter(!is.na(ks2_c), !is.na(PTFSM6CLA1A), !is.na(PERCTOT),
+         PTFSM6CLA1A > 0, PERCTOT > 0)
 
 m_fsm   <- lm(log(ATT8SCR) ~ log(PTFSM6CLA1A), data = nat)
 m_prior <- lm(log(ATT8SCR) ~ ks2_c, data = nat)
@@ -692,6 +723,154 @@ largest single lever available to the city**, and that absence is the
 mechanism through which much of the deprivation effect operates. This
 document takes those findings as given and turns to the spatial and
 demographic questions the Lever report does not address.
+:::
+
+## How much can a school change at all? {#sec-school-effects}
+
+There is a prior question underneath all of this, and it is the one that
+bears most directly on what the council can achieve by moving children
+between schools.
+
+```{r variance-decomp}
+#| include: false
+
+# Shapley (LMG) decomposition, following RPE_Paper.qmd. A t-value in a
+# multiple regression describes each predictor's *unique* contribution,
+# so where predictors are as correlated as these are it cannot rank
+# them. The Shapley share instead averages each variable's incremental
+# R2 across every order in which the three could enter the model, which
+# is the standard way of apportioning variance that predictors share.
+
+r2_of <- function(vs) {
+  rhs <- if (!length(vs)) "1" else paste(vs, collapse = " + ")
+  summary(lm(as.formula(paste("log(ATT8SCR) ~", rhs)), data = nat))$r.squared
+}
+three <- c("log(PTFSM6CLA1A)", "log(PERCTOT)", "ks2_c")
+perms <- list(c(1,2,3), c(1,3,2), c(2,1,3), c(2,3,1), c(3,1,2), c(3,2,1))
+
+shap <- setNames(numeric(3), three)
+for (p in perms) {
+  sofar <- character(0)
+  for (i in p) {
+    v <- three[i]
+    shap[v] <- shap[v] + (r2_of(c(sofar, v)) - r2_of(sofar))
+    sofar <- c(sofar, v)
+  }
+}
+shap <- shap / length(perms)
+shap_share <- 100 * shap / sum(shap)
+
+# How much of the explained variance is shared rather than unique: the
+# gap between the full model and the sum of each term's last-in
+# contribution.
+uniq   <- vapply(three, function(v) r2_of(three) - r2_of(setdiff(three, v)),
+                 numeric(1))
+r2_all <- r2_of(three)
+shared_pct <- 100 * (r2_all - sum(uniq)) / r2_all
+
+LAB <- c("log(PTFSM6CLA1A)" = "Disadvantage",
+         "log(PERCTOT)"     = "Absence",
+         "ks2_c"            = "Prior attainment")
+
+```
+
+Since @Coleman1966, study after study has found that the share of
+variation in pupils' outcomes attributable to differences *between
+schools* --- as opposed to differences in the pupils they admit and the
+circumstances those pupils bring with them --- is somewhere in the order
+of **`r SCHOOL_LO` to `r SCHOOL_HI` per cent**. The landmark English
+study settled on about a tenth [@SmithTomlinson1989], and the finding
+has held up across countries and phases [@TeddlieReynolds2000]. The
+decomposition in *How to Pull the Right Lever* recovers the same order
+of magnitude.
+
+```{r fig-school-share}
+#| fig-cap: "Left: the share of variation in pupil outcomes attributable to differences between schools, from the school-effectiveness literature. Right: how the explained variance in school-level Attainment 8 divides between the three main intake measures, by Shapley decomposition."
+#| fig-height: 4.2
+
+share_df <- tibble(
+  part = factor(c("Between schools", "Pupils, homes, circumstances"),
+                levels = c("Between schools", "Pupils, homes, circumstances")),
+  lo = c(SCHOOL_LO, 100 - SCHOOL_HI), hi = c(SCHOOL_HI, 100 - SCHOOL_LO),
+  mid = (lo + hi) / 2)
+
+pA <- ggplot(share_df, aes(x = 1, y = mid, fill = part)) +
+  geom_col(width = 0.55, colour = "white") +
+  geom_text(aes(label = ifelse(part == "Between schools",
+                               sprintf("%g-%g%%", lo, hi),
+                               sprintf("%g-%g%%", lo, hi))),
+            position = position_stack(vjust = 0.5),
+            colour = "white", fontface = "bold", size = 3.6) +
+  scale_fill_manual(values = c("Between schools" = "#b2182b",
+                               "Pupils, homes, circumstances" = "#9aa5b1"),
+                    name = NULL) +
+  coord_flip() +
+  labs(x = NULL, y = "Share of variation in pupil outcomes (%)",
+       subtitle = "What a school itself accounts for\n(pupil level, from the literature)") +
+  theme_bh(11) +
+  theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank(),
+        legend.position = "bottom", legend.text = element_text(size = 8))
+
+pB <- tibble(term = LAB[three], share = shap_share) %>%
+  ggplot(aes(reorder(term, share), share)) +
+  geom_col(fill = "#2166ac", width = 0.62) +
+  geom_text(aes(label = fmt_pct(share, 0)), hjust = -0.18, size = 3.4) +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, max(shap_share) * 1.22)) +
+  labs(x = NULL, y = "Share of explained variance (%)",
+       subtitle = sprintf("How that intake divides\n(school level, R² = %.2f)", r2_all)) +
+  theme_bh(11) +
+  theme(panel.grid.major.y = element_blank())
+
+(pA | pB) +
+  plot_annotation(
+    title = "Most of what separates schools' results arrives with the children",
+    caption = "Sources: Coleman (1966); Smith & Tomlinson (1989); Teddlie & Reynolds (2000); DfE performance tables.",
+    theme = theme_bh())
+```
+
+Two things follow, and together they are the most important finding in
+this section for the decisions in front of the council.
+
+**Moving children between schools operates on the small term.** If
+`r SCHOOL_LO`--`r SCHOOL_HI` per cent of the variation in outcomes is
+attributable to schools, then redistributing pupils works on that share
+while leaving untouched the `r 100 - SCHOOL_HI`--`r 100 - SCHOOL_LO` per
+cent that arrives with them. It changes *which* school a child attends
+without changing the intake characteristics and social circumstances
+that account for most of the rest. A policy of social mixing through
+admissions is therefore working on the smaller term by construction ---
+not because mixing is undesirable, but because the arithmetic limits
+what it can deliver.
+
+**And the measured drivers cannot be cleanly separated anyway.** Of the
+`r fmt_pct(100 * r2_all, 0)` of school-level variation the three
+measures jointly explain, **`r fmt_pct(shared_pct, 0)` is variance they
+*share*** rather than variance any one of them owns. Disadvantage,
+absence and prior attainment correlate at
+`r sprintf("%.2f", cor(log(nat$PTFSM6CLA1A), nat$ks2_c))`,
+`r sprintf("%.2f", cor(log(nat$PERCTOT), nat$ks2_c))` and
+`r sprintf("%.2f", cor(log(nat$PTFSM6CLA1A), log(nat$PERCTOT)))`
+because they are substantially the same phenomenon seen three ways. Any
+policy that targets one of them in isolation --- and an admissions
+policy targets disadvantage in isolation --- is pulling on a rope
+attached to the other two.
+
+::: {.callout-important}
+## What this does and does not say
+
+It does **not** say schools do not matter. A tenth of the variance
+across three and a half thousand secondary schools is a great deal, and
+section 2.3 showed Brighton's schools mostly performing above what their
+intakes predict. Nor does it say that segregation between schools is
+acceptable; there are fairness arguments for mixed intakes that have
+nothing to do with attainment.
+
+What it says is narrower and harder to argue with: **the council should
+not expect a redistribution policy to move attainment much**, because
+the mechanism it operates through is the smallest of the terms
+available. The instruments that reach the larger terms --- attendance
+above all --- are not admissions instruments at all.
 :::
 
 ```{r fig-ranking-flip}
