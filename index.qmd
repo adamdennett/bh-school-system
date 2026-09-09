@@ -1773,52 +1773,158 @@ transfer.
 
 ## Journey time to a single school {#sec-one-school}
 
-```{r fig-one-school}
-#| fig-cap: "Walk-and-bus journey time to Longhill High School from every neighbourhood in the study area, for a weekday morning arrival."
-#| fig-height: 6
+```{r journey-surfaces}
+#| include: false
 
 nm <- bh_data("network_maps.rds")
 
-# The surface object carries one point per zone, and zones are
-# LSOA x catchment. Collapse to LSOA on the child population and join
-# the times onto the LSOA polygons, so this draws as a surface rather
-# than as a scatter of centroids.
-surf_lsoa <- nm$surface %>%
-  st_drop_geometry() %>%
-  group_by(lsoa) %>%
-  summarise(mins = weighted.mean(ovingdean, pmax(Oi, 1e-6), na.rm = TRUE),
-            .groups = "drop")
+# One surface per school, from the zone x school cost table. Zones are
+# LSOA x catchment, so collapse to LSOA weighting by the child
+# population before joining to the polygons.
+zone_w <- oi$zones %>% select(zone, lsoa, Oi)
+ELM_LABEL <- "Longhill AT ELM GROVE (alternative site)"
 
-surf <- lsoa %>%
-  inner_join(surf_lsoa, by = c("lsoa21cd" = "lsoa")) %>%
-  filter(is.finite(mins))
+to_lsoa <- function(costs, label) {
+  costs %>%
+    inner_join(zone_w, by = "zone") %>%
+    group_by(name = label(name), lsoa) %>%
+    summarise(mins = weighted.mean(cij, pmax(Oi, 1e-6), na.rm = TRUE),
+              .groups = "drop")
+}
 
-pal_time <- colorNumeric("magma", domain = surf$mins, reverse = TRUE)
+surf_all <- bind_rows(
+  to_lsoa(oi$costs_now, identity),
+  # The relocation variant: only Longhill's column differs, so take just
+  # that one and label it as the alternative site.
+  to_lsoa(oi$costs_elm %>% filter(name == "Longhill High School"),
+          function(x) rep(ELM_LABEL, length(x))))
 
-leaflet(width = "100%", height = 560) %>%
-  addProviderTiles(providers$CartoDB.Positron) %>%
-  addPolygons(data = surf,
-              fillColor = ~pal_time(mins), fillOpacity = 0.78,
-              color = "white", weight = 0.4,
-              label = ~sprintf("%s: %.0f minutes", lsoa21nm, mins)) %>%
-  addCircleMarkers(
-    lng = st_coordinates(st_transform(
-      st_as_sf(oi$schools %>% filter(short == "longhill"),
-               coords = c("easting", "northing"), crs = 27700), 4326))[, 1],
-    lat = st_coordinates(st_transform(
-      st_as_sf(oi$schools %>% filter(short == "longhill"),
-               coords = c("easting", "northing"), crs = 27700), 4326))[, 2],
-    radius = 7, fillColor = "#1a9850", fillOpacity = 1,
-    color = "white", weight = 2, label = "Longhill High School") %>%
-  addLegend(pal = pal_time, values = surf$mins, title = "Minutes",
+# One colour scale for every school, so the maps are comparable with
+# each other rather than each being stretched to its own range.
+pal_time <- colorNumeric("magma", domain = range(surf_all$mins, na.rm = TRUE),
+                         reverse = TRUE)
+
+# Polygon detail is the binding constraint here: twelve layers means the
+# geometry is embedded twelve times. Simplified at 40 m it is
+# indistinguishable at any zoom this map offers and roughly halves the
+# payload. Simplify in metres, before the transform.
+lsoa_lite <- lsoa %>%
+  st_transform(27700) %>%
+  st_simplify(dTolerance = 40, preserveTopology = TRUE) %>%
+  st_transform(4326)
+
+sch_pts <- schools_sf(oi$schools)
+elm_pt <- st_as_sf(tibble(easting = oi$elm_grove$easting,
+                          northing = oi$elm_grove$northing),
+                   coords = c("easting", "northing"), crs = 27700) %>%
+  st_transform(4326)
+elm_xy <- st_coordinates(elm_pt)
+```
+
+```{r fig-journey-picker}
+#| fig-cap: "Walk-and-bus journey time from every neighbourhood, for a weekday morning arrival. Choose a school from the control at the top right. The colour scale is shared across all schools, so the maps are directly comparable. The last option places Longhill at the alternative Elm Grove site."
+#| fig-height: 6.4
+
+m_pick <- leaflet(width = "100%", height = 600,
+                  options = leafletOptions(preferCanvas = TRUE)) %>%
+  addProviderTiles(providers$CartoDB.Positron)
+
+layer_names <- c(sort(unique(oi$costs_now$name)), ELM_LABEL)
+
+for (s in layer_names) {
+  d <- lsoa_lite %>%
+    inner_join(surf_all %>% filter(name == s), by = c("lsoa21cd" = "lsoa")) %>%
+    filter(is.finite(mins))
+
+  # The school's own marker, at Elm Grove for the relocation layer.
+  if (identical(s, ELM_LABEL)) {
+    px <- elm_xy[, 1]; py <- elm_xy[, 2]; plab <- oi$elm_grove$label
+  } else {
+    r <- sch_pts[sch_pts$name == s, ]
+    px <- r$lon; py <- r$lat; plab <- s
+  }
+
+  m_pick <- m_pick %>%
+    addPolygons(data = d, group = s,
+                fillColor = ~pal_time(mins), fillOpacity = 0.8,
+                color = "white", weight = 0.3,
+                label = ~sprintf("%s: %.0f minutes", lsoa21nm, mins)) %>%
+    addCircleMarkers(lng = px, lat = py, group = s,
+                     radius = 7, fillColor = "#1a9850", fillOpacity = 1,
+                     color = "white", weight = 2, label = plab)
+}
+
+m_pick %>%
+  addLayersControl(baseGroups = layer_names,
+                   options = layersControlOptions(collapsed = TRUE)) %>%
+  addLegend(pal = pal_time, values = surf_all$mins, title = "Minutes",
             position = "bottomright", opacity = 0.85)
 ```
 
-The median neighbourhood is
-**`r fmt_n(median(nm$surface$ovingdean, na.rm = TRUE))` minutes** from
-Longhill's current site. The school sits at the edge of its own
-catchment and at the edge of the city, which is the geometric fact
-underneath most of section 8.
+```{r tbl-journey-times}
+#| tbl-cap: "Average walk-and-bus journey time to each school. The unweighted column treats every neighbourhood equally; the weighted column weights each by the number of cohort-aged children living there, which is the figure that describes what families actually face."
+
+jt <- bind_rows(
+  oi$costs_now %>% inner_join(zone_w, by = "zone") %>%
+    group_by(name) %>%
+    summarise(unw = mean(cij), wtd = weighted.mean(cij, Oi), .groups = "drop"),
+  oi$costs_elm %>% filter(name == "Longhill High School") %>%
+    inner_join(zone_w, by = "zone") %>%
+    summarise(name = ELM_LABEL, unw = mean(cij), wtd = weighted.mean(cij, Oi))
+) %>%
+  arrange(wtd) %>%
+  mutate(gap = wtd - unw)
+
+jt %>%
+  transmute(School = sub(" AT ELM GROVE \\(alternative site\\)",
+                         " (at Elm Grove)", name),
+            `Unweighted mean` = sprintf("%.1f", unw),
+            `Child-weighted mean` = sprintf("%.1f", wtd),
+            `Difference` = sprintf("%+.1f", gap)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+```{r journey-stats}
+#| include: false
+lh_now <- jt %>% filter(name == "Longhill High School")
+lh_elm <- jt %>% filter(name == ELM_LABEL)
+city_only <- jt %>% filter(!name %in% c(ELM_LABEL, "Peacehaven Community School"))
+worst <- city_only %>% slice_max(wtd, n = 1)
+best  <- city_only %>% slice_min(wtd, n = 1)
+elm_rank <- sum(city_only$wtd < lh_elm$wtd) + 1
+```
+
+Three things come out of that table.
+
+**Longhill is the least accessible school in the city**, at
+`r sprintf("%.1f", lh_now$wtd)` minutes on the child-weighted measure
+against `r sprintf("%.1f", best$wtd)` for
+`r best$name`. Only Peacehaven, outside the authority, is further from
+the city's children.
+
+**Weighting by where children live makes almost every school look
+worse.** The weighted mean exceeds the unweighted one for
+`r sum(jt$gap > 0)` of the `r nrow(jt)` rows. Children are not
+distributed evenly across the map: they are concentrated in places
+slightly further from the schools than the average neighbourhood is.
+The two largest gaps belong to
+**`r and_list(city_only %>% slice_max(gap, n = 2) %>% pull(name))`**
+(`r paste(sprintf("%+.1f", city_only %>% slice_max(gap, n = 2) %>% pull(gap)), collapse = " and ")`
+minutes) --- which are also the two least full schools in the city. The
+children in those catchments live further from their own school than an
+average neighbourhood does, which is a different problem from the school
+simply being far away, and a harder one to fix with a bus route.
+
+**Moving Longhill to Elm Grove changes its position completely.** The
+child-weighted journey time falls from
+`r sprintf("%.1f", lh_now$wtd)` minutes to
+**`r sprintf("%.1f", lh_elm$wtd)`** --- a saving of
+`r sprintf("%.1f", lh_now$wtd - lh_elm$wtd)` minutes, which would take
+it from the least accessible school in the city to
+`r if (elm_rank == 1) "the most accessible" else paste0("the ", c("first","second","third","fourth","fifth")[elm_rank], " most accessible")`.
+That is the single largest effect of any intervention considered
+anywhere in this document, and section 8 returns to what it would and
+would not solve.
 
 ## What one of those journeys actually looks like {#sec-legs}
 
