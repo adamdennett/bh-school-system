@@ -2179,7 +2179,8 @@ acc_base <- function() {
     addProviderTiles(providers$CartoDB.Positron)
 }
 
-#' Two-scenario choropleth with a radio control to switch between them.
+#' Two-scenario choropleth with a radio control to switch between them,
+#' and the catchment boundaries as an optional overlay.
 acc_scenario_map <- function(col_now, col_elm, pal, legend_title) {
   acc_base() %>%
     addPolygons(data = acc_map, group = NOW_LAB,
@@ -2190,8 +2191,16 @@ acc_scenario_map <- function(col_now, col_elm, pal, legend_title) {
                 fillColor = pal(acc_map[[col_elm]]),
                 fillOpacity = 0.8, color = "white", weight = 0.3,
                 label = acc_lab) %>%
+    # Drawn over the choropleth rather than filled, so the surface stays
+    # readable underneath. Off by default: the point of these maps is
+    # that reachability does not follow the boundaries.
+    addPolygons(data = catch, group = "Catchment boundaries",
+                fill = FALSE, color = "#111111", weight = 2.2, opacity = 0.85,
+                label = ~unname(CATCH_LABELS[catchment])) %>%
     addLayersControl(baseGroups = c(NOW_LAB, ELM_SCN),
+                     overlayGroups = "Catchment boundaries",
                      options = layersControlOptions(collapsed = FALSE)) %>%
+    hideGroup("Catchment boundaries") %>%
     addLegend(pal = pal, values = c(acc_map[[col_now]], acc_map[[col_elm]]),
               title = legend_title, position = "bottomright", opacity = 0.85)
 }
@@ -2448,7 +2457,10 @@ payload <- list(
                                      stranded = d$stranded[1],
                                      children = round(d$stranded_children[1])))),
   longhill = list(now = list(lat = lh_pt$lat, lng = lh_pt$lon),
-                  elm = list(lat = elm_xy[, 2], lng = elm_xy[, 1])))
+                  elm = list(lat = elm_xy[, 2], lng = elm_xy[, 1])),
+  catchments = jsonlite::fromJSON(
+    geojsonsf::sf_geojson(catch %>% select(catchment)),
+    simplifyVector = FALSE))
 
 m_cum <- leaflet(width = "100%", height = 580) %>%
   addProviderTiles(providers$CartoDB.Positron) %>%
@@ -2482,6 +2494,18 @@ function(el, x, data) {
      color: 'white', weight: 2}).addTo(map)
     .bindTooltip('Longhill High School');
 
+  // Outlines only, so the surface stays readable underneath. Kept off
+  // until asked for: the point of the map is that reachability does not
+  // follow the boundaries.
+  var catchLayer = L.geoJSON(data.catchments, {
+    style: function() {
+      return {fill: false, color: '#111111', weight: 2.2, opacity: 0.85};
+    },
+    onEachFeature: function(f, layer) {
+      layer.bindTooltip(f.properties.catchment);
+    }
+  });
+
   var ui = L.DomUtil.create('div', 'acc-slider');
   ui.style.cssText = 'background:white;padding:10px 14px;border-radius:4px;' +
     'box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;' +
@@ -2499,7 +2523,9 @@ function(el, x, data) {
         'Longhill at Elm Grove</label></div>' +
     '<div style=\"margin-top:6px;padding-top:6px;border-top:1px solid #eee\">' +
       '<label><input type=\"checkbox\" id=\"perchild\"> ' +
-        'Divide by children living there</label></div>' +
+        'Divide by children living there</label><br>' +
+      '<label><input type=\"checkbox\" id=\"showcatch\"> ' +
+        'Catchment boundaries</label></div>' +
     '<div id=\"citystat\" style=\"margin-top:8px;color:#444;line-height:1.45\">' +
     '</div>';
 
@@ -2538,6 +2564,9 @@ function(el, x, data) {
     lh.setTooltipContent(scn === 'elm' ?
       'Longhill (at Elm Grove)' : 'Longhill High School');
 
+    // Restyling the fills can leave the outlines behind them.
+    if (map.hasLayer(catchLayer)) catchLayer.bringToFront();
+
     var c = data.city[scn][t], o = data.city['now'][t];
     ui.querySelector('#citystat').innerHTML =
       '<b>' + c.mean + '</b> places for the average child' +
@@ -2551,6 +2580,10 @@ function(el, x, data) {
 
   ui.querySelector('#tslider').addEventListener('input', redraw);
   ui.querySelector('#perchild').addEventListener('change', redraw);
+  ui.querySelector('#showcatch').addEventListener('change', function() {
+    if (this.checked) { catchLayer.addTo(map); catchLayer.bringToFront(); }
+    else { map.removeLayer(catchLayer); }
+  });
   ui.querySelectorAll('input[name=scn]').forEach(function(r) {
     r.addEventListener('change', redraw);
   });
