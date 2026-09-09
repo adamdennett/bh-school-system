@@ -3077,29 +3077,47 @@ ggplot(fs, aes(year, pref1, colour = name)) +
 ## Who gained and who lost {#sec-winners-losers}
 
 ```{r fig-demand-change}
-#| fig-cap: "Change in first preferences between the first and last five-year windows in the published series."
+#| fig-cap: "Change in weighted preferences between the first and last five-year windows in the published series. Preferences are counted at all three ranks with the same geometric decay used in section 4, so a school that families consistently name second is not scored as though nobody wanted it."
 #| fig-height: 5
 
-yr_rng <- range(fs$year)
-early <- fs %>% filter(year <= yr_rng[1] + 4) %>%
-  group_by(name) %>% summarise(early = mean(pref1), .groups = "drop")
-late  <- fs %>% filter(year >= yr_rng[2] - 4) %>%
-  group_by(name) %>% summarise(late = mean(pref1), .groups = "drop")
+# The same attractiveness measure as section 4, applied year by year:
+# ranks 1-3 with a geometric decay. Counting first preferences alone
+# would understate the two paired catchments, where families must rank
+# their two local schools against each other and the catchment's firsts
+# are therefore split between them. All three ranks are present for
+# every school in every year of the published series.
+DECAY <- acc$pref$decay
+
+fs_w <- fs %>%
+  mutate(wpref = pref1 + DECAY * pref2 + DECAY^2 * pref3)
+
+yr_rng <- range(fs_w$year)
+early <- fs_w %>% filter(year <= yr_rng[1] + 4) %>%
+  group_by(name) %>% summarise(early = mean(wpref), early_p1 = mean(pref1),
+                               .groups = "drop")
+late  <- fs_w %>% filter(year >= yr_rng[2] - 4) %>%
+  group_by(name) %>% summarise(late = mean(wpref), late_p1 = mean(pref1),
+                               .groups = "drop")
 
 chg <- inner_join(early, late, by = "name") %>%
-  mutate(change = late - early, pct = 100 * change / early) %>%
+  mutate(change = late - early, pct = 100 * change / early,
+         change_p1 = late_p1 - early_p1) %>%
   arrange(change)
 
 ggplot(chg, aes(reorder(name, change), change, fill = change > 0)) +
   geom_col(width = 0.7) +
   geom_hline(yintercept = 0, colour = "grey30") +
+  geom_text(aes(label = sprintf("%+.0f%%", pct),
+                hjust = ifelse(change > 0, -0.15, 1.15)), size = 3.1) +
   coord_flip() +
+  scale_y_continuous(expand = expansion(mult = 0.12)) +
   scale_fill_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b"),
                     guide = "none") +
-  labs(x = NULL, y = "Change in average first preferences",
-       title = "The winners and losers of sixteen years of choice",
-       subtitle = sprintf("Average of %d-%d against average of %d-%d",
-                          yr_rng[1], yr_rng[1] + 4, yr_rng[2] - 4, yr_rng[2]),
+  labs(x = NULL, y = "Change in average weighted preferences",
+       title = "Where demand has moved under the catchment system",
+       subtitle = sprintf(
+         "Average of %d-%d against average of %d-%d, ranks 1-3 with decay %.2f.\nThe whole series post-dates the 2008 move to catchments with a lottery tie-break.",
+         yr_rng[1], yr_rng[1] + 4, yr_rng[2] - 4, yr_rng[2], DECAY),
        caption = "Source: BHCC published allocation factsheets.") +
   theme_bh() +
   theme(panel.grid.major.y = element_blank())
@@ -3109,6 +3127,15 @@ ggplot(chg, aes(reorder(name, change), change, fill = change > 0)) +
 #| include: false
 biggest_loss <- chg %>% slice_min(change, n = 2)
 biggest_gain <- chg %>% slice_max(change, n = 2)
+
+# Where the weighted measure and a first-preference count disagree most.
+# Reported because the difference is not noise: it is the second and
+# third preferences that a first-preference count throws away.
+gap <- chg %>%
+  mutate(diff = change - change_p1) %>%
+  arrange(diff)
+hp <- chg %>% filter(str_detect(name, "Hove Park"))
+vd <- chg %>% filter(str_detect(name, "Varndean"))
 ```
 
 The largest falls are at **`r paste(biggest_loss$name, collapse = " and ")`**;
@@ -3116,6 +3143,64 @@ the largest rises at **`r paste(biggest_gain$name, collapse = " and ")`**.
 This is not a system in equilibrium. It is one where a shrinking cohort
 is being redistributed towards a small number of schools, and away from
 others, faster than the cohort itself is shrinking.
+
+```{r fig-demand-trajectory}
+#| fig-cap: "The same weighted preferences as a trajectory rather than a start-and-end comparison. Each school is indexed to 100 at its own five-year opening average, so the lines show relative movement rather than size."
+#| fig-height: 6
+
+base_w <- fs_w %>%
+  filter(year <= yr_rng[1] + 4) %>%
+  group_by(name) %>% summarise(base = mean(wpref), .groups = "drop")
+
+traj <- fs_w %>%
+  inner_join(base_w, by = "name") %>%
+  mutate(idx = 100 * wpref / base,
+         kind = ifelse(name %in% c("King's School", "Cardinal Newman Catholic School"),
+                       "Faith schools (city-wide)", "Catchment schools"))
+
+ends <- traj %>% group_by(name) %>% slice_max(year, n = 1) %>% ungroup()
+
+ggplot(traj, aes(year, idx, colour = name)) +
+  geom_hline(yintercept = 100, linetype = "31", colour = "grey45") +
+  geom_line(linewidth = 0.95) +
+  ggrepel::geom_text_repel(
+    data = ends, aes(label = name), size = 2.9, hjust = 0,
+    direction = "y", nudge_x = 0.6, segment.size = 0.25,
+    min.segment.length = 0, max.overlaps = 20, seed = 1) +
+  facet_wrap(~ kind, ncol = 1, scales = "free_y") +
+  scale_colour_brewer(palette = "Paired", guide = "none") +
+  scale_x_continuous(expand = expansion(mult = c(0.02, 0.28))) +
+  labs(x = NULL, y = "Weighted preferences, indexed to opening average = 100",
+       title = "The same movement, seen as trajectories",
+       subtitle = sprintf("Ranks 1-3 with decay %.2f. Above the dashed line is growth on the %d-%d baseline.",
+                          DECAY, yr_rng[1], yr_rng[1] + 4),
+       caption = "Source: BHCC published allocation factsheets.") +
+  theme_bh() +
+  theme(strip.text = element_text(face = "bold", hjust = 0))
+```
+
+::: {.callout-note appearance="simple"}
+## Why this uses weighted preferences rather than first ones
+
+Counting only first preferences would give a different and, in two
+cases, a misleading picture.
+
+**Hove Park** loses `r fmt_n(abs(hp$change_p1))` first preferences
+between the two windows --- which looks survivable --- but
+**`r fmt_n(abs(hp$change))` weighted preferences**, a fall of
+`r fmt_pct(abs(hp$pct), 0)`. Most of what it lost was second and third
+choices, and a first-preference count discards exactly that. A school
+families have stopped naming *at all* is in a different position from
+one they have stopped naming *first*.
+
+**Varndean** moves the other way. On first preferences it more than
+doubles, up `r fmt_pct(abs(100 * vd$change_p1 / (vd$late_p1 - vd$change_p1)), 0)`;
+on weighted preferences it rises `r fmt_pct(vd$pct, 0)`. It has gained
+firsts partly by converting seconds it already had --- real, but a
+smaller shift than the headline count suggests, and a predictable
+artefact of sitting in a paired catchment where families must rank two
+local schools against each other.
+:::
 
 ## What families are actually choosing on {#sec-choice}
 
