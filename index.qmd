@@ -1893,6 +1893,83 @@ pressure sits.
 
 ## Journey time to a single school {#sec-one-school}
 
+```{r r5-meta}
+#| include: false
+bmeta <- readRDS(file.path(DATA, "travel", "build_metadata.rds"))
+rp <- bmeta$params
+```
+
+::: {.callout-note collapse="true"}
+## How these journey times are calculated, and what they are not
+
+Every figure in this section comes from routing each origin to each
+school over a street network and a bus timetable. The details matter,
+because they set the limits of what the numbers can support.
+
+**What was routed.** `r5r` over a merged OpenStreetMap extract and a
+GTFS bus timetable, from **`r fmt_n(bmeta$n_origins)` postcode origins**
+to `r nrow(bmeta$destinations)` destinations --- the eleven schools in
+the expanded authority plus three East Sussex schools that Peacehaven
+families genuinely choose between, and one hypothetical site. Postcode
+results are then aggregated to the LSOA-by-catchment zones used
+everywhere else, weighted by child population.
+
+**The parameters.** Walking and public transport combined; up to
+`r rp$max_walk_time` minutes of walking; trips capped at
+`r rp$max_trip_duration` minutes; the median of a
+`r rp$time_window`-minute departure window. Arrival is set for
+**`r sub(":00$", "", rp$default_time)`** at every school except Longhill,
+which uses **`r sub(":00$", "", rp$longhill_time)`** because its buses
+run earlier. That asymmetry is deliberate.
+
+**Two extracts, merged.** Geofabrik splits its Sussex data along the
+county boundary, and the split runs straight through this study area:
+Brighton & Hove sits in the west extract, the Peacehaven expansion area
+in the east. r5r accepts exactly one `.pbf` file, so the two were merged
+into `r bmeta$pbf`. Supplying both separately does not error --- it
+silently returns nothing.
+
+**The timetable is a timetable.** This is the single most important
+caveat. The GTFS feed (`r bmeta$gtfs`, from the Department for
+Transport's Open Bus Data Service) describes the service that was
+*scheduled*, not the service that ran. The routing date is chosen
+automatically as the weekday with the most services active in the feed,
+because it is a multi-period export and only one window carries a full
+timetable. So these are **timetabled journey times, not measured ones**.
+They do not know about a bus that failed to arrive, one that was already
+full, or one running ten minutes late.
+
+**What is missing entirely.** No school buses, no parental lifts, no
+cycling, no walking routes children actually prefer to the shortest one.
+Car journeys are excluded by design --- the question here is what a
+family without a car faces --- but nationally the car carries about 30%
+of secondary school trips, so these times describe a subset of families
+rather than the average one.
+
+**Where the school gate is.** `r5r` snaps each school to the nearest
+point on the street network, and which point that is can matter more
+than it should. Dorothy Stringer and Varndean are 470 metres apart, yet
+the matrix makes Stringer slower from most of the city by a median of
+about five and a half minutes. That may be a real difference in bus
+access or an artefact of the snapping; it has not been established
+which, and it is large enough to affect anything said about Stringer
+specifically. Longhill's position is untouched by it, because the
+anomaly sits between two central schools.
+
+**Bus stop coverage** was checked at five points across the study area:
+
+```{r tbl-gtfs-coverage}
+#| tbl-cap: "Bus stops within 2 km of each check point, in the feed used."
+bmeta$gtfs_coverage %>%
+  transmute(Place = place, `Stops within 2 km` = stops_within_2km) %>%
+  knitr::kable(align = "lr")
+```
+
+The feed thins eastwards but does not stop at the city boundary, which
+is what matters: the expansion area is genuinely served rather than
+appearing unreachable because the timetable runs out.
+:::
+
 ```{r journey-surfaces}
 #| include: false
 

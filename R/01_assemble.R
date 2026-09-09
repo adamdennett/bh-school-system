@@ -48,6 +48,14 @@ file.copy(file.path(SRC$open, "travel", "bn_pcds_sch_travel_extended.csv"),
           file.path(DATA, "travel"), overwrite = TRUE)
 say("routed postcode x school travel matrix copied")
 
+# The routing parameters, GTFS feed and OSM extract actually used, so the
+# method box in section 4 can quote them rather than describe them.
+bm <- file.path(SRC$open, "travel", "build_metadata.rds")
+if (file.exists(bm)) {
+  file.copy(bm, file.path(DATA, "travel"), overwrite = TRUE)
+  say("travel-matrix build metadata copied")
+}
+
 # ---- 2. Catchment boundaries -----------------------------------------
 
 message("\n=== catchment boundaries ===")
