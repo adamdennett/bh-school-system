@@ -297,6 +297,29 @@ if (file.exists(lev_out)) {
   }
 }
 
+# ---- 5d. The council's superseded Oct-24 forecast --------------------
+# The reception_cohort bundle carries the council's current (Oct-25)
+# catchment forecast. The previous one is worth having alongside it,
+# because the shift between two successive forecasts of the same years
+# is itself evidence about how firm the council's view is. Published in
+# Appendix 6; small enough to carry literally.
+
+message("\n=== council Oct-24 forecast ===")
+tibble::tribble(
+  ~CatchmentGroup,                ~PAN, ~Y2025, ~Y2026, ~Y2027, ~Y2028, ~Y2029, ~Y2030, ~Y2031,
+  "PACA",                          220L,   206L,   221L,   185L,   191L,   182L,   214L,   150L,
+  "Hove Park / Blatchington Mill", 510L,   512L,   434L,   443L,   410L,   413L,   351L,   365L,
+  "Varndean / Dorothy Stringer",   630L,   581L,   624L,   592L,   588L,   560L,   557L,   539L,
+  "Longhill",                      210L,   168L,   175L,   166L,   176L,   159L,   151L,   154L,
+  "BACA",                          180L,   134L,   129L,   138L,   143L,   112L,    95L,   125L,
+  "Patcham",                       225L,   198L,   205L,   212L,   201L,   194L,   163L,   179L
+) %>%
+  tidyr::pivot_longer(dplyr::starts_with("Y2"), names_to = "entry_year",
+                      values_to = "council_oct24") %>%
+  dplyr::mutate(entry_year = as.integer(sub("^Y", "", entry_year))) %>%
+  readr::write_csv(file.path(DATA, "council_forecast_oct24.csv"))
+say("saved data/council_forecast_oct24.csv (BHCC Appendix 6)")
+
 message("\n=== postcode child population ===")
 pcd_src <- file.path(SRC$consult, "bn_postcodes_pop1.csv")
 

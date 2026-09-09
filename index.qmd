@@ -1287,6 +1287,24 @@ The policy could work exactly as intended and be invisible for years;
 it could also fail and appear to succeed. Evaluating it will need
 attendance and intake measures, not headline outcomes.
 
+**This bears directly on the free school meals review.** The FSM
+admissions priority took effect for entry in September 2023. Those
+children entered Year 7 that autumn and will not sit GCSEs until
+**summer 2028**. So a review conducted now is not working with thin
+outcome evidence --- it is working with *none*: not one cohort admitted
+under the policy has yet reached an examination. Even in 2028 there will
+be a single cohort, and a single cohort of disadvantaged pupils in one
+catchment carries the `r sprintf("%.1f", n_dis_tr)`-point year-to-year
+variation described above.
+
+That is not an argument against reviewing the policy. Admission
+patterns, intake composition by catchment, and the operation of the
+criteria itself can all be examined now, and section 5 does some of
+that. It is an argument against reviewing it **on attainment**, or
+against any conclusion of the form "results have or have not improved
+since the policy came in". No honest analysis can support such a claim
+from the data that exists, in either direction.
+
 **This compounds the problem in section 2.3.** Families are choosing on
 a measure that is largely a description of intake, *and* that measure is
 noisiest precisely for the pupils whose schools are most often
@@ -1418,6 +1436,135 @@ rc$comparison %>%
        caption = "Sources: BHCC published forecasts; reception-based projection as above.") +
   theme_bh()
 ```
+
+The city-wide figure hides a good deal. Broken down by catchment, and
+set against the council's own two successive forecasts, the picture is
+less tidy.
+
+```{r fig-catchment-projections}
+#| fig-cap: "Year 7 offers for each catchment: what has actually happened, our projection from primary cohorts already in school, and the council's two most recent forecasts of the same years. Dotted line is the catchment's admission number."
+#| fig-height: 8
+#| fig-width: 10
+
+# Four series on one set of axes. The council labels its catchments
+# differently from the model tables, so everything is converted to model
+# keys first - see as_model_catchment() in R/00_core.R.
+CATCH_DISPLAY <- c(CATCH_LABELS[unname(CATCH_FROM_MODEL)], "Religious schools")
+names(CATCH_DISPLAY) <- c(names(CATCH_FROM_MODEL), "Religious schools")
+
+council25 <- rc$council %>%
+  transmute(catchment = as_model_catchment(CatchmentGroup),
+            entry_year, offers = council, PAN,
+            series = "Council forecast (Oct-25)")
+
+council24 <- bh_data("council_forecast_oct24.csv") %>%
+  transmute(catchment = as_model_catchment(CatchmentGroup),
+            entry_year, offers = council_oct24,
+            series = "Council forecast (Oct-24, superseded)")
+
+series <- bind_rows(
+  rc$observed_by_catchment %>%
+    transmute(catchment, entry_year, offers = y7_offers,
+              series = "Actual offers"),
+  rc$by_catchment %>%
+    transmute(catchment, entry_year, offers = projected,
+              series = "Our projection (from primary cohorts)"),
+  council25 %>% select(-PAN),
+  council24) %>%
+  filter(!is.na(catchment), entry_year >= 2016) %>%
+  mutate(panel = factor(unname(CATCH_DISPLAY[catchment]),
+                        unname(CATCH_DISPLAY)),
+         series = factor(series, c(
+           "Actual offers", "Our projection (from primary cohorts)",
+           "Council forecast (Oct-25)",
+           "Council forecast (Oct-24, superseded)")))
+
+stopifnot(!any(is.na(series$panel)))
+
+pan_lines <- council25 %>%
+  distinct(catchment, PAN) %>%
+  mutate(panel = factor(unname(CATCH_DISPLAY[catchment]), unname(CATCH_DISPLAY)))
+
+ggplot(series, aes(entry_year, offers, colour = series)) +
+  geom_hline(data = pan_lines, aes(yintercept = PAN),
+             linetype = "dotted", colour = "grey30", linewidth = 0.45) +
+  geom_line(linewidth = 0.75) +
+  geom_point(size = 1.2) +
+  facet_wrap(~ panel, ncol = 2, scales = "free_y") +
+  scale_colour_manual(values = c(
+    "Actual offers"                          = "#1f78b4",
+    "Our projection (from primary cohorts)"  = "#33a02c",
+    "Council forecast (Oct-25)"              = "#e31a1c",
+    "Council forecast (Oct-24, superseded)"  = "#fb9a99"), name = NULL) +
+  scale_y_continuous(limits = c(0, NA)) +
+  guides(colour = guide_legend(nrow = 2)) +
+  labs(x = NULL, y = "Year 7 offers",
+       title = "Every catchment, four views of the same future",
+       subtitle = "Dotted line is the catchment admission number",
+       caption = "Sources: BHCC allocation factsheets; BHCC forecasts, Appendices 6 and 7.") +
+  theme_bh(11) +
+  theme(legend.position = "top", strip.text = element_text(face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r proj-stats}
+#| include: false
+# How far the council moved between its own two forecasts, on the years
+# both cover - a measure of how settled the council's own view is.
+rev <- inner_join(
+  council25 %>% select(catchment, entry_year, oct25 = offers),
+  council24 %>% select(catchment, entry_year, oct24 = offers),
+  by = c("catchment", "entry_year")) %>%
+  mutate(shift = oct25 - oct24)
+rev_by_catch <- rev %>%
+  group_by(catchment) %>%
+  summarise(mean_shift = mean(shift), max_abs = max(abs(shift)), .groups = "drop") %>%
+  arrange(desc(abs(mean_shift)))
+biggest_rev <- rev_by_catch %>% slice(1)
+n_down <- sum(rev_by_catch$mean_shift < 0)
+n_catch <- nrow(rev_by_catch)
+
+# Where our projection sits relative to the council's current forecast,
+# on the years both cover.
+gap_by_catch <- inner_join(
+  council25 %>% select(catchment, entry_year, council = offers),
+  rc$by_catchment %>% select(catchment, entry_year, ours = projected),
+  by = c("catchment", "entry_year")) %>%
+  group_by(catchment) %>%
+  summarise(mean_gap = mean(ours - council), .groups = "drop") %>%
+  arrange(mean_gap)
+n_below <- sum(gap_by_catch$mean_gap < 0)
+closest <- gap_by_catch %>% slice_min(abs(mean_gap), n = 1)
+closest_txt <- if (abs(closest$mean_gap) < 1) "under a place" else
+  sprintf("%.0f places", abs(closest$mean_gap))
+spell <- function(n) c("one","two","three","four","five","six","seven",
+                       "eight","nine","ten")[n]
+down_txt <- if (n_down == n_catch)
+  sprintf("Every one of the %s catchments was", spell(n_catch)) else
+  sprintf("%s of the %s catchments were", spell(n_down), spell(n_catch))
+```
+
+Two things stand out.
+
+**Our projection sits below the council's in
+`r n_below` of the `r nrow(gap_by_catch)` catchments** --- the city-wide
+gap of the previous chart, distributed. The closest agreement is in
+`r CATCH_DISPLAY[[as.character(closest$catchment)]]`, where the two
+differ by `r closest_txt` a year on average.
+
+**And the council's own view has moved a long way in a single year.**
+Between the Oct-24 and Oct-25 forecasts, for the years both cover, the
+figure for
+**`r CATCH_DISPLAY[[as.character(biggest_rev$catchment)]]`** moved by an
+average of `r sprintf("%+.0f", biggest_rev$mean_shift)` places a year,
+with a largest single-year revision of `r biggest_rev$max_abs`.
+
+The direction is the part worth noting. **`r down_txt` revised downward**, none upward. That is not
+forecasting noise; it is a consistent correction in one direction, and
+it points the same way as the projection from primary cohorts. The
+council's own figures are moving toward the lower number --- they have
+not arrived at it yet, and decisions with twenty-year consequences are
+being taken against a quantity still in motion.
 
 ```{r lh-gap}
 #| include: false
