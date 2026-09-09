@@ -69,9 +69,14 @@ ex_open <- sum(ex_rat$rate > 0.999)
 ex_r2_att8 <- os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"]
 ex_r2_va   <- os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"]
 
-ex_nat  <- perf$national %>% filter(!is.na(ATT8SCR))
-ex_prior <- summary(lm(ATT8SCR ~ PTPRIORLO, data = ex_nat))$r.squared
-ex_fsm   <- summary(lm(ATT8SCR ~ PTFSM6CLA1A, data = ex_nat))$r.squared
+# Same specification as section 2.3, which follows the Lever report:
+# log outcome, logged rates, KS2 score entered linearly.
+ex_nat <- perf$national %>%
+  filter(!is.na(ATT8SCR), ATT8SCR > 0) %>%
+  mutate(ks2_c = KS2ASS - 100)
+ex_fsm   <- summary(lm(log(ATT8SCR) ~ log(PTFSM6CLA1A), data = ex_nat))$r.squared
+ex_prior <- summary(lm(log(ATT8SCR) ~ ks2_c, data = ex_nat))$r.squared
+ex_absn  <- summary(lm(log(ATT8SCR) ~ log(PERCTOT), data = ex_nat))$r.squared
 
 ex_lh <- brt$at_original_beta %>%
   filter(str_detect(name, "Longhill")) %>%
@@ -112,9 +117,9 @@ the place where the consequences of being wrong are largest.
 ## What the evidence says
 
 **This is not a school quality problem.** Across English secondaries,
-the share of pupils arriving with low prior attainment explains
-`r fmt_pct(100 * ex_prior, 0)` of the variation in Attainment 8;
-deprivation explains `r fmt_pct(100 * ex_fsm, 0)`. Once intake is
+absence explains `r fmt_pct(100 * ex_absn, 0)` of the variation in
+Attainment 8 and prior attainment `r fmt_pct(100 * ex_prior, 0)`, while
+deprivation explains only `r fmt_pct(100 * ex_fsm, 0)`. Once intake is
 accounted for, Brighton's schools mostly perform above what their intake
 predicts. The largest lever available to the city is **absence**, not
 social mixing --- established in detail in
@@ -512,40 +517,88 @@ because the usual explanation is also wrong.
 ```{r lever-models}
 #| include: false
 
-nat <- perf$national %>% filter(!is.na(ATT8SCR))
+# These follow the specification used in "How to Pull the Right Lever"
+# and the RPE paper:
+#
+#   log(ATT8SCR) ~ log(PTFSM6CLA1A) + log(PERCTOT) + log(PNUMEAL)
+#                  + ks2_c + ...
+#
+# Rates are logged - deprivation, absence, EAL - so their coefficients
+# are elasticities. The prior-attainment term is a mean KS2 score
+# centred at 100 and entered linearly, because it is a score rather
+# than a rate: logging it is neither interpretable nor better fitting.
+# That distinction matters. An earlier draft of this section logged a
+# *proportion* with low prior attainment instead, which fitted worse and
+# silently dropped the 132 highest-attaining intakes in the country,
+# since a log cannot take their zero.
+#
+# Absence here is PERCTOT, the overall absence rate, again matching the
+# house model rather than the persistent-absence measure.
 
-m_fsm   <- lm(ATT8SCR ~ PTFSM6CLA1A, data = nat)
-m_prior <- lm(ATT8SCR ~ PTPRIORLO, data = nat)
-m_both  <- lm(ATT8SCR ~ PTFSM6CLA1A + PTPRIORLO, data = nat)
-m_abs   <- lm(ATT8SCR ~ PTFSM6CLA1A + PTPRIORLO + PPERSABS10, data = nat)
+nat <- perf$national %>%
+  filter(!is.na(ATT8SCR), ATT8SCR > 0) %>%
+  mutate(ks2_c = KS2ASS - 100)
+
+m_fsm   <- lm(log(ATT8SCR) ~ log(PTFSM6CLA1A), data = nat)
+m_prior <- lm(log(ATT8SCR) ~ ks2_c, data = nat)
+m_abs1  <- lm(log(ATT8SCR) ~ log(PERCTOT), data = nat)
+m_both  <- lm(log(ATT8SCR) ~ log(PTFSM6CLA1A) + log(PERCTOT), data = nat)
+m_full  <- lm(log(ATT8SCR) ~ log(PTFSM6CLA1A) + log(PERCTOT) + ks2_c,
+              data = nat)
+
 R2 <- function(m) 100 * summary(m)$r.squared
+cf <- coef(m_full)
 
 bh_latest <- perf$bh %>%
-  filter(year_label == perf$latest, !is.na(ATT8SCR), !is.na(PTPRIORLO))
+  filter(year_label == perf$latest, !is.na(ATT8SCR), !is.na(PTFSM6CLA1A),
+         !is.na(PERCTOT), !is.na(KS2ASS)) %>%
+  mutate(ks2_c = KS2ASS - 100)
 bh_resid <- bh_latest %>%
-  mutate(pred = predict(m_both, newdata = .), resid = ATT8SCR - pred)
+  mutate(pred = exp(predict(m_full, newdata = .)), resid = ATT8SCR - pred)
 above <- sum(bh_resid$resid > 0, na.rm = TRUE)
 ```
 
 The common account is that attainment tracks deprivation. It does, but
-weakly, and stopping there points the city at the wrong lever. Across
-`r fmt_n(nobs(m_fsm))` mainstream secondaries in England, the proportion
-of disadvantaged pupils explains **`r fmt_pct(R2(m_fsm))`** of the
-variation in Attainment 8. The proportion arriving with *low prior
-attainment* explains **`r fmt_pct(R2(m_prior))`** --- twice as much. Put
-both in together and you get `r fmt_pct(R2(m_both))`: deprivation adds
-almost nothing once you know what the intake could already do at age
-eleven. Add persistent absence and the figure reaches
-**`r fmt_pct(R2(m_abs))`**.
+weakly, and stopping there points the city at the wrong lever.
+
+The specification below follows the model in
+[How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html):
+Attainment 8 and the rate variables are logged, so their coefficients
+are elasticities, while prior attainment enters as a mean KS2 score
+because it is a score and not a rate.
+
+Across `r fmt_n(nobs(m_fsm))` mainstream secondaries in England, the
+proportion of disadvantaged pupils explains **`r fmt_pct(R2(m_fsm))`**
+of the variation in Attainment 8. Prior attainment explains
+**`r fmt_pct(R2(m_prior))`**. And the single strongest of the three is
+neither: **absence alone explains `r fmt_pct(R2(m_abs1))`**. All three
+together reach `r fmt_pct(R2(m_full))`.
+
+The elasticities make the point more sharply than the R² values do. In
+the combined model a one per cent rise in absence is associated with a
+**`r sprintf("%.2f", abs(cf[["log(PERCTOT)"]]))` per cent** fall in
+Attainment 8; a one per cent rise in the disadvantaged share with a fall
+of just **`r sprintf("%.2f", abs(cf[["log(PTFSM6CLA1A)"]]))` per cent**
+--- roughly
+`r sprintf("%.0f", abs(cf[["log(PERCTOT)"]]) / abs(cf[["log(PTFSM6CLA1A)"]]))`
+times smaller.
+
+That ordering is the finding. Who is poor matters least of the three.
+What children could already do at eleven matters more. Whether they are
+in the room matters most.
 
 ```{r fig-att8-prior}
 #| fig-cap: "Attainment 8 against two features of intake, every mainstream secondary in England in the latest year, with Brighton & Hove schools highlighted. Prior attainment and absence both order schools far more sharply than deprivation does."
 #| fig-height: 5
 
-panel <- function(xvar, xlab, ttl) {
+# Attainment 8 is on a log axis in every panel, matching the model. The
+# x axis is logged for the two rates and left linear for the KS2 score,
+# so each panel is drawn on the scale its term is actually fitted on.
+panel <- function(xvar, xlab, ttl, logx) {
   d <- nat %>% filter(!is.na(.data[[xvar]]))
   b <- bh_latest %>% filter(!is.na(.data[[xvar]]))
-  ggplot(d, aes(.data[[xvar]], ATT8SCR)) +
+  if (logx) { d <- d %>% filter(.data[[xvar]] > 0); b <- b %>% filter(.data[[xvar]] > 0) }
+  p <- ggplot(d, aes(.data[[xvar]], ATT8SCR)) +
     geom_point(colour = "grey80", size = 0.9, alpha = 0.5) +
     geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
                 colour = "grey30", linewidth = 0.7, linetype = "22") +
@@ -554,22 +607,26 @@ panel <- function(xvar, xlab, ttl) {
       data = b %>% filter(SCHNAME %in% c("Longhill High School", "King's School")),
       aes(label = SCHNAME), size = 2.9, colour = "#7f0f22",
       min.segment.length = 0, segment.size = 0.3, seed = 1) +
-    scale_x_continuous(labels = label_percent(scale = 1)) +
+    scale_y_log10(breaks = c(10, 20, 30, 40, 50, 60, 70)) +
     labs(x = xlab, y = "Attainment 8", subtitle = ttl) +
     theme_bh(11)
+  if (logx)
+    p <- p + scale_x_log10(labels = label_percent(scale = 1),
+                           breaks = c(1, 2, 5, 10, 20, 50))
+  p
 }
 
 (panel("PTFSM6CLA1A", "Disadvantaged pupils",
-       sprintf("Deprivation (R² = %.2f)", summary(m_fsm)$r.squared) ) |
- panel("PTPRIORLO", "Pupils with low prior attainment",
-       sprintf("Prior attainment (R² = %.2f)", summary(m_prior)$r.squared)) |
- panel("PPERSABS10", "Persistently absent pupils",
-       sprintf("Absence (R² = %.2f)",
-               summary(lm(ATT8SCR ~ PPERSABS10, data = nat))$r.squared))) +
+       sprintf("Deprivation, logged (R² = %.2f)", summary(m_fsm)$r.squared), TRUE) |
+ panel("ks2_c", "Mean KS2 prior attainment, centred",
+       sprintf("Prior attainment, linear (R² = %.2f)", summary(m_prior)$r.squared), FALSE) |
+ panel("PERCTOT", "Overall absence rate",
+       sprintf("Absence, logged (R² = %.2f)", summary(m_abs1)$r.squared), TRUE)) +
   plot_annotation(
     title = "Attainment is a description of intake, and of who turns up",
-    subtitle = sprintf("Mainstream secondaries in England, %s. Red points are Brighton & Hove.", perf$latest),
-    caption = "Source: DfE performance tables.",
+    subtitle = sprintf("Mainstream secondaries in England, %s. Attainment 8 log scaled throughout; rates logged, the KS2 score linear. Red points are Brighton & Hove.",
+                       perf$latest),
+    caption = "Source: DfE performance tables. Specification follows How to Pull the Right Lever.",
     theme = theme_bh())
 ```
 
@@ -582,25 +639,30 @@ above what the national relationship predicts for their intake. On the
 measure that isolates the school's own contribution, this is not a city
 with a school quality problem.
 
-**The lever that moves is attendance, not social mix.** Persistent
-absence alone correlates with Attainment 8 at
-`r sprintf("%.2f", cor(nat$ATT8SCR, nat$PPERSABS10, use = "complete.obs"))`
---- more strongly than any intake measure here. Absence and deprivation
-travel together, and absence is the mechanism through which much of the
-deprivation effect actually operates, which is why redistributing
-disadvantaged children between schools is a far weaker instrument than
-it is usually assumed to be.
+**The lever that moves is attendance, not social mix.** Absence and
+deprivation travel together, and absence is the mechanism through which
+much of the deprivation effect actually operates --- which is why
+redistributing disadvantaged children between schools is a far weaker
+instrument than it is usually assumed to be.
 
 ::: {.callout-important appearance="simple"}
-## One caution about that last figure
+## Two cautions
 
-Absence is partly an outcome as well as a cause: a child who is
+**Absence is partly an outcome as well as a cause.** A child who is
 disengaged attends less *and* attains less, so a single-equation fit
-overstates how much of that `r fmt_pct(R2(m_abs))` is absence doing the
-causal work. The Lever report models this properly, with school and year
-effects, rather than reading it off a scatterplot. The ordering of the
-three panels above survives that treatment; the exact numbers should not
-be quoted as causal effects.
+overstates how much of that `r fmt_pct(R2(m_full))` is absence doing the
+causal work. The Lever report models this properly --- with school, year,
+region and inspection-rating effects, and a first stage that models
+absence itself --- rather than reading it off a scatterplot. These three
+panels are an illustration of that model's premise, not a substitute for
+it.
+
+**These are single-year, single-equation fits.** The full model is
+fitted on a multi-year panel with random effects and a wider set of
+school characteristics, including English as an additional language,
+teacher retention and admissions policy. The ordering of the three terms
+here matches it; the individual R² values will not, and none of them
+should be quoted as a causal effect.
 :::
 
 ::: {.callout-tip}

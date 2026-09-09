@@ -120,7 +120,7 @@ if (!file.exists(panel_src)) {
 } else {
   KEEP <- c("URN", "LANAME", "SCHNAME", "year_label", "year_numeric",
             "TOTPUPS", "ATT8SCR", "P8MEA", "PTFSM6CLA1A", "PERCTOT",
-            "PPERSABS10", "PTPRIORLO", "PTPRIORHI", "PNUMEAL",
+            "PPERSABS10", "PTPRIORLO", "PTPRIORHI", "PNUMEAL", "KS2ASS",
             "OFSTEDRATING", "SCHOOLTYPE", "MINORGROUP", "POSTCODE")
   panel <- readRDS(panel_src)
   KEEP <- intersect(KEEP, names(panel))
@@ -136,9 +136,18 @@ if (!file.exists(panel_src)) {
   # attainment tracks intake rather than to identify any school.
   national <- panel %>%
     filter(!is.na(ATT8SCR)) %>%
+    # KS2ASS and PERCTOT matter specifically: the model in "How to Pull
+    # the Right Lever" and the RPE paper is
+    #   log(ATT8SCR) ~ log(PTFSM6CLA1A) + log(PERCTOT) + log(PNUMEAL)
+    #                  + ks2_c + ...
+    # where ks2_c is KS2ASS centred at 100 and entered linearly. Rates
+    # are logged; the prior-attainment score is not. Anything here that
+    # mirrors that model has to use these columns, not PPERSABS10 or
+    # PTPRIORLO.
     select(any_of(c("URN", "LANAME", "year_label", "ATT8SCR", "P8MEA",
                     "PTFSM6CLA1A", "PERCTOT", "PPERSABS10",
-                    "PTPRIORLO", "PTPRIORHI", "TOTPUPS"))) %>%
+                    "PTPRIORLO", "PTPRIORHI", "TOTPUPS",
+                    "KS2ASS", "PNUMEAL"))) %>%
     filter(year_label == max(year_label, na.rm = TRUE))
   say(nrow(national), " schools nationally in the latest year")
 
