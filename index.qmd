@@ -1566,6 +1566,121 @@ council's own figures are moving toward the lower number --- they have
 not arrived at it yet, and decisions with twenty-year consequences are
 being taken against a quantity still in motion.
 
+## The forecast is not wrong in total. It is wrong by place {#sec-forecast-errors}
+
+The comparison above sets one projection against another, and a reader
+is entitled to ask why either should be believed. For 2026 that question
+can be settled, because the offers have been made. Both the council's
+forecast and our projection can be checked against what happened.
+
+```{r tbl-2026-errors}
+#| tbl-cap: "Year 7 offers in 2026: what the council forecast, what our projection gave, and what actually happened."
+
+err26 <- rc$observed_by_catchment %>%
+  filter(entry_year == 2026) %>%
+  select(catchment, actual = y7_offers) %>%
+  inner_join(council25 %>% filter(entry_year == 2026) %>%
+               select(catchment, PAN, council = offers), by = "catchment") %>%
+  left_join(rc$by_catchment %>% filter(entry_year == 2026) %>%
+              select(catchment, ours = projected), by = "catchment") %>%
+  mutate(council_err = council - actual, ours_err = round(ours - actual)) %>%
+  arrange(desc(council_err))
+
+err26 %>%
+  transmute(Catchment = unname(CATCH_DISPLAY[catchment]),
+            PAN, Actual = actual,
+            `Council forecast` = council,
+            `Council error` = sprintf("%+d", council_err),
+            `Our projection` = round(ours),
+            `Our error` = sprintf("%+d", ours_err)) %>%
+  knitr::kable(align = "lrrrrrr")
+```
+
+```{r err-stats}
+#| include: false
+net_err <- sum(err26$council_err)
+abs_err <- sum(abs(err26$council_err))
+lh26  <- err26 %>% filter(catchment == "Longhill")
+hb26  <- err26 %>% filter(catchment == "Hove_Blatch")
+paca26 <- err26 %>% filter(catchment == "PACA")
+lh_ratio <- lh26$council / lh26$actual
+```
+
+::: {.callout-note appearance="simple"}
+## Read our column with more suspicion than the council's
+
+The council's forecast is a genuine prediction: published in advance,
+checked here against what happened. Ours is not, quite. The retention
+ratio it uses is fitted on cohorts that include the 2019 reception
+group, which *is* the 2026 Year 7 group --- so 2026 is partly inside the
+window our method was calibrated on, and its apparent accuracy is
+flattered. The honest comparison is between the council's forecast and
+the outturn; our column is there for orientation, not as a claim to have
+done better.
+:::
+
+City-wide the council's 2026 forecast was close: it was
+`r sprintf("%+d", net_err)` places out in total, on a cohort of over two
+thousand. By catchment it was not close at all. The individual errors
+sum to `r abs_err` places in absolute terms --- roughly
+`r sprintf("%.0f", abs_err / abs(net_err))` times the net error. The
+council is forecasting the right number of children and putting a great
+many of them in the wrong place.
+
+Two catchments carry most of that, and they miss in opposite directions.
+
+**Longhill was forecast `r lh26$council` and received `r lh26$actual`
+--- `r sprintf("%.1f", lh_ratio)` times too high.** This is a catchment
+whose admission number is `r lh26$PAN` and which filled
+`r fmt_pct(100 * lh26$actual / lh26$PAN, 0)` of it. The council's own
+method already applies the largest leakage deduction in the city to this
+catchment, at over 22 per cent, and it is still not close.
+
+**Hove Park / Blatchington Mill was forecast `r hb26$council` and
+received `r hb26$actual`** --- `r abs(hb26$council_err)` places too low,
+the largest under-estimate of any catchment.
+
+::: {.callout-warning}
+## Question for the council 1: why is the forecast wrong in these two places, and in opposite directions?
+
+The Hove Park / Blatchington Mill under-estimate has a candidate
+explanation. The neighbouring PACA catchment was over-forecast by
+`r paca26$council_err` places --- close to the
+`r abs(hb26$council_err)` that Hove Park / Blatchington Mill was under
+by. Children the model expected to appear in Portslade appearing in Hove
+instead would account for much of it. That is testable, and the council
+holds the data to test it.
+
+**Longhill has no such explanation.** Its neighbours were not
+over-forecast in a way that could absorb an
+`r sprintf("%+d", lh26$council_err)`-place error --- BACA was
+`r sprintf("%+d", err26$council_err[err26$catchment == "BACA"])` and
+Patcham `r sprintf("%+d", err26$council_err[err26$catchment == "Patcham"])`.
+The children the council expected to enrol at Longhill did not turn up
+in an adjacent catchment. They did not turn up at all.
+
+So the questions are:
+
+1. **What accounts for the Longhill over-forecast, if not
+   cross-catchment movement?** Out-of-city flow to Lewes district and
+   the independent sector are the obvious candidates, and the council
+   holds allocation records that would separate them.
+2. **Is the leakage rate for the Longhill catchment being estimated on
+   data old enough to predate the change it is meant to capture?** A
+   rate calibrated on historical patterns will lag a shift that is
+   still happening.
+3. **Is the Hove Park / Blatchington Mill under-estimate the
+   counterpart of the PACA over-estimate?** If so, the model's
+   catchment-of-residence assumption is diverging from where families
+   actually apply, and the two errors should be corrected together
+   rather than separately.
+
+These matter because the Longhill decision is being taken against the
+forecast, and the forecast has been wrong about Longhill by a factor of
+`r sprintf("%.1f", lh_ratio)` in the most recent year it can be checked
+against.
+:::
+
 ```{r lh-gap}
 #| include: false
 lh_council <- rc$council %>%
@@ -2505,6 +2620,20 @@ reach no school place inside 30 minutes, concentrated in the more
 deprived third of the city. A bus timetable can widen real choice
 without taking anything from anyone --- which is more than can be said
 for any boundary change.
+
+## Questions raised in this document {#sec-questions}
+
+Numbered questions appear in the sections above where the evidence
+raises them. They are gathered here so they can be put as a set. None
+requires new research; each is answerable from records the council
+already holds.
+
+1. **Why is the catchment forecast wrong in Longhill and in Hove Park /
+   Blatchington Mill, in opposite directions?** (§3.4) In 2026 Longhill
+   was forecast `r lh26$council` and received `r lh26$actual`, while
+   Hove Park / Blatchington Mill was `r abs(hb26$council_err)` places
+   under. The second has a candidate explanation in the neighbouring
+   PACA over-forecast; the first does not.
 
 ## Data the council could simply publish {#sec-data-asks}
 
