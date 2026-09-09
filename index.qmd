@@ -1975,8 +1975,13 @@ for (s in layer_names) {
 }
 
 m_pick %>%
+  addPolygons(data = catch, group = "Catchment boundaries",
+              fill = FALSE, color = "#111111", weight = 2.2, opacity = 0.85,
+              label = ~unname(CATCH_LABELS[catchment])) %>%
   addLayersControl(baseGroups = layer_names,
+                   overlayGroups = "Catchment boundaries",
                    options = layersControlOptions(collapsed = TRUE)) %>%
+  hideGroup("Catchment boundaries") %>%
   addLegend(pal = pal_time, values = surf_all$mins, title = "Minutes",
             position = "bottomright", opacity = 0.85)
 ```
@@ -2101,7 +2106,7 @@ network is not symmetric, and neither is opportunity.
 ## Which school is actually nearest {#sec-nearest}
 
 ```{r fig-nearest}
-#| fig-cap: "The nearest secondary school to each neighbourhood by routed walk-and-bus time, regardless of catchment."
+#| fig-cap: "The nearest secondary school to each neighbourhood by routed walk-and-bus time, regardless of catchment. Turn on the catchment boundaries to see where the two disagree."
 #| fig-height: 6
 
 near <- lsoa %>%
@@ -2113,10 +2118,19 @@ pal_near <- colorFactor("Set3", domain = sort(unique(near$nearest_school)))
 
 leaflet(width = "100%", height = 560) %>%
   addProviderTiles(providers$CartoDB.Positron) %>%
-  addPolygons(data = near,
+  addPolygons(data = near, group = "Nearest school",
               fillColor = ~pal_near(nearest_school), fillOpacity = 0.72,
               color = "white", weight = 0.4,
               label = ~sprintf("%s: %s, %.0f min", lsoa21nm, nearest_school, nearest_min)) %>%
+  # This is the map where the overlay earns its place: the colours are
+  # the nearest school and the outlines are the catchment a child is
+  # actually assigned to, so any mismatch is visible directly.
+  addPolygons(data = catch, group = "Catchment boundaries",
+              fill = FALSE, color = "#111111", weight = 2.2, opacity = 0.85,
+              label = ~unname(CATCH_LABELS[catchment])) %>%
+  addLayersControl(overlayGroups = c("Nearest school", "Catchment boundaries"),
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  hideGroup("Catchment boundaries") %>%
   addLegend(pal = pal_near, values = near$nearest_school, title = "Nearest school",
             position = "bottomright", opacity = 0.85)
 ```
