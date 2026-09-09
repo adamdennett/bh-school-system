@@ -2031,72 +2031,282 @@ directions.
 acc_map <- lsoa_lite %>%
   inner_join(acc$lsoa, by = c("lsoa21cd" = "lsoa"))
 
-# Both measures share the same label, so a reader switching tabs can see
-# the two numbers for whichever neighbourhood they are hovering over.
-acc_lab <- sprintf(
-  "%s | gravity index %.0f | %.0f places within 30 min | nearest %s, %.0f min",
-  acc_map$lsoa21nm, acc_map$A_index, acc_map$places_30,
-  acc_map$nearest_school, acc_map$nearest_min)
+NOW_LAB <- "Today (Longhill at Ovingdean)"
+ELM_SCN <- "With Longhill at Elm Grove"
 
-pal_grav <- colorNumeric("viridis", domain = acc_map$A_index, reverse = TRUE)
-pal_cum  <- colorNumeric("viridis", domain = acc_map$places_30, reverse = TRUE)
+# Both measures and both scenarios share one label, so whichever layer a
+# reader is on they can see all four numbers for the neighbourhood under
+# the cursor.
+acc_lab <- sprintf(
+  paste0("%s<br>gravity index %.0f today, %.0f at Elm Grove",
+         "<br>%.0f places within 30 min today, %.0f at Elm Grove",
+         "<br>nearest school %s, %.0f min"),
+  acc_map$lsoa21nm, acc_map$A_index, acc_map$A_index_elm,
+  acc_map$places_30, acc_map$places_30_elm,
+  acc_map$nearest_school, acc_map$nearest_min) %>%
+  lapply(htmltools::HTML)
+
+# Each pair of scenario layers shares a colour scale, so switching
+# between them shows a real change rather than a rescaling.
+pal_grav <- colorNumeric("viridis", reverse = TRUE,
+                         domain = c(acc_map$A_index, acc_map$A_index_elm))
+pal_cum  <- colorNumeric("viridis", reverse = TRUE,
+                         domain = c(acc_map$places_30, acc_map$places_30_elm))
 
 acc_base <- function() {
   leaflet(width = "100%", height = 560,
           options = leafletOptions(preferCanvas = TRUE)) %>%
     addProviderTiles(providers$CartoDB.Positron)
 }
+
+#' Two-scenario choropleth with a radio control to switch between them.
+acc_scenario_map <- function(col_now, col_elm, pal, legend_title) {
+  acc_base() %>%
+    addPolygons(data = acc_map, group = NOW_LAB,
+                fillColor = pal(acc_map[[col_now]]),
+                fillOpacity = 0.8, color = "white", weight = 0.3,
+                label = acc_lab) %>%
+    addPolygons(data = acc_map, group = ELM_SCN,
+                fillColor = pal(acc_map[[col_elm]]),
+                fillOpacity = 0.8, color = "white", weight = 0.3,
+                label = acc_lab) %>%
+    addLayersControl(baseGroups = c(NOW_LAB, ELM_SCN),
+                     options = layersControlOptions(collapsed = FALSE)) %>%
+    addLegend(pal = pal, values = c(acc_map[[col_now]], acc_map[[col_elm]]),
+              title = legend_title, position = "bottomright", opacity = 0.85)
+}
 ```
 
-::: {.panel-tabset}
-
-### Gravity
+### Measure one: gravity accessibility {#sec-acc-gravity}
 
 $$A_i = \sum_j W_j \, c_{ij}^{-\beta}$$
 
-Every school counts, discounted by how far away it is. $W_j$ is the
-school's attractiveness (its admission number), $c_{ij}$ the routed
-walk-and-bus time, and $\beta$ the distance decay --- set here at
-`r sprintf("%.1f", acc$beta$ref)`, the reference value from the model in
-section 7. The number has no units, so it is indexed with the
-child-weighted city average at 100.
+| Term | Meaning |
+|:--|:--|
+| $A_i$ | the accessibility of neighbourhood $i$ --- the quantity mapped below |
+| $j$ | a school; the sum runs over all `r nrow(acc$attract)` in the study area |
+| $W_j$ | how much *wanted* school there is at $j$, from expressed preferences |
+| $c_{ij}$ | routed walk-and-bus minutes from $i$ to $j$, weekday morning |
+| $\beta$ | distance decay: how sharply demand falls away with travel time, set at `r sprintf("%.1f", acc$beta$ref)` |
+
+Every school contributes to every neighbourhood's score, discounted by
+how far away it is. A neighbourhood with one school ten minutes away and
+nothing else scores lower than one with three schools at fifteen
+minutes, which is the point of the measure. The result has no units, so
+it is indexed with today's child-weighted city average at 100.
 
 ```{r fig-acc-gravity}
-#| fig-cap: "Gravity accessibility to secondary school places. Indexed so the child-weighted city average is 100. Darker means less school within reach."
+#| fig-cap: "Gravity accessibility to secondary school places. Indexed so today's child-weighted city average is 100, and both scenarios use that same base, so the Elm Grove layer can be read against it directly."
 #| fig-height: 6
 
-acc_base() %>%
-  addPolygons(data = acc_map, fillColor = ~pal_grav(A_index),
-              fillOpacity = 0.8, color = "white", weight = 0.3,
-              label = acc_lab) %>%
-  addLegend(pal = pal_grav, values = acc_map$A_index,
-            title = "Gravity index<br>(city average = 100)",
-            position = "bottomright", opacity = 0.85)
+acc_scenario_map("A_index", "A_index_elm", pal_grav,
+                 "Gravity index<br>(today's city average = 100)")
 ```
 
-### Cumulative opportunity
+### Measure two: cumulative opportunity {#sec-acc-cumulative}
 
-$$P_i(t) = \sum_j \mathrm{PAN}_j \cdot \mathbf{1}(c_{ij} \le t)$$
+$$P_i(t) = \sum_j \mathrm{PAN}_j \cdot \mathbf{1}\!\left(c_{ij} \le t\right)$$
 
-The number of school places reachable inside $t$ minutes. Trivial to
-explain --- "how many places can you get to in half an hour" --- but it
-treats a 29-minute journey and a 31-minute journey as entirely different
-things.
+| Term | Meaning |
+|:--|:--|
+| $P_i(t)$ | school places reachable from neighbourhood $i$ inside $t$ minutes |
+| $j$ | a school; the sum again runs over all `r nrow(acc$attract)` |
+| $\mathrm{PAN}_j$ | school $j$'s admission number --- the places it actually has |
+| $\mathbf{1}(\cdot)$ | an indicator: 1 if the journey is within $t$ minutes, 0 if not |
+| $c_{ij}$ | routed walk-and-bus minutes from $i$ to $j$, as above |
+| $t$ | the time threshold, set with the slider below |
+
+Where the gravity measure discounts smoothly, this one cuts off. A
+school 29 minutes away counts in full; the same school at 31 minutes
+counts for nothing. That is crude, but it is also how a threshold
+actually works for a family judging whether a journey is feasible ---
+and unlike the gravity index, the number means something on its own.
+
+The threshold is doing all the work, so it is worth being able to move
+it.
 
 ```{r fig-acc-cumulative}
-#| fig-cap: "School places reachable within 30 minutes by walking and bus. Darker means fewer places within reach; the darkest areas can reach none at all."
-#| fig-height: 6
+#| fig-cap: "School places reachable within the chosen number of minutes by walking and bus. Drag the slider to change the threshold, switch Longhill between its current site and Elm Grove, and toggle whether the figure is divided by the number of children living there. Darker means fewer places within reach; the darkest areas can reach none at all."
+#| fig-height: 7.4
 
-acc_base() %>%
-  addPolygons(data = acc_map, fillColor = ~pal_cum(places_30),
-              fillOpacity = 0.8, color = "white", weight = 0.3,
-              label = acc_lab) %>%
-  addLegend(pal = pal_cum, values = acc_map$places_30,
-            title = "Places within<br>30 minutes",
+# The polygons are drawn in JavaScript rather than by addPolygons(),
+# because the slider has to restyle them on every move. Going through R
+# would mean reaching into leaflet's own layer registry, which is an
+# undocumented internal; building the layer here means the handles are
+# ours and the interaction is straightforward.
+#
+# Colours are precomputed in R for every combination of threshold,
+# scenario and weighting, so the browser only swaps fills.
+
+tl <- acc$thresh_long %>% mutate(scenario = factor(scenario, c("now", "elm")))
+
+pal_t  <- colorNumeric("viridis", domain = c(0, max(tl$places)), reverse = TRUE)
+# Places per child are heavily right-skewed, so that scale is built on
+# the square root; without it nearly every neighbourhood sits in the
+# bottom colour and the map says nothing.
+pal_pc <- colorNumeric("viridis", domain = c(0, sqrt(max(tl$per_child))),
+                       reverse = TRUE)
+
+tl <- tl %>% mutate(col = pal_t(places), col_pc = pal_pc(sqrt(per_child)))
+
+as_lookup <- function(col) {
+  split(tl, tl$scenario) %>%
+    lapply(function(s) split(s, s$t) %>%
+             lapply(function(d) setNames(as.list(d[[col]]), d$lsoa)))
+}
+
+# A coarser simplification than the leaflet maps use, because this
+# geometry is embedded in the page as JSON. 60 m is still finer than the
+# rendered pixels at any zoom this map offers.
+geo_js <- lsoa %>%
+  st_transform(27700) %>%
+  st_simplify(dTolerance = 60, preserveTopology = TRUE) %>%
+  st_transform(4326) %>%
+  select(lsoa21cd, lsoa21nm)
+
+lh_pt <- sch_pts[sch_pts$short == "longhill", ]
+
+payload <- list(
+  geo        = jsonlite::fromJSON(geojsonsf::sf_geojson(geo_js),
+                                  simplifyVector = FALSE),
+  thresholds = acc$thresh_grid,
+  colours    = as_lookup("col"),
+  values     = as_lookup("places"),
+  colours_pc = as_lookup("col_pc"),
+  values_pc  = as_lookup("per_child"),
+  city = split(acc$thresh_city, acc$thresh_city$scenario) %>%
+    lapply(function(s) split(s, s$t) %>%
+             lapply(function(d) list(mean = round(d$mean_places[1]),
+                                     stranded = d$stranded[1],
+                                     children = round(d$stranded_children[1])))),
+  longhill = list(now = list(lat = lh_pt$lat, lng = lh_pt$lon),
+                  elm = list(lat = elm_xy[, 2], lng = elm_xy[, 1])))
+
+m_cum <- leaflet(width = "100%", height = 580) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  fitBounds(lng1 = min(sch_pts$lon) - 0.03, lat1 = min(sch_pts$lat) - 0.02,
+            lng2 = max(sch_pts$lon) + 0.03, lat2 = max(sch_pts$lat) + 0.02) %>%
+  addCircleMarkers(data = sch_pts %>% filter(short != "longhill"),
+                   lng = ~lon, lat = ~lat, radius = 4,
+                   fillColor = "#e31a1c", fillOpacity = 1,
+                   color = "white", weight = 1.2, label = ~name) %>%
+  addLegend(pal = pal_t, values = c(0, max(tl$places)),
+            title = "Places within<br>the threshold",
             position = "bottomright", opacity = 0.85)
+
+m_cum <- htmlwidgets::onRender(m_cum, "
+function(el, x, data) {
+  var map = this;
+
+  var layers = {};
+  L.geoJSON(data.geo, {
+    style: function() {
+      return {weight: 0.3, color: 'white', fillOpacity: 0.82};
+    },
+    onEachFeature: function(f, layer) {
+      layers[f.properties.lsoa21cd] = layer;
+      layer.bindTooltip('');
+    }
+  }).addTo(map);
+
+  var lh = L.circleMarker([data.longhill.now.lat, data.longhill.now.lng],
+    {radius: 6, fillColor: '#1a9850', fillOpacity: 1,
+     color: 'white', weight: 2}).addTo(map)
+    .bindTooltip('Longhill High School');
+
+  var ui = L.DomUtil.create('div', 'acc-slider');
+  ui.style.cssText = 'background:white;padding:10px 14px;border-radius:4px;' +
+    'box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;' +
+    'font-size:13px;min-width:290px';
+  ui.innerHTML =
+    '<div style=\"font-weight:bold;margin-bottom:6px\">Within ' +
+      '<span id=\"tval\">30</span> minutes</div>' +
+    '<input id=\"tslider\" type=\"range\" min=\"0\" max=\"' +
+      (data.thresholds.length - 1) + '\" value=\"' +
+      data.thresholds.indexOf(30) + '\" step=\"1\" style=\"width:100%\">' +
+    '<div style=\"margin-top:8px\">' +
+      '<label style=\"margin-right:10px\"><input type=\"radio\" name=\"scn\" ' +
+        'value=\"now\" checked> Today</label>' +
+      '<label><input type=\"radio\" name=\"scn\" value=\"elm\"> ' +
+        'Longhill at Elm Grove</label></div>' +
+    '<div style=\"margin-top:6px;padding-top:6px;border-top:1px solid #eee\">' +
+      '<label><input type=\"checkbox\" id=\"perchild\"> ' +
+        'Divide by children living there</label></div>' +
+    '<div id=\"citystat\" style=\"margin-top:8px;color:#444;line-height:1.45\">' +
+    '</div>';
+
+  var ctl = L.control({position: 'topright'});
+  ctl.onAdd = function() { return ui; };
+  ctl.addTo(map);
+  L.DomEvent.disableClickPropagation(ui);
+  L.DomEvent.disableScrollPropagation(ui);
+
+  var names = {};
+  data.geo.features.forEach(function(f) {
+    names[f.properties.lsoa21cd] = f.properties.lsoa21nm;
+  });
+
+  function redraw() {
+    var idx = +ui.querySelector('#tslider').value;
+    var t = data.thresholds[idx];
+    var scn = ui.querySelector('input[name=scn]:checked').value;
+    var pc = ui.querySelector('#perchild').checked;
+    ui.querySelector('#tval').textContent = t;
+
+    var cols = pc ? data.colours_pc[scn][t] : data.colours[scn][t];
+    var vals = pc ? data.values_pc[scn][t]  : data.values[scn][t];
+    var unit = pc ? ' places per child' : ' places';
+
+    Object.keys(layers).forEach(function(id) {
+      if (cols[id] === undefined) return;
+      layers[id].setStyle({fillColor: cols[id]});
+      layers[id].setTooltipContent(
+        names[id] + '<br>' +
+        (pc ? (+vals[id]).toFixed(1) : Math.round(vals[id])) +
+        unit + ' within ' + t + ' min');
+    });
+
+    lh.setLatLng([data.longhill[scn].lat, data.longhill[scn].lng]);
+    lh.setTooltipContent(scn === 'elm' ?
+      'Longhill (at Elm Grove)' : 'Longhill High School');
+
+    var c = data.city[scn][t], o = data.city['now'][t];
+    ui.querySelector('#citystat').innerHTML =
+      '<b>' + c.mean + '</b> places for the average child' +
+      (scn === 'elm' ? ' <span style=\"color:#888\">(' + o.mean +
+        ' today)</span>' : '') +
+      '<br><b>' + c.stranded + '</b> neighbourhoods reach none (' +
+      c.children + ' children)' +
+      (scn === 'elm' ? ' <span style=\"color:#888\">(' + o.stranded +
+        ' today)</span>' : '');
+  }
+
+  ui.querySelector('#tslider').addEventListener('input', redraw);
+  ui.querySelector('#perchild').addEventListener('change', redraw);
+  ui.querySelectorAll('input[name=scn]').forEach(function(r) {
+    r.addEventListener('change', redraw);
+  });
+  redraw();
+}
+", data = payload)
+
+m_cum
 ```
 
-:::
+Two things are worth doing with that slider.
+
+**Drag it down to 20 minutes.** The map empties. At a threshold most
+parents would call a reasonable school-run, much of the city can reach
+almost nothing --- and the pattern is not centred on the places the
+admissions debate concentrates on.
+
+**Switch scenarios at different thresholds.** Below about 30 minutes,
+moving Longhill to Elm Grove is unambiguously better for the city. Above
+about 35 it stops being so: the far south east loses the only school it
+could previously reach at all, and neighbourhoods start appearing in the
+"reaching none" count that were not there before. The relocation is not
+a free improvement --- it is a trade that is strongly favourable at short
+thresholds and turns against a small number of places at long ones.
 
 ```{r acc-disagree}
 #| include: false
@@ -2129,6 +2339,59 @@ school is notionally within reach, the gravity surface is the better
 description. If you are asking whether a child can get to a school in a
 morning, the threshold is the thing that matters, and the cumulative map
 is showing you something real that the gravity map hides.
+
+### What moving one school would do to the whole city {#sec-elm-access}
+
+Both maps carry a second layer placing Longhill at Elm Grove. Because
+accessibility sums over every school, moving one of them changes the
+figure for every neighbourhood --- not only for Longhill's own catchment.
+
+```{r tbl-elm-city}
+#| tbl-cap: "City-wide accessibility today and with Longhill relocated to Elm Grove. All figures are weighted by where cohort-aged children live."
+
+ct <- acc$city
+tibble::tribble(
+  ~Measure, ~Today, ~`At Elm Grove`, ~Change,
+  "Gravity accessibility (index)",
+    sprintf("%.0f", 100), sprintf("%.1f", 100 * ct$A_elm / ct$A_now),
+    sprintf("%+.1f%%", ct$A_pct_change),
+  "Places reachable within 30 minutes",
+    sprintf("%.0f", ct$p30_now), sprintf("%.0f", ct$p30_elm),
+    sprintf("%+.0f", ct$p30_elm - ct$p30_now),
+  "Journey to the nearest school (minutes)",
+    sprintf("%.1f", ct$near_now), sprintf("%.1f", ct$near_elm),
+    sprintf("%+.1f", ct$near_elm - ct$near_now),
+  "Neighbourhoods reaching no place in 30 minutes",
+    sprintf("%d", ct$zero30_now), sprintf("%d", ct$zero30_elm),
+    sprintf("%+d", ct$zero30_elm - ct$zero30_now),
+  "Children in those neighbourhoods",
+    sprintf("%.0f", ct$zero30_children_now), sprintf("%.0f", ct$zero30_children_elm),
+    sprintf("%+.0f", ct$zero30_children_elm - ct$zero30_children_now)
+) %>%
+  knitr::kable(align = "lrrr")
+```
+
+The two measures disagree about how much this matters, and the
+disagreement is informative.
+
+**On the gravity measure the effect is small** ---
+`r sprintf("%+.1f%%", ct$A_pct_change)` city-wide. That is because
+Longhill carries a low attractiveness weight: moving an unpopular school
+closer to people does not add much *wanted* school to the map.
+
+**On the cumulative measure it is substantial.** Places reachable within
+half an hour rise from `r sprintf("%.0f", ct$p30_now)` to
+`r sprintf("%.0f", ct$p30_elm)` for the average child, and the number of
+neighbourhoods that can reach **nothing** inside 30 minutes falls from
+`r ct$zero30_now` to `r ct$zero30_elm`. In children, that is
+**`r sprintf("%.0f", ct$zero30_children_now - ct$zero30_children_elm)`
+who would gain a reachable school place they do not currently have.**
+
+`r ct$better` of the `r ct$n` neighbourhoods are better off under the
+move and `r ct$worse` are worse off --- the latter being the far south
+east, which loses its closest school. This is a genuine trade, but it is
+a lopsided one, and it is the strongest argument in this document for
+relocation on grounds that have nothing to do with Longhill's own roll.
 
 ```{r acc-stats}
 #| include: false
@@ -2178,6 +2441,64 @@ acc$lsoa %>%
        caption = "Routed walk-and-bus times, weekday morning arrival.") +
   theme_bh()
 ```
+
+::: {.callout-note}
+## Why attractiveness is measured from preferences, not admission numbers
+
+An admission number is set by the authority. It says how many places
+exist, not whether anyone wants them. Longhill has the third-largest
+admission number in the city and the fewest first preferences of any
+school --- on a PAN-based weighting it would count as one of the most
+attractive destinations in Brighton, which is plainly wrong.
+
+Expressed preferences are the better signal, but **first preferences
+alone will not do either**, because the catchment structure distorts
+them. In the two paired catchments a family has to rank the two local
+schools against each other, so the catchment's first preferences are
+split between them while its second preferences accumulate. The
+signature is unmistakable:
+
+```{r tbl-attractiveness}
+#| tbl-cap: "Attractiveness weights. The ratio of second to first preferences separates the paired catchments from the single-school ones almost perfectly."
+
+acc$attract %>%
+  left_join(oi$schools %>% select(name, catchment), by = "name") %>%
+  mutate(kind = case_when(
+           is.na(catchment) ~ "Faith, city-wide",
+           catchment %in% c("DS_Varndean", "Hove_Blatch") ~ "Paired catchment",
+           TRUE ~ "Single-school catchment")) %>%
+  arrange(desc(W_pref)) %>%
+  transmute(School = name, Catchment = kind, PAN = pan,
+            `1st prefs` = ifelse(imputed, "--", sprintf("%.0f", p1)),
+            `2nd prefs` = ifelse(imputed, "--", sprintf("%.0f", p2)),
+            `2nd / 1st` = ifelse(imputed, "--", sprintf("%.2f", p2 / p1)),
+            `W (admission no.)` = sprintf("%.2f", W_pan),
+            `W (preferences)` = sprintf("%.2f", W_pref)) %>%
+  knitr::kable(align = "llrrrrrr")
+```
+
+The four schools in paired catchments have second-to-first ratios
+between 1.0 and 2.0; the four in single-school catchments, between 0.4
+and 0.6. Counting first preferences alone would mark down precisely the
+schools whose catchment obliges families to put them second --- Hove
+Park and Dorothy Stringer most of all.
+
+Two limitations follow, and both matter more than the choice of
+$\alpha$. **Peacehaven Community School is in Lewes district** and does
+not appear in the council's factsheets, so it has no preference data;
+its weight is imputed from its admission number at the city-average
+rate. And the count is deliberately **not** divided by the admission
+number, because what should be within reach is *places families want*,
+which scales with the size of the school.
+
+**The surface is not sensitive to any of this.** Recomputed on
+admission-number weights instead, it correlates with the version mapped
+here at
+`r sprintf("%.2f", acc$w_check$spearman)`, with
+`r fmt_pct(100 * acc$w_check$within_one, 0)` of neighbourhoods within one
+decile. The weighting changes individual schools a great deal and the
+map very little, because the measure sums over eleven of them.
+:::
 
 ::: {.callout-warning appearance="simple"}
 ## Two caveats that bear on these numbers
