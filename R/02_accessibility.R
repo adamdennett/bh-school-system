@@ -443,16 +443,21 @@ biv <- acc_lsoa %>%
   left_join(idaci, by = "lsoa") %>%
   filter(!is.na(idaci_score)) %>%
   mutate(
-    # Both axes run low to high: acc_t 1 is the least reachable third,
-    # dep_t 3 the most deprived third (IDACI score rises with child
-    # poverty). The corner of concern is therefore acc_t 1 with dep_t 3,
-    # not a matching pair of numbers.
+    # Both axes are oriented worst-to-best, so tercile 1 is the bad end
+    # on each and the corner of concern is 1-1. Accessibility already
+    # runs that way; deprivation does not, because the IDACI score rises
+    # with child poverty, so it is inverted here. Without that the grid
+    # reads in opposite directions on its two axes and the "bad corner"
+    # is a mismatched pair of numbers, which is a good way to misread a
+    # bivariate map.
     acc_t   = ntile(A_hansen, 3),
-    dep_t   = ntile(idaci_score, 3),
+    dep_t   = 4 - ntile(idaci_score, 3),
     biv_key = paste0(acc_t, "-", dep_t))
 
-# The corner that matters: worst access and highest child poverty.
-worst <- biv %>% filter(acc_t == 1, dep_t == 3)
+# The corner that matters: worst access and highest child poverty, now
+# the 1-1 cell on both axes.
+worst <- biv %>% filter(acc_t == 1, dep_t == 1)
+best  <- biv %>% filter(acc_t == 3, dep_t == 3)
 message(sprintf("  LSOAs in the low-access / high-deprivation corner: %d (%.0f children)",
                 nrow(worst), sum(worst$Oi, na.rm = TRUE)))
 
@@ -485,7 +490,7 @@ saveRDS(list(
   agreement = list(spearman = rho, same_decile = decile_flip$same,
                    within_one = decile_flip$within1),
   acc_dep_spearman = acc_dep_cor,
-  worst_corner = worst,
+  worst_corner = worst, best_corner = best,
   index_base = base,
   run_at = Sys.time()),
   file.path(DATA, "accessibility.rds"))

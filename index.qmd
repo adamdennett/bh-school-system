@@ -2860,62 +2860,91 @@ are the neighbourhoods where a difficult journey is least likely to be
 solved by a car in the family.
 
 ```{r fig-bivariate}
-#| fig-cap: "Accessibility and income deprivation affecting children, mapped together. The darkest blue is the corner that matters: least reachable school places, highest child poverty."
-#| fig-height: 7
+#| fig-cap: "Accessibility and income deprivation affecting children, mapped together. Both axes run worst to best, so the darkest blue is the corner that matters: least reachable school places and highest child poverty at the same time. Hover for a neighbourhood's figures on both."
+#| fig-height: 6.6
 
-# Stevens-style bivariate palette. Keyed "access-deprivation", each on a
-# tercile: access 1 is the least reachable third, deprivation 3 the most
-# deprived third. The concerning corner is therefore 1-3, and it is the
-# darkest colour.
+# Stevens-style bivariate palette, keyed "access-deprivation". Both
+# terciles are oriented worst-to-best, so 1-1 is the concerning corner
+# and gets the darkest colour, and 3-3 is the comfortable one and gets
+# the lightest. Getting this the wrong way round is the classic way to
+# misread a bivariate map, so the legend below spells out both axes.
 BIV <- c(
-  "1-1" = "#be64ac", "1-2" = "#8c62aa", "1-3" = "#3b4994",
-  "2-1" = "#dfb0d6", "2-2" = "#a5add3", "2-3" = "#5698b9",
-  "3-1" = "#e8e8e8", "3-2" = "#ace4e4", "3-3" = "#5ac8c8")
+  "1-1" = "#3b4994", "1-2" = "#8c62aa", "1-3" = "#be64ac",
+  "2-1" = "#5698b9", "2-2" = "#a5add3", "2-3" = "#dfb0d6",
+  "3-1" = "#5ac8c8", "3-2" = "#ace4e4", "3-3" = "#e8e8e8")
 
-biv_map <- lsoa %>%
-  inner_join(acc$bivariate %>% select(lsoa, acc_t, dep_t, biv_key,
-                                      idaci_score, A_index, places_30, Oi),
+TER_ACC <- c("least reachable", "middle", "most reachable")
+TER_DEP <- c("most deprived", "middle", "least deprived")
+
+biv_map <- lsoa_lite %>%
+  inner_join(acc$bivariate %>%
+               select(lsoa, acc_t, dep_t, biv_key, idaci_score,
+                      A_index, places_30, Oi),
              by = c("lsoa21cd" = "lsoa")) %>%
   mutate(fill = unname(BIV[biv_key]))
 
-main <- ggplot(biv_map) +
-  geom_sf(aes(fill = fill), colour = "white", linewidth = 0.12) +
-  scale_fill_identity() +
-  labs(title = "Where poor access and child poverty coincide",
-       subtitle = "Each neighbourhood classed on both axes at once",
-       caption = "Sources: routed walk-and-bus accessibility; IDACI 2019.") +
-  theme_void(base_size = 12) +
-  theme(plot.title = element_text(face = "bold"),
-        plot.subtitle = element_text(colour = "grey30"),
-        plot.caption = element_text(colour = "grey45", hjust = 0))
+biv_lab <- sprintf(
+  paste0("<b>%s</b><br>Accessibility: %s (index %.0f)",
+         "<br>Deprivation: %s (IDACI %.2f)",
+         "<br>%.0f places within 30 min | about %.0f children"),
+  biv_map$lsoa21nm, TER_ACC[biv_map$acc_t], biv_map$A_index,
+  TER_DEP[biv_map$dep_t], biv_map$idaci_score,
+  biv_map$places_30, biv_map$Oi) %>%
+  lapply(htmltools::HTML)
 
-key <- expand_grid(acc_t = 1:3, dep_t = 1:3) %>%
-  mutate(fill = unname(BIV[paste0(acc_t, "-", dep_t)])) %>%
-  ggplot(aes(acc_t, dep_t, fill = fill)) +
-  geom_tile(colour = "white", linewidth = 0.7) +
-  scale_fill_identity() +
-  scale_x_continuous(breaks = c(1, 3), labels = c("least", "most"),
-                     expand = c(0, 0)) +
-  scale_y_continuous(breaks = c(1, 3), labels = c("least", "most"),
-                     expand = c(0, 0)) +
-  labs(x = "Accessible →", y = "Deprived →") +
-  coord_equal() +
-  theme_minimal(base_size = 8) +
-  theme(panel.grid = element_blank(),
-        axis.title = element_text(size = 7.5, colour = "grey25"),
-        axis.text = element_text(size = 6.5, colour = "grey40"))
+# The 3 x 3 key, drawn as HTML so it can sit on the map with both axes
+# labelled in words rather than as tercile numbers.
+key_cells <- paste0(
+  sapply(3:1, function(a) paste0(
+    '<tr>',
+    if (a == 3) '<td rowspan="3" style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;padding-right:3px;color:#444">More reachable &rarr;</td>' else '',
+    paste0(sapply(1:3, function(d) sprintf(
+      '<td style="width:20px;height:20px;background:%s" title="%s / %s"></td>',
+      BIV[[paste0(a, "-", d)]], TER_ACC[a], TER_DEP[d])), collapse = ''),
+    '</tr>'), USE.NAMES = FALSE), collapse = '')
 
-main + inset_element(key, left = 0.72, bottom = 0.02, right = 0.99, top = 0.32)
+biv_legend <- paste0(
+  '<div style="background:white;padding:8px 10px;border-radius:4px;',
+  'box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;font-size:11px">',
+  '<div style="font-weight:bold;margin-bottom:5px">Both axes: worst &rarr; best</div>',
+  '<table style="border-collapse:collapse">', key_cells, '</table>',
+  '<div style="font-size:10px;color:#444;margin-top:3px;padding-left:16px">',
+  'Less deprived &rarr;</div>',
+  '<div style="margin-top:6px;font-size:10px;color:#666;max-width:150px">',
+  'Dark blue, bottom left: least reachable <i>and</i> most deprived.',
+  '</div></div>')
+
+leaflet(width = "100%", height = 600) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(data = biv_map, group = "Accessibility x deprivation",
+              fillColor = ~fill, fillOpacity = 0.85,
+              color = "white", weight = 0.3,
+              label = biv_lab) %>%
+  addPolygons(data = catch, group = "Catchment boundaries",
+              fill = FALSE, color = "#111111", weight = 2.2, opacity = 0.85,
+              label = ~unname(CATCH_LABELS[catchment])) %>%
+  addLayersControl(
+    overlayGroups = c("Accessibility x deprivation", "Catchment boundaries"),
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  hideGroup("Catchment boundaries") %>%
+  addControl(html = biv_legend, position = "bottomright")
 ```
 
 ```{r biv-stats}
 #| include: false
+# Both terciles run worst-to-best, so the concerning corner is 1-1 and
+# the comfortable one is 3-3.
 corner <- acc$worst_corner
-best_corner <- acc$bivariate %>% filter(acc_t == 3, dep_t == 3)
+best_corner <- acc$best_corner
 cells <- acc$bivariate %>%
   count(acc_t, dep_t, wt = Oi, name = "children")
-low_acc_high_dep <- cells %>% filter(acc_t == 1, dep_t == 3) %>% pull(children)
-hi_acc_high_dep  <- cells %>% filter(acc_t == 3, dep_t == 3) %>% pull(children)
+cell_children <- function(a, d)
+  cells %>% filter(acc_t == a, dep_t == d) %>% pull(children)
+worst_children <- cell_children(1, 1)
+best_children  <- cell_children(3, 3)
+# Deprived but well served: the comparison that shows the gradient is
+# not simply a restatement of where poor people live.
+dep_served <- acc$bivariate %>% filter(acc_t == 3, dep_t == 1)
 ```
 
 There is a real gradient here, and it runs the wrong way. Accessibility
@@ -2923,12 +2952,17 @@ and child poverty correlate at
 `r sprintf("%.2f", acc$acc_dep_spearman)` (Spearman): the more deprived
 a neighbourhood, the less school it can reach.
 
-**`r nrow(corner)` neighbourhoods --- about `r fmt_n(low_acc_high_dep)`
+**`r nrow(corner)` neighbourhoods --- about `r fmt_n(worst_children)`
 cohort-aged children --- sit in the worst corner**, in the least
 accessible third of the city and the most deprived third at the same
-time. At the other end, only `r nrow(best_corner)` neighbourhoods
-(`r fmt_n(hi_acc_high_dep)` children) combine high deprivation with good
-access.
+time. At the comfortable end, `r nrow(best_corner)` neighbourhoods
+(`r fmt_n(best_children)` children) are in the best third on both.
+
+The diagonal is what makes this a finding rather than an artefact. Only
+`r nrow(dep_served)` neighbourhoods are in the most deprived third *and*
+the best-served third --- fewer than half the
+`r nrow(corner)` in the worst corner. Deprivation and poor access are
+not merely coincident in this city; they line up.
 
 This is the strongest argument in the document for treating transport as
 a school-admissions instrument rather than a separate departmental
