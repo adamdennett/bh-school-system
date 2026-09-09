@@ -193,6 +193,94 @@ if (!file.exists(sed_src)) {
   say("all pupils: workforce ", wf, "%, inherited ", ex, "%")
 }
 
+# ---- 5c. How much of the variance a school can actually reach --------
+# The decomposition above files absence inside the exogenous block, as
+# though it were entirely inherited. The two-stage work in the RPE paper
+# shows it is not: a first-stage model of absence on intake, area and
+# segregation explains only about half its variance, and the residual is
+# the part pastoral systems and attendance work can act on.
+#
+# That matters for how the decomposition reads. The school-reachable
+# share is not the workforce term alone; it is the workforce term plus
+# the school-controllable half of the absence term. This step refits
+# stage 1 to get the split, then apportions the absence term in each
+# published model accordingly.
+#
+# Slow (a multilevel fit on ~12,000 school-years), so it is cached.
+
+message("\n=== school-reachable variance ===")
+lev_out <- file.path(DATA, "school_leverage.rds")
+
+if (file.exists(lev_out)) {
+  say("already computed; delete data/school_leverage.rds to rebuild")
+} else if (!requireNamespace("lme4", quietly = TRUE)) {
+  say("! lme4 not available; skipping")
+} else {
+  md <- file.path(SRC$sat, "data", "model_data_imputed.rds")
+  mm <- file.path(SRC$sat, "data", "models_imputed.rds")
+  if (!file.exists(md) || !file.exists(mm)) {
+    say("! model objects not found; skipping")
+  } else {
+    suppressPackageStartupMessages(library(lme4))
+
+    # --- stage 1: how much of absence is structural? ---
+    s1 <- readRDS(md) %>%
+      filter(!is.na(PERCTOT), PERCTOT > 0, !is.na(PTFSM6CLA1A), PTFSM6CLA1A > 0,
+             !is.na(PNUMEAL), PNUMEAL > 0, !is.na(ks2_c),
+             !is.na(gorard_segregation)) %>%
+      droplevels()
+    say("fitting the stage-1 absence model on ",
+        format(nrow(s1), big.mark = ","), " school-years...")
+    m1 <- lmer(log(PERCTOT) ~ log(PTFSM6CLA1A) + log(PNUMEAL) + ks2_c +
+                 gorard_segregation + (1 | year_label) + (1 | gor_name/LANAME),
+               data = s1, REML = TRUE,
+               control = lmerControl(optimizer = "bobyqa",
+                                     optCtrl = list(maxfun = 20000)))
+    fit1 <- predict(m1, re.form = NULL); obs1 <- log(s1$PERCTOT)
+    struct_share <- var(fit1) / var(obs1)
+    school_share <- 1 - struct_share
+    say(sprintf("absence: %.0f%% structural, %.0f%% school-reachable",
+                100 * struct_share, 100 * school_share))
+
+    # --- apportion the absence term in each published model ---
+    WF <- c("remained_in_the_same_school",
+            "teachers_on_leadership_pay_range_percent",
+            "log(average_number_of_days_taken)")
+    mods <- readRDS(mm)
+
+    one <- function(m, who) {
+      X <- getME(m, "X"); b <- fixef(m); cn <- colnames(X)
+      eta <- function(sel) as.vector(X[, sel, drop = FALSE] %*% b[sel])
+      is_int <- cn == "(Intercept)"; is_wf <- cn %in% WF
+      e_abs <- eta(grepl("PERCTOT", cn))
+      e_wf  <- eta(is_wf)
+      e_exo <- eta(!is_wf & !is_int)
+      full  <- e_exo + e_wf
+      vc <- as.data.frame(VarCorr(m)) %>% filter(is.na(var2))
+      tot <- cov(e_exo, full) + cov(e_wf, full) + sum(vc$vcov)
+      sh <- function(x) 100 * cov(x, full) / tot
+      tibble(who = who, exogenous = sh(e_exo), absence = sh(e_abs),
+             workforce = sh(e_wf),
+             absence_structural = sh(e_abs) * struct_share,
+             absence_school     = sh(e_abs) * school_share,
+             reachable          = sh(e_wf) + sh(e_abs) * school_share)
+    }
+
+    leverage <- bind_rows(
+      one(mods$all,               "All pupils"),
+      one(mods$disadvantaged,     "Disadvantaged pupils"),
+      one(mods$non_disadvantaged, "Non-disadvantaged pupils"))
+
+    print(as.data.frame(leverage %>% mutate(across(where(is.numeric), ~ round(.x, 1)))),
+          row.names = FALSE)
+
+    saveRDS(list(struct_share = struct_share, school_share = school_share,
+                 stage1_n = nrow(s1), leverage = leverage,
+                 built_at = Sys.time()), lev_out)
+    say("saved data/school_leverage.rds")
+  }
+}
+
 message("\n=== postcode child population ===")
 pcd_src <- file.path(SRC$consult, "bn_postcodes_pop1.csv")
 

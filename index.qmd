@@ -96,6 +96,17 @@ ex_sed <- bh_data("school_effect_decomp.rds")
 ex_wf_all <- .pick(ex_sed$decomp_all, "^Endogenous")
 ex_ex_all <- .pick(ex_sed$decomp_all, "^Exogenous")
 ex_wf_dis <- .pick(ex_sed$decomp_dis, "^Endogenous")
+
+# The share a school can actually reach: workforce plus the
+# school-controllable half of absence. Section 2.5 derives this.
+ex_lev        <- bh_data("school_leverage.rds")$leverage
+ex_reach      <- ex_lev$reachable[ex_lev$who == "All pupils"]
+ex_abs_school <- ex_lev$absence_school[ex_lev$who == "All pupils"]
+# Recomputed from the fitted model rather than the cached table, so that
+# workforce + school-reachable absence actually sums to the reachable
+# total quoted alongside it. It differs from the cached 3.3% by under a
+# percentage point; section 2.5 explains why.
+ex_wf_recomp  <- ex_lev$workforce[ex_lev$who == "All pupils"]
 ```
 
 ::: {.callout-note appearance="simple"}
@@ -142,17 +153,17 @@ social mixing --- established in detail in
 
 **Moving children between schools is a weak instrument, and this is the
 single most important point for admissions policy.** Decomposing the
-variance in Attainment 8 puts the part a school directly controls --- its
-workforce --- at **`r ex_wf_all`%**, against **`r ex_ex_all`%** inherited
-with the intake. For disadvantaged pupils, the group any mixing policy is
-aimed at, the school-controllable share falls to **`r ex_wf_dis`%**. Most
-of what separates one school's results from another's arrives with the
-children, and a redistribution policy works on the smallest term while
-leaving the rest untouched. Nor can the measured drivers be separated: of
-the school-level variation deprivation, absence and prior attainment
-jointly explain, about three quarters is variance they *share*. This is
-not an argument that schools do not matter --- it is an argument that the
-council should not expect admissions changes to move attainment much.
+variance in Attainment 8 shows that a school can reach about
+**`r fmt_pct(ex_reach, 0)`** of what separates its results from another's
+--- consistent with sixty years of school-effectiveness research. The
+rest arrives with the children. Crucially, **almost all of that reachable
+share runs through attendance**: the workforce a school hires accounts
+for only `r fmt_pct(ex_wf_recomp, 1)`, while the school-controllable half
+of absence accounts for `r fmt_pct(ex_abs_school, 0)`. Redistribution touches
+neither. It changes which building a child attends without changing their
+attendance or their circumstances. This is not an argument that schools
+do not matter --- it is an argument that the council's lever is
+attendance, and attendance is not an admissions policy.
 
 **Admissions criteria only bind at some schools.**
 `r ex_open` of the `r nrow(ex_rat)` schools offered a place to every
@@ -885,6 +896,118 @@ non-disadvantaged pupils it is `r wf_non`% against `r ex_non`% --- so
 the pattern is not an artefact of one group, and the school-controllable
 share is smallest for the children the policy is meant to help.
 
+## But absence is not really inherited {#sec-absence-split}
+
+There is a problem with reading the chart above literally, and it cuts
+against the conclusion just drawn.
+
+The exogenous block is labelled "cohort, prior attainment, absence,
+neighbourhood", and absence is filed there as though a school simply
+receives it. The two-stage work in the RPE paper shows that it does not.
+A first-stage model of school absence on intake, area and segregation
+explains only about half of its variation; the rest is a residual that
+pastoral systems, attendance officers, family liaison and
+persistent-absentee follow-up act on directly.
+
+```{r leverage-stats}
+#| include: false
+lev <- bh_data("school_leverage.rds")
+LV  <- lev$leverage
+lv  <- function(who, col) LV[[col]][LV$who == who]
+```
+
+Across `r fmt_n(lev$stage1_n)` school-years, that first stage accounts
+for **`r fmt_pct(100 * lev$struct_share)`** of the variation in absence.
+The other **`r fmt_pct(100 * lev$school_share)`** is school-level
+residual. Absence is not one thing: roughly half of it is structural and
+outside a school's reach, and roughly half is not.
+
+That changes the arithmetic, because absence is the largest single term
+in the exogenous block --- `r fmt_pct(lv("All pupils", "absence"), 1)` of
+total variance for all pupils, and
+`r fmt_pct(lv("Disadvantaged pupils", "absence"), 1)` for disadvantaged
+pupils, where it is the biggest component of all.
+
+```{r fig-leverage}
+#| fig-cap: "The same variance, re-cut by what a school can actually act on. The absence term is split into the structural share the first-stage model predicts and the school-level residual it does not."
+#| fig-height: 4
+
+LV %>%
+  transmute(who = factor(who, LV$who),
+            `Workforce` = workforce,
+            `Absence, school-reachable` = absence_school,
+            `Absence, structural` = absence_structural,
+            `Other inherited` = exogenous - absence) %>%
+  pivot_longer(-who, names_to = "part", values_to = "pct") %>%
+  mutate(part = factor(part, c("Workforce", "Absence, school-reachable",
+                               "Absence, structural", "Other inherited"))) %>%
+  ggplot(aes(pct, fct_rev(who), fill = part)) +
+  geom_col(width = 0.62) +
+  geom_text(aes(label = ifelse(pct >= 3, sprintf("%.0f%%", pct), "")),
+            position = position_stack(vjust = 0.5), size = 3.1,
+            colour = "white", fontface = "bold") +
+  scale_fill_manual(values = c("Workforce" = "#ED357D",
+                               "Absence, school-reachable" = "#F2A03D",
+                               "Absence, structural" = "#7FB3D5",
+                               "Other inherited" = "#49a0c4"), name = NULL) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(x = "Share of total outcome variance (%)", y = NULL,
+       title = "What a school can actually act on is mostly attendance",
+       subtitle = "Fixed-effect variance only; the random-effect components are omitted here",
+       caption = "Sources: How to Pull the Right Lever; RPE paper two-stage absence model.") +
+  theme_bh(11) +
+  theme(legend.position = "bottom", panel.grid.major.y = element_blank())
+```
+
+Adding the school-controllable half of absence to the workforce term
+gives a school-reachable share of **`r fmt_pct(lv("All pupils", "reachable"), 1)`**
+for all pupils, **`r fmt_pct(lv("Disadvantaged pupils", "reachable"), 1)`**
+for disadvantaged pupils and
+**`r fmt_pct(lv("Non-disadvantaged pupils", "reachable"), 1)`** for
+non-disadvantaged --- strikingly consistent, and sitting squarely inside
+the `r SCHOOL_LO`--`r SCHOOL_HI` per cent that sixty years of
+school-effectiveness research has settled on.
+
+::: {.callout-note appearance="simple"}
+## A small discrepancy worth naming
+
+The workforce figures in this section are recomputed from the fitted
+models rather than read off the published table, so that the parts sum
+to the totals quoted beside them. They come out slightly lower than the
+published version --- `r fmt_pct(lv("All pupils", "workforce"), 1)`
+against `r wf_all`% for all pupils --- because the cached table and the
+model objects available here are not from quite the same fit. The
+difference is under a percentage point and changes nothing in the
+argument, but the two numbers are not identical and it would be worse to
+present them as if they were.
+:::
+
+So the earlier conclusion needs restating, more precisely and more
+usefully:
+
+::: {.callout-important}
+## The corrected version
+
+A school can reach about **`r fmt_pct(lv("All pupils", "reachable"), 0)`**
+of the variance in its results --- not the `r wf_all`% the workforce term
+alone suggests. But **almost all of that leverage runs through
+attendance**, not through who is sitting in the classroom.
+
+For disadvantaged pupils the point is sharper still. The workforce term
+is `r fmt_pct(lv("Disadvantaged pupils", "workforce"), 1)`; the
+school-reachable absence term is
+`r fmt_pct(lv("Disadvantaged pupils", "absence_school"), 1)` ---
+`r sprintf("%.0f", lv("Disadvantaged pupils", "absence_school") / lv("Disadvantaged pupils", "workforce"))`
+times larger. The lever that works for the children the policy is aimed
+at is attendance, and it is not an admissions lever.
+
+Moving children between schools does not touch either term. It changes
+which building a child attends without changing their attendance, and
+without changing the intake characteristics that account for the rest.
+That is the case against expecting much from redistribution --- and,
+equally, the case for expecting a great deal from attendance work.
+:::
+
 ::: {.callout-note appearance="simple"}
 ## Does the shared variance change this?
 
@@ -942,9 +1065,10 @@ account for `r ex_all`% of the variance, and it does not touch the
 workforce that accounts for `r wf_all`%. A policy of social mixing
 through admissions is therefore working on the smaller term by
 construction --- not because mixing is undesirable, but because the
-arithmetic limits what it can deliver. And the limit is tightest for
-disadvantaged pupils, where the school-controllable share is
-`r wf_dis`%.
+arithmetic limits what it can deliver.
+
+The next section qualifies this in an important way. One large item
+inside that `r ex_all`% is not inherited at all.
 
 **And the measured drivers cannot be cleanly separated anyway.** Of the
 `r fmt_pct(100 * r2_all, 0)` of school-level variation the three
