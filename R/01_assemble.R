@@ -150,4 +150,46 @@ if (!file.exists(panel_src)) {
   say("saved data/performance_panel.rds")
 }
 
+# ---- 6. Postcode-level child population ------------------------------
+# Census 2021 output-area household composition apportioned to postcode
+# centroids, with IDACI attached. Finer than the LSOA zones used
+# everywhere else, which makes it the right basis for a density surface
+# and for a dot map that shows the texture of the city rather than its
+# administrative blocks.
+#
+# Brighton & Hove only - it does not extend to the Peacehaven area, so
+# anything built from it is a city map, not a study-area map.
+
+message("\n=== postcode child population ===")
+pcd_src <- file.path(SRC$consult, "bn_postcodes_pop1.csv")
+
+if (!file.exists(pcd_src)) {
+  say("! bn_postcodes_pop1.csv not found; the postcode maps will be skipped")
+} else {
+  pcd <- readr::read_csv(pcd_src, show_col_types = FALSE) %>%
+    transmute(
+      postcode   = pcds,
+      lsoa       = lsoa21,
+      # Northings are zero-padded in the source ("0101938"), so readr
+      # types the column as character. Left as-is it silently survives
+      # every filter and only fails much later, inside the kernel
+      # density estimate. Coerce here.
+      easting    = as.numeric(oseast1m),
+      northing   = as.numeric(osnrth1m),
+      children   = pcd_dep_ch_0_18_total_count,
+      hh_with_ch = pcd_dep_ch_hh_count_round,
+      hh_total   = total_hh,
+      idaci_decile = idaci_decile,
+      idaci_score  = idaci_score,
+      catchment_2026 = catchment_2026) %>%
+    filter(!is.na(easting), !is.na(northing))
+
+  say(format(nrow(pcd), big.mark = ","), " postcodes, ",
+      format(round(sum(pcd$children, na.rm = TRUE)), big.mark = ","),
+      " children aged 0-18, ", dplyr::n_distinct(pcd$lsoa), " LSOAs")
+
+  readr::write_csv(pcd, file.path(DATA, "postcode_children.csv"))
+  say("saved data/postcode_children.csv")
+}
+
 message("\nAssembly complete. data/ is now self-contained.\n")

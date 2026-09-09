@@ -206,17 +206,14 @@ still partly the shape of that closure.
 #| fig-cap: "Schools, catchment boundaries and the cohort-aged child population. Use the control at the top right to turn each layer on and off."
 
 # ---- Schools ---------------------------------------------------------
-schools_sf <- oi$schools %>%
-  filter(!is.na(easting), !is.na(northing)) %>%
-  st_as_sf(coords = c("easting", "northing"), crs = 27700) %>%
-  st_transform(4326)
-sch_xy <- st_coordinates(schools_sf)
-schools_sf$lon <- sch_xy[, 1]; schools_sf$lat <- sch_xy[, 2]
+sch <- schools_sf(oi$schools)
 
-schools_sf <- schools_sf %>%
-  mutate(boundary_catchment = as_boundary_catchment(catchment),
-         marker_col = ifelse(is.na(boundary_catchment), "#444444",
-                             unname(CATCH_COLOURS[boundary_catchment])))
+sch_popup <- sprintf(
+  "<b>%s</b><br>Admission number 2024: %s<br>Planned 2030: %s%s",
+  sch$name, sch$pan2024, sch$pan2030,
+  ifelse(is.na(sch$catchment),
+         "<br><i>Faith school, admits city-wide</i>",
+         paste0("<br>Catchment: ", CATCH_LABELS[sch$boundary_catchment])))
 
 # ---- Children per LSOA ----------------------------------------------
 # Oi is the cohort-aged child estimate per zone; zones are LSOA x
@@ -258,26 +255,7 @@ m <- leaflet(width = "100%", height = 620) %>%
     label = ~sprintf("%s: about %s children in the cohort",
                      lsoa21nm, round(children)))
 
-# School markers, then logos on top. Both go in the same layer group so
-# the control turns the pair on and off together.
-for (i in seq_len(nrow(schools_sf))) {
-  s <- schools_sf[i, ]
-  popup <- sprintf(
-    "<b>%s</b><br>Admission number 2024: %s<br>Planned 2030: %s%s",
-    s$name, s$pan2024, s$pan2030,
-    if (is.na(s$catchment)) "<br><i>Faith school, admits city-wide</i>" else
-      paste0("<br>Catchment: ", CATCH_LABELS[s$boundary_catchment]))
-
-  m <- m %>% addCircleMarkers(
-    lng = s$lon, lat = s$lat, group = "Schools",
-    radius = 6, fillColor = s$marker_col, fillOpacity = 0.95,
-    color = "white", weight = 2, popup = popup, label = s$name)
-
-  ic <- logo_icon(LOGO_FILES[as.character(s$urn)])
-  if (!is.null(ic))
-    m <- m %>% addMarkers(lng = s$lon, lat = s$lat, icon = ic,
-                          group = "Schools", popup = popup, label = s$name)
-}
+m <- add_school_layer(m, sch, group = "Schools", popup = sch_popup)
 
 # CoMArt, closed 2005
 m <- m %>% addCircleMarkers(
@@ -334,6 +312,194 @@ about
 `r fmt_pct(100 * sum(oi$schools$pan2026[is.na(oi$schools$catchment)]) / sum(oi$schools$pan2026[oi$schools$name != "Peacehaven Community School"]))`
 of the city total. Any statement about what catchments do has to be read
 against that.
+
+## Where the children actually are {#sec-child-density}
+
+The circles on the map above are LSOA totals, and an LSOA is a blunt
+unit --- about 1,500 people, drawn for administrative convenience rather
+than to describe a neighbourhood. Two finer views of the same population
+follow. They are shown side by side because they answer slightly
+different questions, and it is worth deciding which one this document
+should carry.
+
+```{r pcd-data}
+#| include: false
+
+pcd <- bh_data("postcode_children.csv") %>%
+  filter(!is.na(easting), !is.na(northing), children > 0)
+
+# Land mask: the union of the city's LSOAs. Without it a smoothed
+# surface runs cheerfully out into the Channel.
+city <- lsoa %>%
+  filter(lsoa21cd %in% unique(pcd$lsoa)) %>%
+  st_transform(27700) %>%
+  st_union() %>%
+  st_make_valid()
+```
+
+::: {.panel-tabset}
+
+### Density surface
+
+```{r fig-child-density}
+#| fig-cap: "Children aged 0-18 per hectare, smoothed from postcode-level estimates with a 400 m kernel and clipped to the built-up area. Census 2021 household composition apportioned to postcode centroids."
+
+BW <- 400          # kernel bandwidth in metres - a walkable neighbourhood
+GRID <- 320        # grid resolution
+
+# A weighted kernel density: each child contributes one point, so the
+# surface is the density of children rather than of postcodes. Counts are
+# apportioned estimates and so fractional; rounding for replication
+# changes the total by well under a percent.
+reps <- round(pcd$children)
+kx <- rep(pcd$easting,  reps)
+ky <- rep(pcd$northing, reps)
+
+bb <- st_bbox(city)
+k <- MASS::kde2d(kx, ky, h = c(BW, BW), n = GRID,
+                 lims = c(bb["xmin"] - 500, bb["xmax"] + 500,
+                          bb["ymin"] - 500, bb["ymax"] + 500))
+
+# kde2d integrates to 1 over square metres. Scale to children per
+# hectare so the legend means something to a reader.
+dens <- k$z * sum(reps) * 1e4
+
+brks <- c(0, 2, 5, 10, 15, 22, 30, max(45, ceiling(max(dens))))
+pal_d <- viridisLite::viridis(length(brks) - 1, option = "magma",
+                              direction = -1, begin = 0.08)
+
+# isoband wants z indexed [y, x]; kde2d returns [x, y].
+bands <- isoband::isobands(x = k$x, y = k$y, z = t(dens),
+                           levels_low = brks[-length(brks)],
+                           levels_high = brks[-1])
+
+band_sf <- st_sf(
+  lo = brks[-length(brks)], hi = brks[-1],
+  geometry = st_sfc(isoband::iso_to_sfg(bands), crs = 27700)) %>%
+  st_make_valid() %>%
+  st_intersection(city) %>%
+  filter(!st_is_empty(geometry)) %>%
+  st_transform(4326)
+
+band_sf$col <- pal_d[seq_len(nrow(band_sf))]
+band_sf$lab <- sprintf("%g - %g children per hectare", band_sf$lo, band_sf$hi)
+
+leaflet(width = "100%", height = 600) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(data = band_sf, fillColor = ~col, fillOpacity = 0.72,
+              color = NA, weight = 0, label = ~lab, group = "Children") %>%
+  addPolygons(data = catch, fill = FALSE, color = "#333333",
+              weight = 1.6, opacity = 0.7, group = "Catchments",
+              label = ~unname(CATCH_LABELS[catchment])) %>%
+  add_school_layer(sch, group = "Schools", popup = sch_popup) %>%
+  addLayersControl(overlayGroups = c("Children", "Catchments", "Schools"),
+                   options = layersControlOptions(collapsed = TRUE)) %>%
+  addLegend(colors = band_sf$col, labels = band_sf$lab,
+            title = "Children 0-18<br>per hectare",
+            position = "bottomright", opacity = 0.8)
+```
+
+### Postcode detail
+
+```{r fig-pcd-dots}
+#| fig-cap: "Every residential postcode in the city, sized by the number of children aged 0-18 and coloured by income deprivation affecting children. Decile 1 is the most deprived tenth of neighbourhoods nationally."
+
+pcd_sf <- pcd %>%
+  st_as_sf(coords = c("easting", "northing"), crs = 27700) %>%
+  st_transform(4326) %>%
+  filter(!is.na(idaci_decile))
+
+pal_idaci <- colorFactor("RdYlBu", domain = sort(unique(pcd_sf$idaci_decile)))
+
+# Radius on the square root of the count so circle area is proportional
+# to children. Scaled well down from the LSOA circles in 2.1: there are
+# 4,229 postcodes against 179 LSOAs, so the same per-circle size would
+# cover the city in a single wash of ink. The median postcode draws at
+# about 3.5 px and the largest at about 9.
+leaflet(width = "100%", height = 600) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(data = catch, fill = FALSE, color = "#333333",
+              weight = 1.6, opacity = 0.7, group = "Catchments",
+              label = ~unname(CATCH_LABELS[catchment])) %>%
+  addCircleMarkers(
+    data = pcd_sf, group = "Postcodes",
+    radius = ~0.5 + sqrt(children),
+    fillColor = ~pal_idaci(idaci_decile), fillOpacity = 0.6,
+    stroke = FALSE,
+    label = ~sprintf("%s | %.0f children 0-18 | IDACI decile %s",
+                     postcode, children, idaci_decile)) %>%
+  add_school_layer(sch, group = "Schools", popup = sch_popup) %>%
+  addLayersControl(overlayGroups = c("Postcodes", "Catchments", "Schools"),
+                   options = layersControlOptions(collapsed = TRUE)) %>%
+  addLegend(pal = pal_idaci, values = sort(unique(pcd_sf$idaci_decile)),
+            title = "IDACI decile<br><span style='font-weight:normal'>1 = most deprived</span>",
+            position = "bottomright", opacity = 0.9)
+```
+
+:::
+
+```{r density-check}
+#| include: false
+# Sanity check on the surface. The comparison has to be like for like:
+# the surface is children per hectare, so testing it against the raw
+# count in each postcode mostly measures how much postcodes differ in
+# size (that correlation is only ~0.36 and means little). Compare it
+# instead with the children within 500 m of each postcode, which is the
+# same quantity the surface is estimating. A transposed grid would show
+# up here as a collapse towards the swapped-index value.
+ix <- findInterval(pcd$easting,  k$x)
+iy <- findInterval(pcd$northing, k$y)
+ok <- ix > 0 & ix <= length(k$x) & iy > 0 & iy <= length(k$y)
+sampled <- dens[cbind(ix[ok], iy[ok])]
+
+xy <- as.matrix(pcd[ok, c("easting", "northing")])
+ch <- pcd$children[ok]
+local500 <- vapply(seq_len(nrow(xy)), function(i)
+  sum(ch[(xy[, 1] - xy[i, 1])^2 + (xy[, 2] - xy[i, 2])^2 <= 500^2]),
+  numeric(1))
+
+dens_cor  <- cor(sampled, local500, method = "spearman")
+dens_swap <- suppressWarnings(
+  cor(dens[cbind(iy[ok], ix[ok])], local500, method = "spearman"))
+stopifnot(dens_cor > 0.6, dens_cor > dens_swap + 0.2)
+
+n_pcd  <- nrow(pcd)
+```
+
+The surface and the dots are built from the same
+`r fmt_n(n_pcd)` postcodes and the same
+`r fmt_n(sum(pcd$children))` children, and they show the same city ---
+the smoothed surface tracks the number of children within 500 metres of
+each postcode at a rank correlation of
+`r sprintf("%.2f", dens_cor)`. What differs is what each one makes easy
+to see.
+
+The **surface** shows where children are concentrated: a dense central
+and western band, thinning sharply east of the marina. It answers "where
+is the demand?" and it does not pretend to precision it lacks.
+
+The **postcode map** shows the same concentration but adds the social
+gradient, and it exposes something the surface cannot --- that
+deprivation in this city is fine-grained. Deprived and comfortable
+postcodes sit within a few hundred metres of each other, particularly in
+the centre. That texture matters later: section 4 shows that poor
+transport access and child poverty coincide, and section 5 that
+catchment boundaries drawn at this scale will always cut through mixed
+ground rather than separating rich areas from poor ones.
+
+::: {.callout-note appearance="simple"}
+## Two limits on both maps
+
+These are **Census 2021 output-area household counts apportioned to
+postcode centroids**, not a register of children. They are estimates,
+and at postcode level they are noisy estimates --- reliable in aggregate,
+not for any individual postcode.
+
+They also cover **Brighton & Hove only**. The Peacehaven and Telscombe
+area, which contributes about `r fmt_n(sum(oi$zones$Oi[oi$zones$area == "Expansion area"]))`
+cohort-aged children to the study area, is absent from both. The
+LSOA-level figures used everywhere else in this document do include it.
+:::
 
 ## What the attainment data actually says {#sec-lever}
 

@@ -177,6 +177,53 @@ logo_icon <- function(file, size = 36) {
                     iconAnchorX = -4, iconAnchorY = size + 4)
 }
 
+#' The eleven schools as an sf, in WGS84, with lon/lat columns and a
+#' catchment colour attached.
+schools_sf <- function(schools = NULL) {
+  if (is.null(schools)) schools <- bh_data("open_inputs.rds")$schools
+  s <- schools %>%
+    dplyr::filter(!is.na(easting), !is.na(northing)) %>%
+    sf::st_as_sf(coords = c("easting", "northing"), crs = 27700) %>%
+    sf::st_transform(4326)
+  xy <- sf::st_coordinates(s)
+  s$lon <- xy[, 1]; s$lat <- xy[, 2]
+  s$boundary_catchment <- as_boundary_catchment(s$catchment)
+  s$marker_col <- ifelse(is.na(s$boundary_catchment), "#444444",
+                         unname(CATCH_COLOURS[s$boundary_catchment]))
+  s
+}
+
+#' Add the schools to a leaflet map: a coloured dot per school with its
+#' logo above it, both in one layer group so a layers control toggles
+#' the pair together.
+#'
+#' @param map a leaflet map
+#' @param s output of schools_sf()
+#' @param group layer group name
+#' @param logos draw the logo markers as well as the dots
+#' @param radius dot radius in pixels
+#' @param popup optional character vector, one per school
+add_school_layer <- function(map, s = schools_sf(), group = "Schools",
+                             logos = TRUE, radius = 6, popup = NULL,
+                             logo_size = 36) {
+  for (i in seq_len(nrow(s))) {
+    row <- s[i, ]
+    pu  <- if (is.null(popup)) NULL else popup[i]
+    map <- leaflet::addCircleMarkers(
+      map, lng = row$lon, lat = row$lat, group = group,
+      radius = radius, fillColor = row$marker_col, fillOpacity = 0.95,
+      color = "white", weight = 2, popup = pu, label = row$name)
+    if (logos) {
+      ic <- logo_icon(LOGO_FILES[as.character(row$urn)], size = logo_size)
+      if (!is.null(ic))
+        map <- leaflet::addMarkers(map, lng = row$lon, lat = row$lat,
+                                   icon = ic, group = group,
+                                   popup = pu, label = row$name)
+    }
+  }
+  map
+}
+
 # ---- Plot theme ------------------------------------------------------
 
 theme_bh <- function(base_size = 12) {
