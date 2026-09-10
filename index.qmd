@@ -4907,47 +4907,54 @@ would replace every band in this document with an estimate.
 :::
 
 
-# Catchments drawn from the flows {#sec-flow-regions}
+# Redrawing the catchments {#sec-flow-regions}
 
 The catchments Brighton uses were drawn round schools. @sec-flow-map
 drew where the model actually sends children. This section asks the
-obvious next question: **if you drew the boundaries round the flows
-instead, what would they look like?**
+obvious next question --- **if you drew the boundaries round something
+else, what would they look like, and would they be better?** --- and
+answers it with four alternatives and the same statistics applied to
+each.
 
 ```{r fr-load}
 #| include: false
 fr <- bh_data("flow_regions.rds")
-fr_now  <- fr$designs %>% filter(design == "Current catchments")
-fr_one  <- fr$designs %>% filter(str_detect(design, "one per school"))
-fr_pair <- fr$designs %>% filter(str_detect(design, "pairs kept"))
-fr_moved <- fr$changed %>% filter(moved)
+fr_get <- function(pat, tbl = fr$designs)
+  tbl %>% filter(str_detect(design, fixed(pat)))
+d_now  <- fr_get("Current")
+d_pd   <- fr_get("Power diagram")
+d_one  <- fr_get("one per school")
+d_pair <- fr_get("pairs kept")
+d_elm  <- fr_get("Elm Grove")
 ```
 
 ::: {.callout-note appearance="simple"}
-## The method, and the one choice inside it that matters
+## Two methods, and the difference between them is the point
 
-This is a standard functional regionalisation, of the kind used to build
-travel-to-work areas, run on the modelled flows rather than on commuting
-data.
+**The power diagram** is a *proximity* design. Every neighbourhood goes
+to the catchment with the lowest journey time minus a price, and the
+prices are then adjusted until every catchment holds the children its
+schools have places for. It knows how long journeys take and how many
+places exist. It knows nothing about what families want.
+
+**The flow regions** are a *demand* design, and a standard functional
+regionalisation of the kind used to build travel-to-work areas:
 
 1. **Dominant flow.** Every LSOA joins the school it sends most children
    to --- the Nystuen–Dacey construction, the oldest method there is.
 2. **Contiguity repair.** A catchment has to be one piece. Fragments
-   that do not touch their region's main body move to the adjacent
-   region they send most flow to.
-3. **Capacity balance.** Regions then trade LSOAs until each holds
-   roughly as many children as its schools have places, always moving
-   the boundary LSOA that costs the least flow, and never breaking
-   contiguity to do it.
+   move to the adjacent region they send most flow to.
+3. **Capacity balance.** Regions trade LSOAs until each holds roughly as
+   many children as its schools have places, always moving the boundary
+   LSOA that costs the least flow, and never breaking contiguity.
 
-**The choice that matters is which flows go in.** The obvious input is
+**Which flows go in is the choice that matters.** The obvious input is
 the full model of @sec-model-terms, and it would be the wrong one: it
 contains a catchment term, so its flows already know the current
 boundaries and regionalising them would partly rediscover the map this
-is meant to be an alternative to. The input is the **capacity-ceiling
-model without any catchment term** --- the closest published data comes
-to *where would children go if the rule did not exist but the places
-still ran out*.
+is meant to replace. The input is the **capacity-ceiling model with no
+catchment term** --- the closest published data comes to *where would
+children go if the rule did not exist but the places still ran out*.
 
 The two faith schools are left out of the geography, as they are now.
 They admit across the city, and giving them a catchment would be a
@@ -4955,28 +4962,40 @@ change of policy rather than a change of map.
 :::
 
 ```{r fig-flow-regions}
-#| fig-cap: "Catchments drawn from the modelled flows, against the ones in force. Switch between them with the control. Points are schools; the two faith schools, which have no catchment under any of these designs, are hollow."
+#| fig-cap: "Five catchment designs. Switch between them with the control. Points are schools; the two faith schools, which have no catchment under any design, are hollow. In the last design Longhill sits at the top of Elm Grove rather than at Ovingdean."
 #| column: page
 
 fr_pal <- colorFactor("Set2", domain = sort(unique(fr$regions_sf$grp)))
 fr_sch <- schools_sf() %>% filter(name != "Peacehaven Community School")
 fr_designs <- unique(fr$regions_sf$design)
 
+# Longhill's marker moves with it in the relocation design.
+elm_pt <- st_as_sf(tibble(name = "Longhill High School (Elm Grove)",
+                          lon = COMART$lon, lat = COMART$lat),
+                   coords = c("lon", "lat"), crs = 4326)
+
 mr <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>% add_carto("Positron")
 
 for (d in fr_designs) {
   poly <- fr$regions_sf %>% filter(design == d)
+  is_elm <- str_detect(d, "Elm Grove")
+  pts <- if (is_elm) fr_sch %>% filter(name != "Longhill High School") else fr_sch
   mr <- mr %>%
     addPolygons(data = poly, group = d,
                 fillColor = ~ fr_pal(grp), fillOpacity = 0.45,
                 color = "#333333", weight = 1.2, opacity = 0.8,
                 label = ~ sprintf("%s · %d LSOAs", grp, lsoas)) %>%
-    addCircleMarkers(data = fr_sch %>% filter(!name %in% fr$faith), group = d,
+    addCircleMarkers(data = pts %>% filter(!name %in% fr$faith), group = d,
                      radius = 5, color = "#111111", weight = 2, opacity = 1,
                      fillColor = "#ffffff", fillOpacity = 1, label = ~ name) %>%
-    addCircleMarkers(data = fr_sch %>% filter(name %in% fr$faith), group = d,
+    addCircleMarkers(data = pts %>% filter(name %in% fr$faith), group = d,
                      radius = 5, color = "#111111", weight = 2, opacity = 1,
                      fillOpacity = 0, label = ~ paste0(name, " (no catchment)"))
+  if (is_elm)
+    mr <- mr %>% addCircleMarkers(data = elm_pt, group = d, radius = 6,
+                                  color = "#b2182b", weight = 2, opacity = 1,
+                                  fillColor = "#ffffff", fillOpacity = 1,
+                                  label = ~ name)
 }
 
 mr %>%
@@ -4990,82 +5009,166 @@ mr %>%
 ## How the designs compare {#sec-fr-compare}
 
 ```{r tbl-flow-regions}
-#| tbl-cap: "The three designs on four measures. Self-containment is the travel-to-work-area statistic: the share of a region's children whose modelled first choice is inside it. The capacity gap is the worst region's demand against its fair share of the places, where demand counts only the children the geography could actually place --- the faith schools take about a fifth of the cohort across no catchment at all."
+#| tbl-cap: "The five designs. Self-containment is the travel-to-work-area statistic: the share of a region's children whose modelled first choice is inside it. The capacity gap is the worst region's demand against its fair share of the places, counting only the children the geography could place --- the faith schools take about a fifth of the cohort across no catchment at all."
 
 fr$designs %>%
+  left_join(fr$changed %>% group_by(design) %>%
+              summarise(moved = sum(Oi[moved]) / sum(Oi), .groups = "drop"),
+            by = "design") %>%
   transmute(Design = design,
             Regions = regions,
             `Self-containment` = fmt_pct(100 * self_containment, 0),
-            `Mean journey to a region school` = sprintf("%.1f min", mean_journey),
+            `Mean journey` = sprintf("%.1f min", mean_journey),
             `Worst capacity gap` = sprintf("%+.0f%%", 100 * worst_gap),
-            `IDACI, least to most deprived region` =
-              sprintf("%.3f – %.3f", idaci_lo, idaci_hi)) %>%
+            `Children moved` = if_else(is.na(moved), "—",
+                                       fmt_pct(100 * moved, 0))) %>%
   knitr::kable(align = "lrrrrr")
 ```
 
-**Keeping the pairs is the design that works.** It raises
-self-containment from `r fmt_pct(100 * fr_now$self_containment, 0)` to
-`r fmt_pct(100 * fr_pair$self_containment, 0)`, more than halves the
-worst capacity gap, from `r sprintf("%+.0f%%", 100 * fr_now$worst_gap)`
-to `r sprintf("%+.0f%%", 100 * fr_pair$worst_gap)`, and narrows the
-spread of deprivation between the least and most deprived region.
+**The proximity design wins most of this, and that was not what the
+exercise expected.** The power diagram more than halves the worst
+capacity gap, from `r sprintf("%+.0f%%", 100 * d_now$worst_gap)` to
+`r sprintf("%+.0f%%", 100 * d_pd$worst_gap)`, improves self-containment
+a little, adds `r sprintf("%.1f", d_pd$mean_journey - d_now$mean_journey)`
+minutes to the average journey, and does it while moving the fewest
+neighbourhoods of any design here.
 
-**Splitting the paired catchments does not.** Giving every school its
-own region gets capacity to
-`r sprintf("%+.0f%%", 100 * fr_one$worst_gap)` but leaves
+**The flow regions win the statistic they were built to win**, and only
+that one. Keeping the council's pairings gives the best self-containment
+of any design, `r fmt_pct(100 * d_pair$self_containment, 0)` against
+`r fmt_pct(100 * d_now$self_containment, 0)` now --- but at
+`r sprintf("%.1f", d_pair$mean_journey - d_now$mean_journey)` extra
+minutes and a worse capacity balance than the power diagram. Boundaries
+drawn round where children *want* to go are not boundaries that get them
+there quickly.
+
+**Splitting the paired catchments fails.** One region per school gets
+capacity to `r sprintf("%+.0f%%", 100 * d_one$worst_gap)` but leaves
 self-containment exactly where the current map has it, at
-`r fmt_pct(100 * fr_one$self_containment, 0)`. That is the flows
-answering a question the council has asked before: Dorothy Stringer and
-Varndean are 470 metres apart, and no boundary between them corresponds
-to anything families do.
+`r fmt_pct(100 * d_one$self_containment, 0)`. That is the flows saying
+what the council already knows: Dorothy Stringer and Varndean are 470
+metres apart, and no boundary between them corresponds to anything
+families do. On the map that design is the one where Dorothy Stringer
+becomes a thin strip along the coast.
 
-**The cost is journey time**, and it should not be waved away. The
-flow-based map adds
-`r sprintf("%.1f", fr_pair$mean_journey - fr_now$mean_journey)` minutes
-to the average journey to a catchment school. That is what happens when
-boundaries follow demand rather than proximity: a design drawn round
-where children want to go is not the design that gets them there
-quickest.
+## The deprivation profile of each design {#sec-fr-idaci}
 
-## What actually moves {#sec-fr-moves}
+The consultation profiles the current catchments by putting every
+postcode inside a catchment boundary and counting **households with
+dependent children by IDACI decile**. The same method is applied here to
+every design, so what follows compares against the consultation's own
+figures rather than against some other statistic that happens to be
+about deprivation.
 
-```{r tbl-flow-moves}
-#| tbl-cap: "Neighbourhoods that change catchment under the flow-based design, by where they are now and where they would go."
+```{r fig-idaci-profiles}
+#| fig-cap: "Households with dependent children by IDACI decile, in each region of each design. Decile 1 is the most deprived tenth of neighbourhoods nationally. A design in which every panel had the same shape would be one where no catchment concentrated deprivation."
+#| fig-height: 8.5
+#| column: page
 
-fr$changed %>%
-  filter(moved) %>%
-  count(now, new, wt = Oi, name = "children") %>%
-  arrange(desc(children)) %>%
-  # The region codes are the model's vocabulary; CATCH_LABELS is keyed
-  # on the boundary file's. Going straight from one to the other left
-  # half the table showing raw codes - the exact failure the guarded
-  # converter in 00_core.R exists to prevent.
-  transmute(`Now in`     = unname(CATCH_LABELS[as_boundary_catchment(now)]),
-            `Would join` = unname(CATCH_LABELS[as_boundary_catchment(new)]),
-            Children = fmt_n(children)) %>%
-  knitr::kable(align = "llr")
+ip <- fr$idaci_profiles %>%
+  mutate(design = factor(design, fr_designs),
+         lab = ifelse(grp %in% names(CATCH_FROM_MODEL),
+                      unname(CATCH_LABELS[CATCH_FROM_MODEL[grp]]),
+                      short_sch(grp)))
+
+ggplot(ip, aes(factor(idaci_decile), hh, fill = idaci_decile)) +
+  geom_col() +
+  facet_grid(design ~ lab, scales = "free_y",
+             labeller = labeller(design = label_wrap_gen(22),
+                                 lab = label_wrap_gen(14))) +
+  scale_fill_gradientn(colours = rev(RColorBrewer::brewer.pal(11, "RdYlBu")),
+                       limits = c(1, 10), breaks = c(1, 5, 10),
+                       labels = c("1 most\ndeprived", "5", "10 least"),
+                       name = "IDACI decile") +
+  labs(x = "IDACI decile", y = "Households with dependent children",
+       title = "Deprivation profile of each catchment, under each design",
+       subtitle = "The consultation's own method: postcodes inside a catchment boundary, households with dependent children by decile.",
+       caption = "Sources: ONS postcode household counts; IMD 2019 IDACI.") +
+  theme_bh(9) +
+  theme(legend.position = "bottom",
+        strip.text.y = element_text(angle = 0, hjust = 0, size = 7.5),
+        strip.text.x = element_text(size = 7.5),
+        axis.text.x = element_text(size = 6))
 ```
 
-This is a smaller change than it sounds. `r nrow(fr_moved)` of
-`r nrow(fr$changed)` neighbourhoods move, holding
-`r fmt_n(sum(fr_moved$Oi))` children ---
-`r fmt_pct(100 * sum(fr_moved$Oi) / sum(fr$changed$Oi), 0)` of the
-cohort. Four in five children stay where they are.
+```{r tbl-idaci-spread}
+#| tbl-cap: "The share of each region's households with dependent children that sit in the four most deprived deciles nationally, for the least and most deprived region of each design. The spread between them is the measure of how much the map concentrates deprivation."
 
-```{r fr-move-stats}
+fr$idaci_summary %>%
+  mutate(design = factor(design, fr_designs)) %>%
+  arrange(design) %>%
+  transmute(Design = design,
+            `Least deprived region` = fmt_pct(100 * lo, 0),
+            `Most deprived region` = fmt_pct(100 * hi, 0),
+            `Spread` = sprintf("%.0f points", 100 * spread)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+```{r idaci-stats}
 #| include: false
-lh_out <- fr_moved %>% filter(now == "Longhill") %>% summarise(n = sum(Oi)) %>% pull(n)
-lh_in  <- fr_moved %>% filter(new == "Longhill") %>% summarise(n = sum(Oi)) %>% pull(n)
-lh_net <- lh_in - lh_out
+is_ <- fr$idaci_summary
+i_now  <- is_ %>% filter(str_detect(design, "Current"))
+i_pd   <- is_ %>% filter(str_detect(design, "Power"))
+i_pair <- is_ %>% filter(str_detect(design, "pairs kept"))
+i_elm  <- is_ %>% filter(str_detect(design, "Elm Grove"))
 ```
 
-**And it goes the wrong way for Longhill.** The flow-based design takes
-`r fmt_n(lh_out)` children out of the Longhill catchment and puts
-`r fmt_n(lh_in)` in, a net loss of `r fmt_n(abs(lh_net))`. That is not a
-quirk of the algorithm --- it is the algorithm working. Those children
-are modelled as going west whatever the boundary says, and a functional
-region is a description of that, not a remedy for it. **Drawing
-catchments round the flows cannot rescue a school the flows are leaving.**
+**Every alternative is less segregated than the map in force.** Under
+the current catchments the most deprived region has
+`r fmt_pct(100 * i_now$hi, 0)` of its households with dependent children
+in the four most deprived deciles and the least deprived has
+`r fmt_pct(100 * i_now$lo, 0)` --- a spread of
+`r sprintf("%.0f", 100 * i_now$spread)` percentage points. The power
+diagram narrows that to `r sprintf("%.0f", 100 * i_pd$spread)` and the
+flow regions to `r sprintf("%.0f", 100 * i_pair$spread)`.
+
+The gain comes from the same place in both: **the current map's most
+deprived catchment is more deprived than any alternative's**, falling
+from `r fmt_pct(100 * i_now$hi, 0)` to
+`r fmt_pct(100 * i_pd$hi, 0)` under the power diagram. Neither design
+sets out to reduce segregation. Both do, because the current boundaries
+follow lines that separate the east of the city from the rest and any
+redrawing that balances capacity has to cut across them.
+
+That said, `r sprintf("%.0f", 100 * i_pd$spread)` points is still a very
+wide spread. **No redrawing of a catchment map fixes residential
+segregation**, because the segregation is in where people live, not in
+where the lines are. What a map can do is stop amplifying it.
+
+## And if Longhill moves {#sec-fr-elm}
+
+The last design re-runs everything for the configuration @sec-longhill
+finds composes best: **Longhill at the top of Elm Grove with its
+admission number cut to `r fr$elm_pan`**. The model is re-run on the
+relocated travel matrix, the catchments are redrawn from those flows,
+and the deprivation profile recomputed.
+
+```{r fr-elm-stats}
+#| include: false
+a_now  <- fr$alloc %>% filter(str_detect(design, "Current"))
+a_pair <- fr$alloc %>% filter(str_detect(design, "pairs kept"))
+a_elm  <- fr$alloc %>% filter(str_detect(design, "Elm Grove"))
+a_pd   <- fr$alloc %>% filter(str_detect(design, "Power"))
+elm_moved <- fr$changed %>% filter(str_detect(design, "Elm Grove"))
+```
+
+Relocating the school and redrawing round it gives the **best capacity
+balance of any design here**,
+`r sprintf("%+.0f%%", 100 * d_elm$worst_gap)`, and lifts
+self-containment to `r fmt_pct(100 * d_elm$self_containment, 0)`. It
+also has the **longest journeys** of any design,
+`r sprintf("%.1f", d_elm$mean_journey)` minutes against
+`r sprintf("%.1f", d_now$mean_journey)` now, and it moves
+`r fmt_pct(100 * sum(elm_moved$Oi[elm_moved$moved]) / sum(elm_moved$Oi), 0)`
+of the cohort into a different catchment --- much the largest upheaval
+on offer.
+
+And on deprivation it is the **weakest of the alternatives**: a spread
+of `r sprintf("%.0f", 100 * i_elm$spread)` points against
+`r sprintf("%.0f", 100 * i_pair$spread)` for the same method at
+Ovingdean. Moving the school west moves its catchment west, into the
+part of the city the current map already separates out, and the new
+boundary reproduces much of that separation.
 
 ## What the over-subscription rule does {#sec-fr-allocation}
 
@@ -5082,9 +5185,11 @@ offers provisionally and can bump a held child when a higher-priority
 applicant arrives, which is how the coordinated scheme behaves.
 
 ```{r tbl-flow-alloc}
-#| tbl-cap: "Where children end up under each catchment design, with an in-catchment-then-distance over-subscription rule. Crossing a boundary includes the two faith schools, which have no catchment at all and take about a fifth of the cohort."
+#| tbl-cap: "Where children end up under each design, with an in-catchment-then-distance over-subscription rule. Crossing a boundary includes the two faith schools, which have no catchment at all and take about a fifth of the cohort."
 
 fr$alloc %>%
+  mutate(design = factor(design, fr_designs)) %>%
+  arrange(design) %>%
   transmute(Design = design,
             `Got their first preference` = fmt_pct(100 * first_pref, 0),
             `Placed in their own catchment` = fmt_pct(100 * local_share, 0),
@@ -5094,57 +5199,51 @@ fr$alloc %>%
   knitr::kable(align = "lrrrrr")
 ```
 
-```{r fr-alloc-stats}
-#| include: false
-a_now  <- fr$alloc %>% filter(design == "Current catchments")
-a_pair <- fr$alloc %>% filter(str_detect(design, "pairs kept"))
-```
-
 **Most children draw locally and a real minority cross**, which is what
-a catchment system with choice in it should produce. Under the
-flow-based design `r fmt_pct(100 * a_pair$local_share, 0)` of children
-are placed in their own catchment against
-`r fmt_pct(100 * a_now$local_share, 0)` now. Of the
-`r fmt_pct(100 * a_pair$cross_share, 0)` who cross,
-`r sprintf("%.0f", 100 * a_pair$faith_share)` percentage points go to the
-two faith schools, which have no catchment to cross --- leaving about
-`r fmt_pct(100 * (a_pair$cross_share - a_pair$faith_share), 0)` genuinely
-moving between geographic catchments.
+a catchment system with choice in it should produce. The power diagram
+places `r fmt_pct(100 * a_pd$local_share, 0)` in their own catchment
+against `r fmt_pct(100 * a_now$local_share, 0)` now, and the flow
+regions `r fmt_pct(100 * a_pair$local_share, 0)`. Of the
+`r fmt_pct(100 * a_pd$cross_share, 0)` who cross under the power
+diagram, `r sprintf("%.0f", 100 * a_pd$faith_share)` percentage points go
+to the two faith schools, which have no catchment to cross --- leaving
+about `r sprintf("%.0f", 100 * (a_pd$cross_share - a_pd$faith_share))`%
+genuinely moving between geographic catchments.
 
-First-preference success barely moves:
-`r fmt_pct(100 * a_pair$first_pref, 0)` against
-`r fmt_pct(100 * a_now$first_pref, 0)` now. **A better-drawn map does not
-get more children the school they want.** It gets more of them the
-school nearest to them, which is a different good and worth less than
-the first.
+**First-preference success does not move.** It is
+`r fmt_pct(100 * a_now$first_pref, 0)` now and between
+`r fmt_pct(100 * min(fr$alloc$first_pref), 0)` and
+`r fmt_pct(100 * max(fr$alloc$first_pref), 0)` across every design
+tested. A better-drawn map gets more children the school **nearest** to
+them. It does not get more of them the school they **want**, and the
+second is worth more than the first.
 
 ::: {.callout-warning appearance="simple"}
 ## What this is and is not
 
 **It is a demonstration that the geography could be better, not a
-proposal.** The regions are built from modelled flows, and the model is
-uncalibrated. A real redesign would use the council's own preference and
-allocation records, which would replace every modelled flow here with an
-observed one.
+proposal.** The regions are built from modelled flows and an
+uncalibrated model. A real redesign would use the council's own
+preference and allocation records, which would replace every modelled
+flow here with an observed one.
 
 **Nothing here is in the algorithm that should be.** Sibling links keep
 families together and are a large share of real admissions. Transport
 cost falls on the council and on households. Existing pupils cannot be
 moved. Feeder-primary patterns matter to families in ways a flow matrix
-does not see. Any of these could overturn a boundary this exercise
-draws.
+does not see. Any of these could overturn a boundary drawn here.
 
-**The comparison is fair, though.** The current catchments are scored
-with the same statistics on the same flows, so the differences in
-@tbl-flow-regions are like for like even where the levels are uncertain.
+**The comparison is fair, though.** Every design is scored with the same
+statistics on the same flows and profiled with the same postcode method,
+so the differences between the columns are like for like even where the
+levels are uncertain.
 
-**And the headline is a negative one.** The best flow-based design moves
-a fifth of the cohort, improves self-containment by
-`r sprintf("%.0f", 100 * (fr_pair$self_containment - fr_now$self_containment))`
-points and capacity balance by more than half --- and does almost
-nothing for how many children get their first choice, or for Longhill.
-Redrawing the map is worth doing on its own terms. It is not an answer
-to the problem the rest of this document is about.
+**And the headline is a negative one.** The best design on offer moves
+between a sixth and a third of the cohort, improves capacity balance,
+narrows the deprivation spread by a few points --- and changes how many
+children get their first choice by nothing at all. Redrawing the map is
+worth doing on its own terms. It is not an answer to the problem the
+rest of this document is about.
 :::
 
 # Longhill {#sec-longhill}
