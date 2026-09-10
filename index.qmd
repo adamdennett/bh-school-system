@@ -3843,7 +3843,11 @@ of what attractiveness contributes.
 #| fig-cap: "Modelled intake against published admission number. A school above the line is one that geography alone would fill; below it, one that geography alone would not."
 #| fig-height: 5.5
 
-bt <- brt$at_original_beta %>%
+# The distance-only run at the bundle's central decay, not at the 1.5 the
+# original Brightopia used. The open model keeps the 1.5 run for
+# reproduction; here the point is that this figure and @fig-brightopia-demand
+# report the same quantity, so they have to be at the same beta.
+bt <- brt$geog_only_at_ref %>%
   mutate(fill_rate = modelled / pan2026,
          short = str_remove(name, " (School|High School|Community Academy|Catholic School).*"))
 
@@ -3858,8 +3862,8 @@ ggplot(bt, aes(pan2026, modelled)) +
   scale_x_continuous(limits = c(0, NA)) + scale_y_continuous(limits = c(0, NA)) +
   labs(x = "Published admission number, 2026", y = "Modelled intake",
        title = "What the map alone would do",
-       subtitle = sprintf("Distance decay β = %.1f. The dashed line is a school exactly full.",
-                          brt$beta_original),
+       subtitle = sprintf("Every school equally attractive. Distance decay β = %.1f. The dashed line is a school exactly full.",
+                          brt$beta_ref),
        caption = "Brightopia, open-data specification.") +
   theme_bh()
 ```
@@ -3907,6 +3911,167 @@ between what location predicts and what families do is the clearest
 evidence in this document that choice is operating on something other
 than distance.
 
+
+
+## How far geography alone actually gets you {#sec-brightopia-observed}
+
+The chart above is a model of a city that does not exist. It is worth
+putting next to the one that does: the offers Brighton & Hove actually
+made in the `r brt$observed_year` round, school by school.
+
+```{r tbl-brightopia-observed}
+#| tbl-cap: "The distance-only model against the offers actually made. Every school is equally attractive in the model, so a difference here is everything except geography: reputation, results, faith character, sixth form, siblings, and the catchment rule. Brightopia applies no admission-number ceiling, so a modelled figure above the PAN is demand the real round would have turned away."
+
+brt$observed_compare %>%
+  arrange(diff_17) %>%
+  transmute(School = str_remove(name, " (School|High School|Community Academy|Catholic School).*"),
+            `PAN` = pan2026,
+            `Offers made` = fmt_n(observed),
+            `Brightopia` = fmt_n(modelled_17),
+            `Difference` = sprintf("%+.0f", diff_17),
+            `Offers, % of city` = sprintf("%.1f", share_obs),
+            `Brightopia, % of city` = sprintf("%.1f", share_mod)) %>%
+  knitr::kable(align = "lrrrrrr")
+```
+
+```{r brightopia-obs-stats}
+#| include: false
+bo   <- brt$observed_compare
+bo_r2  <- summary(lm(observed ~ modelled_17, data = bo))$r.squared
+bo_rmse <- sqrt(mean((bo$observed - bo$modelled_17)^2))
+bo_over  <- bo %>% slice_max(diff_17, n = 2)
+bo_under <- bo %>% slice_min(diff_17, n = 2)
+bo_short <- function(d) str_remove(d$name, " (School|High School|Community Academy|Catholic School).*")
+```
+
+Geography alone explains **`r fmt_pct(100 * bo_r2, 0)`** of the variation
+in offers made, with a root-mean-square error of `r fmt_n(bo_rmse)`
+children per school. For a model that knows nothing except where the
+buildings are and where the children live, that is neither nothing nor
+much.
+
+**What matters is that the errors are not random.** They run in one
+direction, and it is the direction the rest of this document is about.
+
+The model **over-predicts** `r bo_short(bo_over)[1]` by
+`r sprintf("%+.0f", bo_over$diff_17[1])` and `r bo_short(bo_over)[2]` by
+`r sprintf("%+.0f", bo_over$diff_17[2])`. Both are schools that
+geography says should do well --- Hove Park sits in the densest part of
+the child population --- and that families do not choose. It
+**under-predicts** `r bo_short(bo_under)[1]` by
+`r sprintf("%+.0f", bo_under$diff_17[1])` and `r bo_short(bo_under)[2]`
+by `r sprintf("%+.0f", bo_under$diff_17[2])`, both of which filled to
+their admission number and would have taken more.
+
+In share terms the same thing reads more starkly. Longhill takes
+`r sprintf("%.1f%%", bo$share_obs[bo$name == "Longhill High School"])` of
+the city's offers; geography alone would give it
+`r sprintf("%.1f%%", bo$share_mod[bo$name == "Longhill High School"])`.
+Blatchington Mill takes
+`r sprintf("%.1f%%", bo$share_obs[bo$name == "Blatchington Mill School"])`
+against a geographic
+`r sprintf("%.1f%%", bo$share_mod[bo$name == "Blatchington Mill School"])`.
+
+::: {.callout-note appearance="simple"}
+## Why the gaps are not evidence of a broken model
+
+A distance-only model is *supposed* to miss. It has been told that every
+school is identical, which is false, and the size of what it misses is
+the measurement being taken.
+
+Two mechanical points inflate the gaps without meaning anything.
+
+**The popular schools are capped and the model is not.**
+`r knitr::combine_words(bo_short(bo %>% filter(at_ceiling)))` all
+offered their admission number or more, so their observed figure is a
+ceiling rather than a measure of demand. The model under-predicts them;
+the real gap is larger, not smaller. Only the
+`r nrow(bo %>% filter(!at_ceiling))` schools that were *not* rationing
+places can be judged against their offers at all.
+
+**The catchment rule is in the offers and not in the model.** Every
+offer above was made under a catchment system with a lottery tie-break.
+Brightopia has no catchment term at all. Some of what looks like
+preference here is the admissions rule doing its job --- which is why
+this table cannot separate "families do not want Longhill" from "the
+rule does not send them there", and why @sec-choice has to answer that
+question with preference data rather than offers.
+:::
+
+```{r tbl-brightopia-closes}
+#| tbl-cap: "The five schools that were not rationing places, against the two runs of the model. A school at its admission number is left out, because an uncapped model exceeding a capped observation is not an error."
+
+bo %>%
+  filter(!at_ceiling) %>%
+  arrange(abs(diff_w)) %>%
+  transmute(School = str_remove(name, " (School|High School|Community Academy|Catholic School).*"),
+            `Offers made` = fmt_n(observed),
+            `Geography only` = fmt_n(modelled_17),
+            `Gap` = sprintf("%+.0f", diff_17),
+            `With demand` = fmt_n(modelled_w),
+            `Gap ` = sprintf("%+.0f", diff_w),
+            `Closer?` = if_else(abs(diff_w) < abs(diff_17), "yes", "no")) %>%
+  knitr::kable(align = "lrrrrrr")
+```
+
+```{r closes-stats}
+#| include: false
+unc <- bo %>% filter(!at_ceiling)
+n_closer <- sum(abs(unc$diff_w) < abs(unc$diff_17))
+mae_g <- mean(abs(unc$diff_17)); mae_w <- mean(abs(unc$diff_w))
+hp_o <- bo %>% filter(str_detect(name, "Hove Park"))
+
+# The preference mix behind the two schools discussed below, from the
+# same five rounds the weighting uses.
+mix <- fp$attract_panel %>%
+  mutate(ratio = pref2 / pref1, named = pref1 + pref2 + pref3,
+         named_pp = named / pan)
+mix_hp <- mix %>% filter(str_detect(name, "Hove Park"))
+mix_lh <- mix %>% filter(str_detect(name, "Longhill"))
+stopifnot(which.max(mix$ratio) == which(mix$name == mix_hp$name),
+          which.min(mix$named_pp) == which(mix$name == mix_lh$name))
+```
+
+Putting $W_j$ back in does **not** simply fix this. The average gap
+across those `r nrow(unc)` schools falls from `r fmt_n(mae_g)` children
+to `r fmt_n(mae_w)`, but only `r n_closer` of the `r nrow(unc)` actually
+get closer. Longhill and Portslade Aldridge land almost exactly on their
+observed figure --- which is the striking result, given that geography
+alone missed Longhill by `r sprintf("%+.0f", unc$diff_17[unc$name == "Longhill High School"])`.
+The rest do not improve.
+
+::: {.callout-warning appearance="simple"}
+## Hove Park breaks the weighted measure, and it is worth knowing why
+
+Hove Park is the one school that gets **worse** when demand is added:
+from `r sprintf("%+.0f", hp_o$diff_17)` on geography alone to
+`r sprintf("%+.0f", hp_o$diff_w)`. The model thinks it should be the
+most sought-after school in the city and it offered
+`r fmt_n(hp_o$observed)` places against a PAN of `r fmt_n(hp_o$pan2026)`.
+
+The reason is structural, and it applies to the weighted measure
+generally. **A second preference only becomes an offer when the first
+one fails.** Across the same five rounds Hove Park receives
+`r fmt_n(mix_hp$pref1)` first preferences and `r fmt_n(mix_hp$pref2)`
+seconds --- **`r sprintf("%.1f", mix_hp$ratio)` seconds for every first,
+the highest ratio in the city**. Those seconds come largely from the
+Hove Park / Blatchington Mill paired catchment (@sec-winners-losers),
+and Blatchington Mill fills, so they are never called on. Weighting a
+second at half a first says something true about what families would
+accept; it says much less about what they will be allocated.
+
+So the weighted specification is a good measure of *wanting* and a poor
+measure of *taking up*. That does not undo the Longhill result, which
+runs the other way: Longhill is named
+`r fmt_n(mix_lh$named)` times at any of the three ranks against
+`r fmt_n(mix_lh$pan)` places --- `r sprintf("%.2f", mix_lh$named_pp)` per
+place, the lowest in the city against a next-lowest of
+`r sprintf("%.2f", sort(mix$named_pp)[2])` and a city median of
+`r sprintf("%.2f", median(mix$named_pp))`. There is no reservoir of
+unconverted seconds behind it. But it is a reason to
+read the with-demand column as a statement about demand rather than a
+forecast of offers.
+:::
 
 ## What happens when you put demand back in {#sec-brightopia-demand}
 
