@@ -119,9 +119,41 @@ world <- function(model_id, costs, label, lh_pan = NULL) {
          mutate(demand = coalesce(demand, 0)))
 }
 
-W_NOW <- world("M2",  oi$costs_now, "Ovingdean, PAN 210")
-W_ELM <- world("ELM", oi$costs_elm, sprintf("Elm Grove, PAN %d", mt$elm_pan),
-               lh_pan = mt$elm_pan)
+W_NOW <- world("M2", oi$costs_now, "Ovingdean, PAN 210")
+
+# Two relocation scenarios. The modelled flows are IDENTICAL between
+# them - Longhill draws 137 children at Elm Grove and the ceiling does
+# not bind at either number - so the only thing that differs is the
+# capacity target the catchment is balanced to, and therefore how much
+# territory the school is given. That is the whole comparison: not what
+# the school would attract, but how much of the city its boundary is
+# asked to cover.
+W_ELM    <- world("ELM150", oi$costs_elm, "Elm Grove, PAN 150", lh_pan = 150)
+W_ELM210 <- world("ELM210", oi$costs_elm, "Elm Grove, PAN 210", lh_pan = 210)
+
+# THE RELOCATION DESIGNS ARE SEEDED ON ACCESSIBILITY, NOT ON FLOW, and
+# the reason is a limit of the flow method rather than a preference.
+#
+# Dominant flow gives each neighbourhood to the school it sends most
+# children to. For a school that has just moved there is no such school:
+# the modelled flows at the new site are shaped by attractiveness, and
+# Longhill's is 0.32 against a city average of 1. Even uncapped it wins
+# the dominant flow almost nowhere, so a flow seed hands the east to
+# Stringer/Varndean and the greedy balancer, which can only trade
+# LSOAs across an existing boundary, never reaches far enough east to
+# take them back. Two of the twelve easternmost neighbourhoods ended up
+# in Longhill's catchment; the other ten went to a school an hour away
+# that they are not nearest to.
+#
+# A catchment is a statement about geography and capacity. It is not a
+# popularity contest, and a school does not forfeit a catchment for
+# being unpopular - that is what the over-subscription rule is for.
+# So the relocation designs seed on "which catchment can this
+# neighbourhood reach quickest", and the capacity balance then trades
+# from there. The Ovingdean designs keep the flow seed, because there
+# the flows describe a school that is actually where it is.
+W_ELM$seed_mode    <- "accessibility"
+W_ELM210$seed_mode <- "accessibility"
 
 message(sprintf("  %d LSOAs, %s children; %.0f%% have a school with a catchment as their destination",
                 nrow(lsoa_children),
@@ -159,7 +191,8 @@ elm_lsoa <- st_join(
     st_transform(27700),
   geom %>% select(lsoa21cd), join = st_within)$lsoa21cd
 stopifnot(length(elm_lsoa) == 1, !is.na(elm_lsoa))
-W_ELM$moved_school <- list(name = "Longhill High School", lsoa = elm_lsoa)
+W_ELM$moved_school    <- list(name = "Longhill High School", lsoa = elm_lsoa)
+W_ELM210$moved_school <- W_ELM$moved_school
 message("  relocated Longhill sits in ", elm_lsoa)
 
 # An enclave is a region wholly surrounded by ONE other region. The
@@ -242,6 +275,12 @@ regionalise <- function(w, groups, tol = 0.05, max_moves = 400, seed = NULL) {
   # ---- 1. Dominant flow ----------------------------------------------
   assign <- if (!is.null(seed)) {
     seed %>% select(lsoa, region) %>% mutate(grp = unname(sch_of[region]))
+  } else if (identical(w$seed_mode, "accessibility")) {
+    acc %>%
+      group_by(lsoa) %>%
+      slice_min(cij, n = 1, with_ties = FALSE) %>%
+      ungroup() %>%
+      transmute(lsoa, region = purrr::map_chr(grp, ~ groups[[.x]][1]), grp)
   } else {
     w$flows %>%
       filter(name %in% CATCH_S) %>%
@@ -441,7 +480,8 @@ message("\n  Regionalising...")
 R_SINGLE <- regionalise(W_NOW, GROUPS_SINGLE)
 R_PAIRED <- regionalise(W_NOW, GROUPS_PAIRED)
 R_ELM    <- regionalise(W_ELM, GROUPS_PAIRED)
-for (r in list(R_SINGLE, R_PAIRED, R_ELM))
+R_ELM210 <- regionalise(W_ELM210, GROUPS_PAIRED)
+for (r in list(R_SINGLE, R_PAIRED, R_ELM, R_ELM210))
   message(sprintf("    %-28s %d moves, worst gap %+.0f%%",
                   r$world, r$moves, 100 * max(abs(r$final$gap))))
 
@@ -575,7 +615,9 @@ DESIGNS <- list(
   list(a = R_PAIRED$assign,  g = GROUPS_PAIRED, w = W_NOW, t = R_PAIRED$target,
        lab = "Flow regions, pairs kept"),
   list(a = R_ELM$assign,     g = GROUPS_PAIRED, w = W_ELM, t = R_ELM$target,
-       lab = "Flow regions, Longhill at Elm Grove"))
+       lab = "Flow regions, Elm Grove, PAN 150"),
+  list(a = R_ELM210$assign,  g = GROUPS_PAIRED, w = W_ELM210, t = R_ELM210$target,
+       lab = "Flow regions, Elm Grove, PAN 210"))
 
 # ---- Why the relocation design looks the way it does -----------------
 # Its Stringer/Varndean region reaches from Varndean to Saltdean, which
@@ -586,30 +628,74 @@ DESIGNS <- list(
 # already full, and BACA is exactly at capacity. So the east attaches to
 # a school it cannot reach quickly, because the two schools it can reach
 # have no room.
-east_check <- {
+EAST_N <- 12
+east_lsoa <- {
+  ctr <- geom %>% st_point_on_surface()
+  tibble(lsoa = ctr$lsoa21cd, easting = st_coordinates(ctr)[, 1]) %>%
+    arrange(desc(easting)) %>% head(EAST_N) %>% pull(lsoa)
+}
+
+east_of <- function(r, w, label) {
+  sch_of <- setNames(rep(names(w$pan)[0], 0), character(0))  # placeholder
   sch_of <- setNames(rep(names(GROUPS_PAIRED), lengths(GROUPS_PAIRED)),
                      unlist(GROUPS_PAIRED))
-  accE <- W_ELM$cost %>%
+  accE <- w$cost %>%
     mutate(grp = unname(sch_of[name])) %>% filter(!is.na(grp)) %>%
     group_by(lsoa, grp) %>% summarise(cij = min(cij), .groups = "drop")
-  ctr <- geom %>% st_point_on_surface()
-  east_lsoa <- tibble(lsoa = ctr$lsoa21cd, easting = st_coordinates(ctr)[, 1]) %>%
-    arrange(desc(easting)) %>% head(12) %>% pull(lsoa)
   accE %>%
     filter(lsoa %in% east_lsoa) %>%
     group_by(lsoa) %>%
     summarise(nearest = grp[which.min(cij)], t_near = min(cij),
-              assigned = R_ELM$assign$grp[match(lsoa[1], R_ELM$assign$lsoa)],
+              assigned = r$assign$grp[match(lsoa[1], r$assign$lsoa)],
               t_assigned = cij[grp == assigned][1], .groups = "drop") %>%
-    left_join(lsoa_children, by = "lsoa")
+    left_join(lsoa_children, by = "lsoa") %>%
+    mutate(design = label)
 }
-message(sprintf(
-  "\n  The 12 easternmost LSOAs: nearest group is %s for %d of them; assigned to %s; mean %.0f min to assigned against %.0f to nearest",
-  names(sort(table(east_check$nearest), decreasing = TRUE))[1],
-  max(table(east_check$nearest)),
-  names(sort(table(east_check$assigned), decreasing = TRUE))[1],
-  weighted.mean(east_check$t_assigned, east_check$Oi),
-  weighted.mean(east_check$t_near, east_check$Oi)))
+
+# ---- What admission number does the east actually need? -------------
+# Seeded on accessibility, Longhill's natural area at Elm Grove holds
+# far more demand than 150 or 210 places, so the balancer has to give
+# most of it away - and what it gives away first is the far east, which
+# is furthest from the new site. This sweeps the admission number and
+# asks how much of the east survives balancing at each one.
+
+ELM_SWEEP <- c(150, 180, 210, 240, 270, 300, 330, 360)
+elm_sweep <- purrr::map_dfr(ELM_SWEEP, function(p) {
+  w <- world("ELMU", oi$costs_elm, sprintf("Elm Grove, PAN %d", p), lh_pan = p)
+  w$moved_school <- W_ELM$moved_school
+  w$seed_mode <- "accessibility"
+  r <- regionalise(w, GROUPS_PAIRED)
+  e <- east_of(r, w, sprintf("PAN %d", p))
+  tibble(pan = p,
+         east_in_longhill = sum(e$assigned == "Longhill"),
+         east_minutes = weighted.mean(e$t_assigned, e$Oi),
+         longhill_gap = r$final$gap[r$final$grp == "Longhill"],
+         worst_gap = max(abs(r$final$gap)),
+         assign = list(r$assign), regionalised = list(r), world = list(w))
+})
+
+message("\n=== Longhill at Elm Grove: what admission number holds the east? ===")
+print(as.data.frame(elm_sweep %>%
+  transmute(`PAN` = pan,
+            `East in Longhill` = sprintf("%d of %d", east_in_longhill, EAST_N),
+            `Mean journey for the east` = sprintf("%.0f min", east_minutes),
+            `Longhill capacity gap` = sprintf("%+.0f%%", 100 * longhill_gap),
+            `Worst gap in the design` = sprintf("%+.0f%%", 100 * worst_gap))),
+  row.names = FALSE)
+
+east_check <- bind_rows(
+  east_of(R_ELM,    W_ELM,    "Elm Grove, PAN 150"),
+  east_of(R_ELM210, W_ELM210, "Elm Grove, PAN 210"))
+
+message(sprintf("\n=== The %d easternmost neighbourhoods under each relocation ===",
+                EAST_N))
+print(as.data.frame(east_check %>% group_by(design) %>%
+  summarise(`to Longhill` = sum(assigned == "Longhill"),
+            `to Stringer/Varndean` = sum(assigned == "DS_Varndean"),
+            `nearest is Longhill` = sum(nearest == "Longhill"),
+            `mean min, assigned` = round(weighted.mean(t_assigned, Oi)),
+            `mean min, nearest` = round(weighted.mean(t_near, Oi)),
+            .groups = "drop")), row.names = FALSE)
 
 shape <- purrr::map_dfr(DESIGNS, ~ audit(.x$a, .x$g, .x$lab, .x$w))
 message("\n=== Is each design a usable map? ===")
@@ -862,6 +948,7 @@ print(as.data.frame(changed %>% group_by(design) %>%
 saveRDS(list(
   designs = designs, alloc = alloc, regions_sf = regions_sf,
   changed = changed, idaci_profiles = idaci_profiles, shape = shape,
+  elm_sweep = elm_sweep %>% select(-assign, -regionalised, -world),
   east_check = east_check,
   idaci_summary = idaci_summary, idaci_region = idaci_region,
   idaci_table = idaci_table,

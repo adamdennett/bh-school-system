@@ -4927,7 +4927,8 @@ d_now  <- fr_get("Current")
 d_pd   <- fr_get("Power diagram")
 d_one  <- fr_get("one per school")
 d_pair <- fr_get("pairs kept")
-d_elm  <- fr_get("Elm Grove")
+d_elm  <- fr_get("Elm Grove, PAN 150")
+d_e210 <- fr_get("Elm Grove, PAN 210")
 ```
 
 ::: {.callout-note appearance="simple"}
@@ -5116,7 +5117,8 @@ i_now  <- is_ %>% filter(str_detect(design, "Current"))
 i_pd   <- is_ %>% filter(str_detect(design, "Power"))
 i_pair <- is_ %>% filter(str_detect(design, "pairs kept"))
 i_one  <- is_ %>% filter(str_detect(design, "one per school"))
-i_elm  <- is_ %>% filter(str_detect(design, "Elm Grove"))
+i_elm  <- is_ %>% filter(str_detect(design, "PAN 150"))
+i_e210 <- is_ %>% filter(str_detect(design, "PAN 210") & str_detect(design, "Elm"))
 i_best <- fr$idaci_summary %>% slice_min(gorard, n = 1)
 # Tolerant comparison: one design lands on the current map's index to
 # three decimal places, and a bare > would report it as worse or better
@@ -5227,78 +5229,154 @@ design here is the size of that amplification.
 
 ## And if Longhill moves {#sec-fr-elm}
 
-The last design re-runs everything for the configuration @sec-longhill
-finds composes best: **Longhill at the top of Elm Grove with its
-admission number cut to `r fr$elm_pan`**. The model is re-run on the
-relocated travel matrix, the catchments are redrawn from those flows,
-and the deprivation profile recomputed.
+The last two designs re-run everything with **Longhill at the top of
+Elm Grove**, at the two admission numbers the scenario suite considers:
+`r fr$elm_sweep$pan[1]`, which is @sec-longhill's shrink-and-move, and
+210, which is move-only and keeps the number now in force.
 
 ```{r fr-elm-stats}
 #| include: false
 a_now  <- fr$alloc %>% filter(str_detect(design, "Current"))
 a_pair <- fr$alloc %>% filter(str_detect(design, "pairs kept"))
-a_elm  <- fr$alloc %>% filter(str_detect(design, "Elm Grove"))
 a_pd   <- fr$alloc %>% filter(str_detect(design, "Power"))
-elm_moved <- fr$changed %>% filter(str_detect(design, "Elm Grove"))
-ec <- fr$east_check
-ec_near <- names(sort(table(ec$nearest), decreasing = TRUE))[1]
-ec_to   <- names(sort(table(ec$assigned), decreasing = TRUE))[1]
-ec_t1 <- weighted.mean(ec$t_near, ec$Oi); ec_t2 <- weighted.mean(ec$t_assigned, ec$Oi)
+ec  <- fr$east_check
+ec150 <- ec %>% filter(str_detect(design, "150"))
+ec210 <- ec %>% filter(str_detect(design, "210"))
+n_east <- n_distinct(ec$lsoa)
+sw <- fr$elm_sweep
+sw_bal <- sw %>% filter(abs(longhill_gap) <= 0.05) %>% slice_min(pan, n = 1)
+elm_moved <- fr$changed %>% filter(str_detect(design, "Elm Grove, PAN 210"))
 ```
 
-It gives the **best capacity balance of the flow designs**,
-`r sprintf("%+.0f%%", 100 * d_elm$worst_gap)`, and it places
-`r fmt_pct(100 * a_elm$local_share, 0)` of children in their own
-catchment, the highest of any design. It also has the **longest
-journeys**, `r sprintf("%.1f", d_elm$mean_journey)` minutes against
-`r sprintf("%.1f", d_now$mean_journey)` now, and it moves
-`r fmt_pct(100 * sum(elm_moved$Oi[elm_moved$moved]) / sum(elm_moved$Oi), 0)`
-of the cohort into a different catchment --- much the largest upheaval
-on offer.
+::: {.callout-note appearance="simple"}
+## These two are seeded differently, and it matters
 
-::: {.callout-important appearance="simple"}
-## The east of the city is the problem, and the map shows it
+Every other design here assigns each neighbourhood to the school it
+sends most children to. **For a school that has just moved, there is no
+such school.** The modelled flows at a new site are shaped by
+attractiveness, and Longhill's is
+`r sprintf("%.2f", oi$attract$W_wprefs[oi$attract$name == "Longhill High School"])`
+against a city average of 1. Even with no capacity ceiling it wins the
+dominant flow almost nowhere, so a flow-seeded design handed the east of
+the city to Stringer/Varndean --- a school those neighbourhoods are not
+nearest to and cannot reach in under an hour --- and the balancer, which
+can only trade neighbourhoods across an existing boundary, could never
+reach far enough east to take them back.
 
-The Stringer/Varndean catchment in this design reaches from Varndean to
-Saltdean. That is an odd-looking boundary and the temptation is to treat
-it as a defect of the algorithm. It is not: it is the algorithm
-reporting something real.
-
-For **all `r nrow(ec)`** of the easternmost neighbourhoods, the
-relocated Longhill is still the **most accessible** school ---
-`r sprintf("%.0f", ec_t1)` minutes on average, because the coast road
-reaches Elm Grove before it reaches Varndean. They are assigned to
-`r fr_lab(ec_to)` instead, at `r sprintf("%.0f", ec_t2)` minutes: a
-penalty of about **`r sprintf("%.0f", ec_t2 - ec_t1)` minutes each way**.
-
-They are assigned there because there is nowhere else. At an admission
-number of `r fr$elm_pan` the relocated Longhill is already full on its
-own doorstep, and BACA is exactly at its capacity. The two schools the
-east can reach have no room, so the east attaches to one it cannot.
-
-**That is a finding about the configuration, not about the boundary.**
-Moving Longhill west and shrinking it at the same time leaves the
-eastern edge of the city without a school within reach. The map can
-only record that; it cannot fix it. A relocation at a larger admission
-number, or a relocation without one, would draw a different map --- and
-this is the question a redesign should be asked before a boundary is.
+**A catchment is a statement about geography and capacity, not a
+popularity contest.** A school does not forfeit a catchment for being
+unpopular; that is what the over-subscription rule is for. So these two
+designs are seeded on *which catchment can this neighbourhood reach
+quickest*, and the capacity balance trades from there. The Ovingdean
+designs keep the flow seed, because there the flows describe a school
+that is where it is.
 :::
 
-And on deprivation it is among the **weakest designs here**, with a
-Gorard index of `r sprintf("%.3f", i_elm$gorard)` against
-`r sprintf("%.3f", i_now$gorard)` for the map in force and
-`r sprintf("%.3f", i_pd$gorard)` for the power diagram. Moving the
-school west moves its catchment west, into the part of the city the
-current map already separates out, and the boundary that results
-reproduces much of that separation while making the catchment carrying
-it larger.
+```{r tbl-east-elm}
+#| tbl-cap: "Where the twelve easternmost neighbourhoods end up under each relocation, and how long their journey is. 'Nearest' is the catchment they could reach quickest."
 
-So the relocation that @sec-longhill finds best for Longhill is the
-redesign that spreads disadvantage least evenly and strands the east.
-That is not an argument against moving the school. It is an argument
-against letting the catchment map follow it without being drawn
-deliberately, and for asking what happens to Ovingdean, Rottingdean and
-Saltdean before rather than after.
+ec %>%
+  group_by(design) %>%
+  summarise(`To Longhill` = sum(assigned == "Longhill"),
+            `To BACA` = sum(assigned == "BACA"),
+            `To Stringer / Varndean` = sum(assigned == "DS_Varndean"),
+            `Nearest is Longhill` = sum(nearest == "Longhill"),
+            `Mean journey` = sprintf("%.0f min", weighted.mean(t_assigned, Oi)),
+            `If each went to its nearest` =
+              sprintf("%.0f min", weighted.mean(t_near, Oi)),
+            .groups = "drop") %>%
+  rename(Design = design) %>%
+  knitr::kable(align = "lrrrrrr")
+```
+
+**The east is now served from the east.** Of the `r n_east`
+easternmost neighbourhoods, `r sum(ec210$assigned == "Longhill")` are in
+Longhill's catchment and `r sum(ec210$assigned == "BACA")` in BACA's,
+both eastern schools. The mean journey to an assigned catchment school
+is `r sprintf("%.0f", weighted.mean(ec210$t_assigned, ec210$Oi))` minutes
+against `r sprintf("%.0f", weighted.mean(ec210$t_near, ec210$Oi))` if
+every one went to whichever it could reach quickest --- a penalty of
+about `r sprintf("%.0f", weighted.mean(ec210$t_assigned, ec210$Oi) - weighted.mean(ec210$t_near, ec210$Oi))`
+minutes. Under the flow-seeded version it was twenty.
+
+The `r sum(ec210$assigned == "DS_Varndean")` that still go west are the
+far coastal strip, `r sprintf("%.0f", min(ec210$t_near[ec210$assigned == "DS_Varndean"]))`
+to `r sprintf("%.0f", max(ec210$t_near[ec210$assigned == "DS_Varndean"]))`
+minutes from Elm Grove even at their nearest. They are a long way from
+every school in the city, and no boundary changes that.
+
+### What the two admission numbers actually decide {#sec-fr-elm-pan}
+
+```{r tbl-elm-sweep}
+#| tbl-cap: "Longhill at Elm Grove, swept across admission numbers. The capacity gap is its catchment's demand against its fair share of the city's places: a positive figure means the area it is nearest to holds more children than it has room for."
+
+sw %>%
+  transmute(`Admission number` = pan,
+            `Easternmost neighbourhoods in its catchment` =
+              sprintf("%d of %d", east_in_longhill, n_east),
+            `Mean journey for the east` = sprintf("%.0f min", east_minutes),
+            `Longhill capacity gap` = sprintf("%+.0f%%", 100 * longhill_gap)) %>%
+  knitr::kable(align = "rrrr")
+```
+
+**Raising the admission number from `r sw$pan[1]` to 210 barely changes
+the map and changes the arithmetic a great deal.** One more
+neighbourhood joins Longhill's catchment. But the capacity gap falls
+from `r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 150])` to
+`r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 210])`, because at
+Elm Grove **Longhill is the nearest school for far more of the city than
+it has places for**.
+
+That is the real result of moving it. A site in the middle of Brighton
+is close to a great many children; a site at Ovingdean is close to few.
+The sweep says the area Longhill would be nearest to at Elm Grove needs
+about `r sw_bal$pan[1]` places to balance ---
+`r sprintf("%+.0f%%", 100 * sw_bal$longhill_gap[1])` at that number ---
+which is larger than Longhill has been at any point in this document.
+
+::: {.callout-important appearance="simple"}
+## Reducing Stringer's admission number would not fix this
+
+It is the obvious lever and it does not reach. Targets are shares of the
+city's places, so taking 120 places off the Stringer/Varndean pair moves
+Longhill's target by about **eleven children**. The binding constraint
+is Longhill's own admission number, not its neighbour's.
+
+The choice the relocation actually presents is between three things,
+and only two of them can hold at once:
+
+- **A school of 150 or 210 places at Elm Grove.**
+- **A catchment drawn round the children it is nearest to.**
+- **A capacity balance across the city.**
+
+At `r sw$pan[1]` places the first two force a gap of
+`r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 150])`. Keeping the
+balance instead means handing the east to schools it is not nearest to,
+which is what the flow-seeded version did. Only a substantially larger
+school at Elm Grove holds all three, and that is a different proposal
+from the one on the table.
+:::
+
+```{r fr-elm-more}
+#| include: false
+elm_pct <- 100 * sum(elm_moved$Oi[elm_moved$moved]) / sum(elm_moved$Oi)
+```
+
+On everything else the relocation designs are unremarkable or worse.
+They move `r fmt_pct(elm_pct, 0)` of the cohort, much the largest
+upheaval on offer; they have the longest journeys of any design,
+`r sprintf("%.1f", d_e210$mean_journey)` minutes against
+`r sprintf("%.1f", d_now$mean_journey)` now; and on deprivation the
+PAN 210 version scores `r sprintf("%.3f", i_e210$gorard)` against
+`r sprintf("%.3f", i_now$gorard)` for the map in force and
+`r sprintf("%.3f", i_pd$gorard)` for the power diagram.
+
+So the relocation that @sec-longhill finds best for Longhill is not the
+redesign that is best for the city, on any measure here except the
+capacity gap it creates for itself. That is not an argument against
+moving the school. It is an argument for deciding the admission number
+and the boundary together, and for asking what happens to Ovingdean,
+Rottingdean and Saltdean before rather than after.
 
 ## What the over-subscription rule does {#sec-fr-allocation}
 
