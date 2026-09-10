@@ -38,26 +38,29 @@ quarto::quarto_render()        # or: quarto render
 source("R/99_verify_render.R") # check the output before publishing
 ```
 
-`99_verify_render.R` exists because the basemap key reaches the page
-through a shim that shadows `leaflet::addProviderTiles()`, and shadowing
-fails **quietly**: if the shim does not take effect the real function
-runs, the tiles come back watermarked, and nothing in the render output
-says so. It has happened twice, both times spotted only by looking at a
-map. The check reads the rendered HTML and fails if any CARTO layer is
-unkeyed, if `leaflet-providers` has been loaded (the signature of the
-shim being bypassed), or if either required attribution is missing.
+## Basemaps
 
-Render with `quarto render` rather than through a running `quarto
-preview` server. A preview re-render was the one that dropped the shim.
+Maps use CARTO raster tiles, which require an API key. Set `CARTO_KEY`
+in `~/.Renviron`; without it the maps still render, just watermarked.
+
+**Every map calls `add_carto()`** from `R/00_core.R` — never
+`leaflet::addProviderTiles()`, which has no slot for the key. That
+function is stubbed in `00_core.R` to raise an error, because calling it
+would silently produce watermarked tiles with no other symptom.
+
+This replaced an earlier approach that shadowed `addProviderTiles()`
+transparently. It failed twice, and both times it failed *quietly* — the
+maps rendered correctly and the only sign was a watermark that had to be
+noticed by eye. An explicitly named function fails visibly instead: a
+map without it has no basemap at all.
+
+`R/99_verify_render.R` remains as a belt-and-braces check on the
+rendered output. It fails if any CARTO layer is unkeyed, if
+`leaflet-providers` has been loaded, or if either required attribution
+is missing — the last of which is a condition of the free tier.
 
 Once `data/` is populated the repository is self-contained and renders
 anywhere.
-
-## Basemaps
-
-Maps use CARTO raster tiles, which now require an API key. Set
-`CARTO_KEY` in `~/.Renviron`. Without it the maps still render, just
-with a watermark.
 
 ## Three vocabularies for six catchments
 

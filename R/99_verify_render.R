@@ -1,13 +1,15 @@
 # R/99_verify_render.R — check the rendered site before publishing
 # ======================================================================
-# The CARTO basemap key reaches the page through a shim that shadows
-# leaflet::addProviderTiles(). Shadowing fails quietly: if the shim does
-# not take effect, the real function runs, the tiles come back
-# watermarked, and nothing in the render output says so. That has now
-# happened twice, both times noticed only by looking at the map.
+# The CARTO basemap key is added by add_carto() in R/00_core.R, which is
+# called explicitly at every map. That replaced a shim that shadowed
+# leaflet::addProviderTiles() and twice failed silently - the real
+# function ran, the maps rendered, and the only symptom was a watermark
+# that had to be spotted by eye.
 #
-# So check the artefact rather than trusting the process. Run after any
-# render, before committing or publishing:
+# The explicit call makes that failure mode much harder to reach, but
+# this check stays: it costs nothing, and it also guards the attribution
+# that the free tier is conditional on. Check the artefact rather than
+# trusting the process. Run after any render, before publishing:
 #
 #   source("R/99_verify_render.R")
 #
@@ -30,8 +32,9 @@ for (f in files) {
   keyed   <- lengths(regmatches(h, gregexpr("key=cb1_", h, fixed = TRUE)))
   unkeyed <- lengths(regmatches(
     h, gregexpr("basemaps\\.cartocdn\\.com/[a-z_/]*/\\{z\\}/\\{x\\}/\\{y\\}\\{?r?\\}?\\.png\"", h)))
-  # leaflet only ships these when the real addProviderTiles ran, which
-  # is the signature of the shim having been bypassed.
+  # leaflet only ships these when its own addProviderTiles() ran, which
+  # should now be impossible - R/00_core.R stubs that function to error.
+  # If it appears, something is bypassing 00_core.R altogether.
   providers <- grepl("leaflet-providers", h, fixed = TRUE)
 
   carto <- keyed > 0 || unkeyed > 0 || providers
@@ -47,7 +50,8 @@ for (f in files) {
   if (unkeyed > 0)
     fail <- c(fail, sprintf("%s: %d CARTO tile layer(s) without an API key", base, unkeyed))
   if (providers)
-    fail <- c(fail, sprintf("%s: leaflet-providers is loaded, so the shim was bypassed", base))
+    fail <- c(fail, sprintf(
+      "%s: leaflet-providers is loaded, so a map bypassed add_carto()", base))
   if (keyed == 0)
     fail <- c(fail, sprintf("%s: no keyed CARTO tile layer at all", base))
 
@@ -60,10 +64,10 @@ for (f in files) {
 if (length(fail)) {
   message("\nFAILED:")
   for (f in fail) message("  - ", f)
-  message("\nMost likely cause: CARTO_KEY unset in ~/.Renviron, or the render ",
-          "did not pick up the shim in R/00_core.R. Re-render with ",
-          "`quarto render` rather than through a running preview server, ",
-          "and check Sys.getenv(\"CARTO_KEY\").")
+  message("\nMost likely cause: CARTO_KEY unset in ~/.Renviron. Check with ",
+          "Sys.getenv(\"CARTO_KEY\") and re-render. If leaflet-providers ",
+          "is loaded, a map is calling leaflet's addProviderTiles() ",
+          "instead of add_carto() from R/00_core.R.")
   quit(status = 1)
 }
 

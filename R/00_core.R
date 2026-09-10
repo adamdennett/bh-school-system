@@ -15,47 +15,83 @@ ROOT <- here::here()
 DATA <- file.path(ROOT, "data")
 LOGOS <- file.path(ROOT, "assets", "school_logos")
 
-# ---- CARTO basemap API key -------------------------------------------
-# CARTO now require a key on their raster tiles; without one the tiles
+# ---- CARTO basemaps --------------------------------------------------
+# CARTO require an API key on their raster tiles; without one the tiles
 # carry an "API key required" watermark. leaflet-providers has no slot
-# for a key, so this wraps addProviderTiles(): CartoDB providers are
-# rebuilt as a keyed addTiles() call and everything else is passed
-# straight through to leaflet. Attribution is set explicitly, because
-# addTiles() does not inherit the provider's and keeping the CARTO and
-# OpenStreetMap credits visible is a condition of the free tier.
-# The key is read from CARTO_KEY in ~/.Renviron. If it is unset the maps
-# still render, just watermarked, so clones and CI are unaffected.
-addProviderTiles <- function(map, provider, ...) {
-  variants <- c(
-    Positron             = "light_all",
-    PositronNoLabels     = "light_nolabels",
-    PositronOnlyLabels   = "light_only_labels",
-    DarkMatter           = "dark_all",
-    DarkMatterNoLabels   = "dark_nolabels",
-    DarkMatterOnlyLabels = "dark_only_labels",
-    Voyager              = "rastertiles/voyager",
-    VoyagerNoLabels      = "rastertiles/voyager_nolabels",
-    VoyagerOnlyLabels    = "rastertiles/voyager_only_labels",
-    VoyagerLabelsUnder   = "rastertiles/voyager_labels_under")
+# for a key, so the tile URL has to be built by hand.
+#
+# This used to be done by shadowing leaflet::addProviderTiles(). That
+# failed twice, and both times it failed *silently*: when the shim did
+# not take effect the real function ran, the maps rendered perfectly,
+# and the only symptom was a watermark that had to be noticed by eye.
+#
+# So the basemap is now added by an explicitly named function. If it is
+# missing from a map the map has no basemap at all, which is impossible
+# to miss; and addProviderTiles() is stubbed below so a reintroduced
+# call fails loudly rather than quietly reverting to unkeyed tiles.
+
+CARTO_VARIANTS <- c(
+  Positron             = "light_all",
+  PositronNoLabels     = "light_nolabels",
+  PositronOnlyLabels   = "light_only_labels",
+  DarkMatter           = "dark_all",
+  DarkMatterNoLabels   = "dark_nolabels",
+  DarkMatterOnlyLabels = "dark_only_labels",
+  Voyager              = "rastertiles/voyager",
+  VoyagerNoLabels      = "rastertiles/voyager_nolabels",
+  VoyagerOnlyLabels    = "rastertiles/voyager_only_labels",
+  VoyagerLabelsUnder   = "rastertiles/voyager_labels_under")
+
+#' Add a keyed CARTO raster basemap
+#'
+#' Attribution is set explicitly because addTiles() does not inherit a
+#' provider's, and keeping the CARTO and OpenStreetMap credits visible
+#' is a condition of the free tier.
+#'
+#' The key is read from CARTO_KEY in ~/.Renviron. If it is unset the map
+#' still renders, just watermarked, so clones and CI are unaffected --
+#' but a warning is emitted, because a silent watermark is exactly the
+#' failure this function exists to prevent.
+#'
+#' @param map a leaflet map
+#' @param variant one of names(CARTO_VARIANTS), default Positron
+#' @param ... passed to leaflet::addTiles (group, layerId, options)
+add_carto <- function(map, variant = "Positron", ...) {
+  variant <- match.arg(variant, names(CARTO_VARIANTS))
   key <- Sys.getenv("CARTO_KEY", "")
-  nm  <- as.character(provider)[1]
-  if (startsWith(nm, "CartoDB.")) nm <- substring(nm, 9L)
-  if (!nzchar(key) || !nm %in% names(variants))
-    return(leaflet::addProviderTiles(map, provider, ...))
+
+  if (!nzchar(key)) {
+    warning("CARTO_KEY is not set, so basemap tiles will be watermarked. ",
+            "Set it in ~/.Renviron.", call. = FALSE)
+  }
+
   dots <- list(...)
   opts <- leaflet::tileOptions(subdomains = "abcd", maxZoom = 20)
   if (!is.null(dots$options)) {
     opts <- utils::modifyList(opts, dots$options); dots$options <- NULL
   }
+
+  url <- sprintf("https://{s}.basemaps.cartocdn.com/%s/{z}/{x}/{y}{r}.png",
+                 CARTO_VARIANTS[[variant]])
+  if (nzchar(key)) url <- paste0(url, "?key=", key)
+
   do.call(leaflet::addTiles, c(list(
     map,
-    urlTemplate = sprintf(
-      "https://{s}.basemaps.cartocdn.com/%s/{z}/{x}/{y}{r}.png?key=%s",
-      variants[[nm]], key),
+    urlTemplate = url,
     attribution = paste0(
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       ' contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'),
     options = opts), dots))
+}
+
+# A tripwire. Calling leaflet's own addProviderTiles() in this project
+# would produce unkeyed, watermarked CARTO tiles without any error, so
+# make it an error instead.
+addProviderTiles <- function(map, provider, ...) {
+  stop("Use add_carto() in this project, not addProviderTiles().\n",
+       "  leaflet-providers has no slot for the CARTO API key, so this ",
+       "would render watermarked tiles with no other symptom.\n",
+       "  See R/00_core.R.", call. = FALSE)
 }
 # ----------------------------------------------------------------------
 
