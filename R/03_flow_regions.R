@@ -78,6 +78,40 @@ lsoa_children <- city_zones %>%
   group_by(lsoa) %>%
   summarise(Oi = sum(Oi), .groups = "drop")
 
+# ---- Deprivation at LSOA level, on the consultation's own definition -
+# The postcode file carries an IDACI decile and a count of households
+# with dependent children for every postcode in the city, and an LSOA
+# code with them. Aggregating it here gives each neighbourhood a share
+# of its households with children that sit in the three most deprived
+# deciles nationally - the same "deprived" as the catchment profiles
+# further down, and the same as the open model's segregation figures.
+#
+# It is used for two things the polygon profiles cannot do: the
+# deprivation mix of each SCHOOL's modelled intake, which is what the
+# over-subscription rule actually determines, and splitting journey
+# times by whether the child making them is from a deprived
+# neighbourhood.
+# IDACI is published at LSOA level, so every postcode in a neighbourhood
+# carries the same decile and dep3 comes out as 0 or 1 rather than as a
+# share: 39 of the 165 neighbourhoods are in the three most deprived
+# deciles in England. It is aggregated from the postcode file anyway,
+# because that file is the consultation's own, and then checked against
+# the open model's flag so the two definitions cannot drift apart.
+idaci_lsoa <- readr::read_csv(file.path(DATA, "postcode_children.csv"),
+                              show_col_types = FALSE) %>%
+  filter(!is.na(idaci_decile), hh_with_ch > 0) %>%
+  group_by(lsoa) %>%
+  summarise(hh = sum(hh_with_ch),
+            dep3 = sum(hh_with_ch[idaci_decile <= 3]) / sum(hh_with_ch),
+            .groups = "drop")
+
+local({
+  chk <- inner_join(idaci_lsoa, dep$idaci %>% select(lsoa, deprived),
+                    by = "lsoa")
+  stopifnot(all(chk$dep3 %in% c(0, 1)),
+            all((chk$dep3 > 0.5) == chk$deprived))
+})
+
 FAITH   <- oi$schools$name[oi$schools$faith]
 CATCH_S <- setdiff(oi$schools$name[oi$schools$name %in% unique(mt$od_flows$name)],
                    FAITH)
@@ -100,7 +134,12 @@ world <- function(model_id, costs, label, lh_pan = NULL) {
   ct <- costs %>%
     inner_join(city_zones %>% select(zone, lsoa, Oi), by = "zone") %>%
     group_by(lsoa, name) %>%
-    summarise(cij = weighted.mean(cij, Oi), .groups = "drop")
+    # Both cost columns are carried through. cij is the routed
+    # walk-and-bus time in minutes, which is what the model runs on; km
+    # is the network distance, which is what a transport budget and a
+    # carbon figure are counted in. Section 8 wants both.
+    summarise(cij = weighted.mean(cij, Oi),
+              km  = weighted.mean(km, Oi), .groups = "drop")
 
   p <- pan
   if (!is.null(lh_pan)) p["Longhill High School"] <- lh_pan
@@ -889,14 +928,20 @@ allocate <- function(assign, groups, w, tol = 1e-3, max_round = 60) {
   res <- held %>%
     mutate(grp = unname(sch_of[name]), home = unname(home_g[lsoa]),
            cross = is.na(grp) | is.na(home) | grp != home) %>%
-    left_join(prefs %>% select(lsoa, name, cij, rank), by = c("lsoa", "name"))
+    left_join(prefs %>% select(lsoa, name, cij, km, rank),
+              by = c("lsoa", "name"))
 
+  # The detail is kept, not just the summary. Every journey statistic
+  # and every school-level intake figure below is computed from it, and
+  # computing them here instead would mean this function grew a new
+  # return column each time section 8 asked a new question.
   tibble(placed = sum(res$n),
          cross_share = sum(res$n[res$cross]) / sum(res$n),
          faith_share = sum(res$n[res$name %in% FAITH]) / sum(res$n),
          local_share = sum(res$n[!res$cross & !res$name %in% FAITH]) / sum(res$n),
          first_pref = sum(res$n[res$rank == 1]) / sum(res$n),
-         mean_journey = weighted.mean(res$cij, res$n), rounds = r)
+         mean_journey = weighted.mean(res$cij, res$n), rounds = r,
+         detail = list(res))
 }
 
 message("\n=== Allocation under an in-catchment-then-distance rule ===")
@@ -1068,6 +1113,135 @@ print(as.data.frame(idaci_curve %>% group_by(design) %>%
   summarise(dissimilarity = round(max(gap), 3), .groups = "drop") %>%
   arrange(dissimilarity)), row.names = FALSE)
 
+# ---- Journeys, and who makes the long ones ---------------------------
+# The tables above measure a design by its geography: how far a child is
+# from the school whose catchment they live in. That is not the journey
+# anyone actually makes. The journey they make is to the school the
+# over-subscription rule gives them, which is what allocate() returns,
+# and it is the only basis on which "this design costs more travel" can
+# honestly be said.
+#
+# Every statistic here is weighted by children, so a design is not
+# rewarded for shortening the journey of a neighbourhood with four
+# children in it.
+
+DESIGN_LEVELS <- vapply(DESIGNS, function(d) d$lab, character(1))
+
+# Weighted quantile, type 1 (the inverse-CDF definition). The base
+# quantile() has no weights, and repeating each child would mean
+# expanding fractional counts.
+wq <- function(x, w, p) {
+  o <- order(x); x <- x[o]; w <- w[o]
+  x[which(cumsum(w) / sum(w) >= p)[1]]
+}
+
+journeys <- purrr::map_dfr(seq_len(nrow(alloc)), function(i)
+  alloc$detail[[i]] %>% mutate(design = alloc$design[i])) %>%
+  left_join(idaci_lsoa %>% select(lsoa, dep3), by = "lsoa") %>%
+  mutate(design = factor(design, DESIGN_LEVELS))
+
+stopifnot(!any(is.na(journeys$dep3)), !any(is.na(journeys$km)))
+
+# Two thresholds, both from section 5: the National Travel Survey
+# average one-way school trip, and half the DfE's statutory maximum for
+# a secondary-age child. Neither is a standard anyone has adopted for
+# Brighton; they are there so a number of minutes means something.
+NTS_MIN  <- 19
+LONG_MIN <- 40
+
+journey_stats <- journeys %>%
+  group_by(design) %>%
+  summarise(
+    children  = sum(n),
+    mean_min  = weighted.mean(cij, n),
+    median_min = wq(cij, n, 0.5),
+    p90_min   = wq(cij, n, 0.9),
+    over_nts  = sum(n[cij > NTS_MIN]) / sum(n),
+    over_long = sum(n[cij > LONG_MIN]) / sum(n),
+    mean_km   = weighted.mean(km, n),
+    # Both ways, every school day, all children: the quantity a
+    # transport budget and a carbon figure are actually counted in.
+    child_km_day = 2 * sum(n * km),
+    child_hours_day = 2 * sum(n * cij) / 60,
+    # Children living in the 39 neighbourhoods in the three most
+    # deprived deciles nationally, against the children living in the
+    # other 126. Both means are over children rather than over
+    # neighbourhoods, so a small deprived area does not count as much as
+    # a large one.
+    min_deprived = sum(n * dep3 * cij) / sum(n * dep3),
+    min_rest     = sum(n * (1 - dep3) * cij) / sum(n * (1 - dep3)),
+    .groups = "drop") %>%
+  mutate(dep_gap = min_deprived - min_rest)
+
+message("\n=== Journeys to the school each child is actually offered ===")
+print(as.data.frame(journey_stats %>%
+  transmute(Design = design,
+            Mean = sprintf("%.1f min", mean_min),
+            Median = sprintf("%.0f", median_min),
+            `90th pct` = sprintf("%.0f", p90_min),
+            `Over 40 min` = sprintf("%.0f%%", 100 * over_long),
+            `Mean km` = sprintf("%.2f", mean_km),
+            `Child-km/day` = format(round(child_km_day), big.mark = ","),
+            `Deprived - rest` = sprintf("%+.1f min", dep_gap))),
+  row.names = FALSE)
+
+# The distribution behind the mean. One curve per design: the share of
+# children whose offered school is within t minutes. A mean hides which
+# tail a design is trading; this does not.
+journey_curve <- purrr::map_dfr(levels(journeys$design), function(d) {
+  j <- journeys %>% filter(design == d)
+  tibble(design = d, t = seq(0, 60, by = 1)) %>%
+    mutate(share = vapply(t, function(k) sum(j$n[j$cij <= k]) / sum(j$n),
+                          numeric(1)))
+}) %>% mutate(design = factor(design, DESIGN_LEVELS))
+
+# ---- Deprivation between SCHOOLS, not between catchments -------------
+# The catchment profiles measure the neighbourhoods a boundary encloses.
+# They are not the intake: the over-subscription rule sends a real
+# minority across boundaries and the faith schools admit across the city
+# entirely, so two designs enclosing identically mixed catchments can
+# still fill their schools very differently.
+#
+# This is the same Gorard index applied to the modelled intake of each
+# school. It is restricted to the schools that HAVE a catchment, so it
+# is like for like with the figure computed on the polygons; the faith
+# schools are added back in the "all schools" column, with the caveat
+# that this model ranks them on distance alone and their real criteria
+# are not in published data.
+
+intake_mix <- journeys %>%
+  # dep_n is computed BEFORE the group total, not inside the same
+  # summarise. Written the other way round, dplyr evaluates the
+  # arguments in order and sum(n * dep3) multiplies the group's new
+  # scalar total by every dep3 in it, which put one school's intake at
+  # 800% deprived and went straight past a first reading.
+  mutate(dep_n = n * dep3) %>%
+  group_by(design, name) %>%
+  summarise(n = sum(n), dep_n = sum(dep_n), .groups = "drop") %>%
+  mutate(dep_share = dep_n / n)
+
+gorard_n <- function(n, dep_n)
+  0.5 * sum(abs(dep_n / sum(dep_n) - n / sum(n)))
+
+intake_seg <- intake_mix %>%
+  group_by(design) %>%
+  summarise(
+    gorard_schools = gorard_n(n[name %in% unlist(GROUPS_NOW)],
+                              dep_n[name %in% unlist(GROUPS_NOW)]),
+    gorard_all     = gorard_n(n, dep_n),
+    intake_lo = min(dep_share[name %in% unlist(GROUPS_NOW)]),
+    intake_hi = max(dep_share[name %in% unlist(GROUPS_NOW)]),
+    .groups = "drop")
+
+message("\n=== Deprivation between schools, on the modelled intakes ===")
+print(as.data.frame(intake_seg %>%
+  transmute(Design = design,
+            `Gorard, catchment schools` = sprintf("%.3f", gorard_schools),
+            `Gorard, all schools` = sprintf("%.3f", gorard_all),
+            `Least to most deprived intake` =
+              sprintf("%.0f%% to %.0f%%", 100 * intake_lo, 100 * intake_hi))),
+  row.names = FALSE)
+
 # ---- What moves against the current map -----------------------------
 
 # Only designs that use the SAME grouping of schools can be compared
@@ -1097,6 +1271,93 @@ print(as.data.frame(changed %>% group_by(design) %>%
             pct = sprintf("%.0f%%", 100 * sum(Oi[moved]) / sum(Oi)),
             .groups = "drop")), row.names = FALSE)
 
+# ---- One scorecard --------------------------------------------------
+# Six designs, three families of measure, one table. Every entry is a
+# number computed above rather than a judgement, and every row carries
+# the direction that counts as better, so the ranking is done by the
+# code and not by whoever writes the paragraph underneath it.
+
+moved_by <- changed %>% group_by(design) %>%
+  summarise(moved = sum(Oi[moved]) / sum(Oi), .groups = "drop")
+
+score_wide <- designs %>%
+  select(design, regions, self_containment, catch_journey = mean_journey,
+         worst_gap, fragments, enclaves, ragged, schools_outside) %>%
+  left_join(alloc %>% select(design, first_pref, local_share, cross_share),
+            by = "design") %>%
+  left_join(journey_stats, by = "design") %>%
+  left_join(intake_seg, by = "design") %>%
+  left_join(idaci_summary %>% select(design, gorard_catch = gorard,
+                                     idaci_lo = lo, idaci_hi = hi),
+            by = "design") %>%
+  left_join(idaci_curve %>% group_by(design) %>%
+              summarise(curve_gap = max(gap), .groups = "drop"),
+            by = "design") %>%
+  left_join(moved_by, by = "design") %>%
+  mutate(design = factor(design, DESIGN_LEVELS),
+         shape_faults = fragments + enclaves + schools_outside,
+         abs_gap = abs(worst_gap)) %>%
+  arrange(design)
+
+stopifnot(nrow(score_wide) == length(DESIGN_LEVELS),
+          !any(is.na(score_wide$mean_min)),
+          !any(is.na(score_wide$gorard_catch)),
+          # The identity asserted in SCORE_SPEC below, so that if a
+          # future change to the curve breaks it the render stops rather
+          # than the document quietly losing a measure.
+          all(abs(score_wide$curve_gap - score_wide$gorard_catch) < 1e-9))
+
+# metric | family | direction | how to print it
+SCORE_SPEC <- tibble::tribble(
+  ~metric,            ~family,        ~label,                                   ~better, ~fmt,
+  # The curve's widest gap from the diagonal is NOT a second measure. On
+  # catchments ordered by deprivation it is arithmetically identical to
+  # Gorard - every design returns the same number to four decimals - so
+  # listing both would count one measure twice and read as two measures
+  # agreeing. Only Gorard is scored.
+  "gorard_catch",     "Deprivation",  "Segregation between catchments",          "low",  "%.3f",
+  "gorard_schools",   "Deprivation",  "Segregation between school intakes",      "low",  "%.3f",
+  "mean_min",         "Journeys",     "Mean journey to the school offered",      "low",  "%.1f min",
+  "p90_min",          "Journeys",     "Longest tenth of journeys, from",         "low",  "%.0f min",
+  "over_long",        "Journeys",     "Children over 40 minutes",                "low",  "pct0",
+  "mean_km",          "Journeys",     "Mean distance",                           "low",  "%.2f km",
+  "child_km_day",     "Journeys",     "Child-kilometres a day, both ways",       "low",  "n0",
+  "dep_gap",          "Journeys",     "Deprived children's journeys, against the rest", "low", "%+.1f min",
+  "self_containment", "Fit",          "Self-containment",                        "high", "pct0",
+  "abs_gap",          "Fit",          "Worst capacity gap",                      "low",  "pct0",
+  "first_pref",       "Fit",          "Got their first preference",              "high", "pct0",
+  "local_share",      "Fit",          "Placed in their own catchment",           "high", "pct0",
+  "shape_faults",     "Fit",          "Shape faults",                            "low",  "%.0f",
+  "moved",            "Fit",          "Neighbourhood children reassigned",       "low",  "pct0")
+
+score_long <- score_wide %>%
+  select(design, all_of(SCORE_SPEC$metric)) %>%
+  tidyr::pivot_longer(-design, names_to = "metric", values_to = "value") %>%
+  left_join(SCORE_SPEC, by = "metric") %>%
+  group_by(metric) %>%
+  mutate(rank = if (better[1] == "low") rank(value, ties.method = "min")
+                else rank(-value, ties.method = "min"),
+         best = rank == min(rank, na.rm = TRUE),
+         # Against the map in force, with a tolerance: several of these
+         # differ in the fourth decimal and a bare > would report a
+         # float's last bit as a policy difference.
+         vs_now = value - value[design == "Current catchments"],
+         beats_now = dplyr::case_when(
+           design == "Current catchments" ~ NA,
+           abs(vs_now) <= 1e-6 * pmax(1, abs(value)) ~ NA,
+           better[1] == "low" ~ vs_now < 0,
+           TRUE ~ vs_now > 0)) %>%
+  ungroup() %>%
+  mutate(family = factor(family, c("Deprivation", "Journeys", "Fit")),
+         label = factor(label, SCORE_SPEC$label))
+
+message("\n=== Measures on which each design beats the current map ===")
+print(as.data.frame(score_long %>% filter(!is.na(beats_now)) %>%
+  group_by(design) %>%
+  summarise(better = sum(beats_now), worse = sum(!beats_now),
+            `same or n/a` = sum(is.na(beats_now)), .groups = "drop")),
+  row.names = FALSE)
+
 saveRDS(list(
   designs = designs, alloc = alloc, regions_sf = regions_sf,
   changed = changed, idaci_profiles = idaci_profiles, shape = shape,
@@ -1106,6 +1367,11 @@ saveRDS(list(
   idaci_summary = idaci_summary, idaci_region = idaci_region,
   idaci_table = idaci_table, idaci_bands = idaci_bands,
   idaci_curve = idaci_curve, idaci_band_levels = IDACI_BANDS,
+  idaci_lsoa = idaci_lsoa,
+  journey_stats = journey_stats, journey_curve = journey_curve,
+  intake_mix = intake_mix, intake_seg = intake_seg,
+  score_wide = score_wide, score_long = score_long, score_spec = SCORE_SPEC,
+  nts_min = NTS_MIN, long_min = LONG_MIN,
   regions = list(single = R_SINGLE, paired = R_PAIRED, elm = R_ELM,
                  elm210 = R_ELM210),
   now_assign = now_assign, pd_assign = pd_assign,

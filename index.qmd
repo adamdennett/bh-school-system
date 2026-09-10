@@ -5169,6 +5169,15 @@ i_same  <- fr$idaci_summary %>%
 # closer together than a reader can separate - which is why the bands
 # are three and the ten-column table is gone.
 BAND_COL <- setNames(c("#0d366b", "#2a78d6", "#86b6ef"), fr$idaci_band_levels)
+
+# One colour per design, fixed here and used by every chart in this
+# section that draws designs as series - the segregation curves and the
+# journey-time curves - so a reader who has learned a colour on one
+# chart has not to learn it again on the next. Defined in a prep chunk
+# rather than in the first chart that happens to need it.
+DESIGN_COL <- setNames(
+  c("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"),
+  fr_designs)
 ```
 
 ```{r fig-idaci-bands}
@@ -5241,10 +5250,6 @@ cv <- fr$idaci_curve %>% mutate(design = factor(design, fr_designs))
 ends <- cv %>% group_by(design) %>% slice_max(x, n = 1) %>% ungroup()
 worst <- cv %>% group_by(design) %>% slice_max(gap, n = 1) %>% ungroup()
 
-DESIGN_COL <- setNames(
-  c("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"),
-  fr_designs)
-
 # Six lines is past the point where direct-labelling every one is
 # readable - four of them run through the same cluster around 45% and
 # the labels sat on top of each other. Legend for identity, direct
@@ -5272,7 +5277,7 @@ ggplot(cv, aes(x, y, colour = design)) +
   labs(x = "Cumulative share of all households with dependent children",
        y = "Cumulative share of those in the three most deprived deciles",
        title = "How evenly each design spreads disadvantage",
-       subtitle = str_wrap(paste("The dashed line is a perfectly even spread.", "The marked points are the most and least even designs, at their widest gap from it - the dissimilarity index."), 100),
+       subtitle = str_wrap(paste("The dashed line is a perfectly even spread.", "The marked points are the most and least even designs, at their widest gap from it - which for catchments ordered this way is Gorard's index exactly."), 100),
        caption = "Sources: ONS postcode household counts; IMD 2019 IDACI.") +
   theme_bh(11) +
   theme(legend.position = "top", legend.text = element_text(size = 8))
@@ -5281,17 +5286,19 @@ ggplot(cv, aes(x, y, colour = design)) +
 ```{r tbl-idaci-even}
 #| tbl-cap: "How evenly each design spreads disadvantage. The share columns are households with dependent children in the three most deprived deciles, for the least and most deprived catchment of each design. Gorard's segregation index is the measure the open model uses for the same question: half the sum of the absolute difference between each catchment's share of the city's deprived households and its share of all households. Zero would be a perfectly even spread. Ranked best first."
 
+# The widest gap on the curve above is NOT reported as a second column.
+# On catchments ordered by deprivation it is arithmetically identical to
+# Gorard, to every decimal, so printing both would be one measure
+# dressed as two agreeing with each other. R/03_flow_regions.R asserts
+# the identity rather than trusting this comment.
 fr$idaci_summary %>%
-  left_join(fr$idaci_curve %>% group_by(design) %>%
-              summarise(dis = max(gap), .groups = "drop"), by = "design") %>%
   arrange(gorard) %>%
   transmute(Design = design,
             `Least deprived catchment` = fmt_pct(100 * lo, 0),
             `Most deprived catchment` = fmt_pct(100 * hi, 0),
             `Range` = sprintf("%.0f points", 100 * spread),
-            `Dissimilarity` = sprintf("%.2f", dis),
             `Gorard index` = sprintf("%.3f", gorard)) %>%
-  knitr::kable(align = "lrrrrr")
+  knitr::kable(align = "lrrrr")
 ```
 
 **The power diagram spreads disadvantage most evenly, and it is not
@@ -5313,6 +5320,142 @@ Concentrating disadvantage in a small catchment moves fewer households
 than spreading a moderate excess across two large ones --- which is what
 the curve shows and the range cannot. Gorard weights by size; maximum
 minus minimum does not.
+
+### A catchment is not an intake {#sec-fr-intakes}
+
+Everything above measures the **neighbourhoods a boundary encloses**.
+That is what the consultation profiles and it is the right first
+question, but it is not the question a parent or a headteacher is
+actually asking, which is who ends up **in the school**. The two are not
+the same thing. A real minority of children cross a boundary, the two
+faith schools admit across the city with no catchment at all, and any
+school that fills before its catchment does forces the rest outward.
+
+So the same index is computed a second way: on the **modelled intake of
+each school** under the over-subscription rule in
+@sec-fr-allocation, rather than on the population of each catchment.
+
+```{r fig-idaci-intakes}
+#| fig-cap: "Gorard's segregation index computed two ways for each design: across the catchments the design draws, and across the intakes its schools fill once the over-subscription rule has run. Zero would be a perfectly even spread. Five of the six designs fill their schools less evenly than they draw their map."
+#| fig-height: 4.6
+
+# A validated two-colour categorical pair, deliberately outside the six
+# used for designs elsewhere in this section: colour here means which
+# measure, not which design, and reusing the design hues for a different
+# job is how a reader comes to think blue means "current catchments"
+# everywhere.
+PAIR_COL <- c(`Across the catchments` = "#6b4fbb",
+              `Across the school intakes` = "#c2701c")
+
+dm <- fr$score_wide %>%
+  transmute(design = factor(design, fr_designs),
+            `Across the catchments` = gorard_catch,
+            `Across the school intakes` = gorard_schools) %>%
+  tidyr::pivot_longer(-design, names_to = "measure", values_to = "g") %>%
+  mutate(measure = factor(measure, names(PAIR_COL))) %>%
+  # Labels go on the OUTER side of each point rather than above it. Two
+  # of these designs differ by four thousandths, and above the points
+  # their labels printed on top of each other as "0.31014".
+  group_by(design) %>% arrange(g, .by_group = TRUE) %>%
+  mutate(side = c(-1, 1)) %>% ungroup()
+
+seg <- dm %>% select(-side) %>%
+  tidyr::pivot_wider(names_from = measure, values_from = g)
+
+ggplot(dm, aes(g, fct_rev(design))) +
+  geom_segment(data = seg, aes(x = `Across the catchments`,
+                               xend = `Across the school intakes`,
+                               y = fct_rev(design), yend = fct_rev(design)),
+               inherit.aes = FALSE, colour = "grey70", linewidth = 1.1) +
+  geom_point(aes(colour = measure), size = 3.4) +
+  geom_text(aes(label = sprintf("%.3f", g), colour = measure,
+                hjust = if_else(side > 0, -0.3, 1.3)),
+            size = 2.8, show.legend = FALSE) +
+  scale_colour_manual(values = PAIR_COL, name = NULL) +
+  scale_x_continuous(limits = c(0.15, 0.38), breaks = seq(0.15, 0.35, 0.05)) +
+  scale_y_discrete(labels = function(x) str_wrap(x, 26)) +
+  labs(x = "Gorard's segregation index", y = NULL,
+       title = "A catchment is not an intake",
+       subtitle = str_wrap(paste("The catchments a design encloses, against the intakes its schools fill once children cross boundaries.", "Further right is more segregated."), 100),
+       caption = "Sources: ONS postcode household counts; IMD 2019 IDACI; modelled allocation.") +
+  theme_bh(11) +
+  theme(legend.position = "top", panel.grid.major.y = element_blank())
+```
+
+```{r intake-prep}
+#| include: false
+# The admission number is read off the design's own label rather than
+# written into the prose, so a re-run at a different number cannot leave
+# the sentence saying 150 while the table says something else.
+elm_pan_of <- function(d) {
+  n <- stringr::str_match(as.character(d), "PAN ([0-9]+)")[, 2]
+  stopifnot(!is.na(n)); n
+}
+sw <- fr$score_wide %>% mutate(design = factor(design, fr_designs))
+s_now  <- sw %>% filter(str_detect(design, "Current"))
+s_pd   <- sw %>% filter(str_detect(design, "Power"))
+s_pair <- sw %>% filter(str_detect(design, "pairs kept"))
+s_one  <- sw %>% filter(str_detect(design, "one per school"))
+s_e150 <- sw %>% filter(str_detect(design, "PAN 150"))
+s_e210 <- sw %>% filter(str_detect(design, "Elm") & str_detect(design, "PAN 210"))
+im_now <- fr$intake_mix %>% filter(str_detect(design, "Current"))
+im_hi  <- im_now %>% slice_max(dep_share, n = 1)
+im_lo  <- im_now %>% slice_min(dep_share, n = 1)
+```
+
+**Five of the six designs are more segregated at the school gate than on
+the map**, and the current one by the widest margin:
+`r sprintf("%.3f", s_now$gorard_catch)` across the catchments becomes
+`r sprintf("%.3f", s_now$gorard_schools)` across the intakes. Choice and
+over-subscription do not dilute the geography here. They sharpen it.
+
+The exception is the design that fails everything else. One catchment
+per school goes from `r sprintf("%.3f", s_one$gorard_catch)` to
+`r sprintf("%.3f", s_one$gorard_schools)` --- unchanged to within four
+thousandths --- because it is already so segregated on the map that the
+allocation has nothing left to add.
+
+That is the finding worth carrying out of this section. **A boundary
+review that scores itself on catchment populations will overstate what
+it has achieved**, because the population of a catchment is not the
+intake of its school, and the gap between the two is large in every
+design that is worth drawing.
+
+**The ranking changes as well.** The power diagram is still first ---
+`r sprintf("%.3f", s_pd$gorard_schools)` against
+`r sprintf("%.3f", s_now$gorard_schools)` now --- but the flow regions
+move up to second on intakes,
+`r sprintf("%.3f", s_pair$gorard_schools)`, and both relocation designs
+move down: putting Longhill at Elm Grove leaves
+`r sprintf("%.3f", s_e150$gorard_schools)` at an admission number of
+`r elm_pan_of(s_e150$design)` and
+`r sprintf("%.3f", s_e210$gorard_schools)` at
+`r elm_pan_of(s_e210$design)`, both worse than the map in force.
+
+Under the current map the modelled intakes run from
+`r fmt_pct(100 * im_lo$dep_share, 0)` of children from the three most
+deprived deciles at `r short_sch(im_lo$name)` to
+`r fmt_pct(100 * im_hi$dep_share, 0)` at `r short_sch(im_hi$name)`. No
+alternative closes that; the best of them narrows it to
+`r fmt_pct(100 * s_pd$intake_lo, 0)` to
+`r fmt_pct(100 * s_pd$intake_hi, 0)`.
+
+::: {.callout-note appearance="simple"}
+## Read the two faith schools out of this
+
+The index above is computed across the eight schools that have a
+catchment, so it is like for like with the catchment figure. Adding the
+two faith schools moves it to
+`r sprintf("%.3f", s_now$gorard_all)` for the current map and
+`r sprintf("%.3f", s_pd$gorard_all)` for the power diagram --- the same
+ordering, slightly higher levels.
+
+But that column should be read with more suspicion than the rest of this
+section. **The model admits to the faith schools on distance alone**,
+because their actual criteria are faith-based and no published dataset
+contains them. Their modelled intakes are therefore the least reliable
+numbers in this document, and they take about a fifth of the cohort.
+:::
 
 ::: {.callout-important appearance="simple"}
 ## A finding that reversed under a better measure
@@ -5518,6 +5661,7 @@ anyone should propose. The arithmetic then shows up in the allocation
 instead of on the map, which is the honest place for it: the school is
 too small for the geography it would serve, and that is a decision about
 the admission number, not about the lines.
+:::
 
 ```{r fr-elm-more}
 #| include: false
@@ -5587,6 +5731,292 @@ genuinely moving between geographic catchments.
 tested. A better-drawn map gets more children the school **nearest** to
 them. It does not get more of them the school they **want**, and the
 second is worth more than the first.
+
+## What each design costs in travel {#sec-fr-journeys}
+
+Redrawing a catchment moves children between schools, and the schools
+are not in the same places. So every design has a travel bill, and it
+falls on households as time and on the council as home-to-school
+transport.
+
+The figures here are for the journey to **the school each child is
+actually offered** under the rule above --- not to the school whose
+catchment they live in, which is the number the comparison table in
+@sec-fr-compare reports and which nobody travels to unless they get that
+school. Every statistic is weighted by children, so a design gets no
+credit for shortening the journey of a neighbourhood with four children
+in it.
+
+```{r journey-prep}
+#| include: false
+js <- fr$journey_stats %>% mutate(design = factor(design, fr_designs))
+j_now  <- js %>% filter(str_detect(design, "Current"))
+j_pd   <- js %>% filter(str_detect(design, "Power"))
+j_pair <- js %>% filter(str_detect(design, "pairs kept"))
+j_e150 <- js %>% filter(str_detect(design, "PAN 150"))
+j_e210 <- js %>% filter(str_detect(design, "Elm") & str_detect(design, "PAN 210"))
+j_place <- js %>% filter(!str_detect(design, "Elm"))
+```
+
+```{r fig-journey-curve}
+#| fig-cap: "The share of children whose offered school is within a given journey time, walking and bus. The four designs that leave the schools where they are are drawn as one band, because they never differ by more than the width of it; the two relocation designs are drawn separately. The dashed marks are the National Travel Survey average one-way school trip and the forty-minute line used in the table below."
+#| fig-height: 5.4
+
+jc <- fr$journey_curve %>% mutate(design = factor(design, fr_designs))
+
+# Six lines on one set of axes was six lines on top of each other: the
+# four designs that leave the schools where they are never differ by
+# more than a few points at any threshold, and drawing them separately
+# said "these are different" when the finding is that they are not. The
+# four become a band whose width IS that disagreement, and the two
+# designs that do move the distribution keep their own colours from the
+# rest of this section.
+band <- jc %>% filter(!str_detect(design, "Elm")) %>%
+  group_by(t) %>%
+  summarise(lo = min(share), hi = max(share), .groups = "drop")
+elm <- jc %>% filter(str_detect(design, "Elm")) %>% droplevels()
+BAND_LAB <- "The four designs that leave the schools where they are"
+
+ggplot() +
+  geom_vline(xintercept = c(fr$nts_min, fr$long_min), colour = "grey65",
+             linetype = "31") +
+  annotate("text", x = fr$nts_min - 1, y = 0.06,
+           label = sprintf("England average, %d min", fr$nts_min),
+           hjust = 1, size = 2.7, colour = "grey35") +
+  annotate("text", x = fr$long_min + 1, y = 0.06, label = "40 min",
+           hjust = 0, size = 2.7, colour = "grey35") +
+  geom_ribbon(data = band, aes(t, ymin = lo, ymax = hi, fill = BAND_LAB)) +
+  geom_line(data = elm, aes(t, share, colour = design), linewidth = 0.9) +
+  # The band is the reference the two lines are read against, so it
+  # comes first in the legend rather than after them.
+  scale_fill_manual(values = setNames("grey72", BAND_LAB), name = NULL,
+                    guide = guide_legend(order = 1)) +
+  scale_colour_manual(values = DESIGN_COL[levels(elm$design)], name = NULL,
+                      guide = guide_legend(order = 2)) +
+  scale_x_continuous(breaks = seq(0, 60, 10),
+                     labels = function(x) paste0(x, " min")) +
+  scale_y_continuous(labels = scales::label_percent(),
+                     limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
+  labs(x = "Journey time to the school offered", y = NULL,
+       title = "How long the journey is, and for how many children",
+       subtitle = str_wrap(paste("Redrawing the boundaries barely moves the distribution - the band is how much the four in-place designs disagree at all.", "Moving a school moves the tail."), 100),
+       caption = "Sources: routed walk-and-bus times over OSM and Brighton & Hove GTFS; modelled allocation.") +
+  theme_bh(11) +
+  theme(legend.position = "top", legend.box = "vertical",
+        legend.spacing.y = unit(1, "pt"), legend.text = element_text(size = 8))
+```
+
+```{r band-width}
+#| include: false
+band_w <- fr$journey_curve %>% filter(!str_detect(design, "Elm")) %>%
+  group_by(t) %>% summarise(w = max(share) - min(share), .groups = "drop")
+```
+
+**Redrawing the boundaries changes the travel bill by almost nothing.**
+The four designs that leave the schools where they are run from
+`r sprintf("%.1f", min(j_place$mean_min))` to
+`r sprintf("%.1f", max(j_place$mean_min))` minutes on the mean, and at
+no journey time does the share of children served differ between them
+by more than `r sprintf("%.0f", 100 * max(band_w$w))` percentage points
+--- the width of the grey band. The reason is straightforward: a
+boundary decides which school a child is *entitled* to, but most
+children are already at a school close to them, and the schools have not
+moved.
+
+**Moving a school changes it a lot.** Longhill at Elm Grove adds
+`r sprintf("%.1f", j_e150$mean_min - j_now$mean_min)` minutes to the
+average journey at an admission number of
+`r elm_pan_of(j_e150$design)` and
+`r sprintf("%.1f", j_e210$mean_min - j_now$mean_min)` at
+`r elm_pan_of(j_e210$design)` --- and much more in the tail. The longest
+tenth of journeys starts at `r sprintf("%.0f", j_now$p90_min)` minutes
+now and at `r sprintf("%.0f", j_e150$p90_min)` under the relocation.
+
+```{r tbl-design-journeys}
+#| tbl-cap: "Journeys to the school each child is offered. Child-kilometres are both ways, every school day, for every child placed --- the quantity a transport budget and a carbon figure are counted in. The last column is the difference between the mean journey of children living in the 39 neighbourhoods in the three most deprived deciles nationally and the mean journey of everyone else; a positive figure means deprived children travel further."
+
+js %>%
+  arrange(design) %>%
+  transmute(Design = design,
+            `Mean` = sprintf("%.1f min", mean_min),
+            `Longest tenth, from` = sprintf("%.0f min", p90_min),
+            `Over 40 minutes` = fmt_pct(100 * over_long, 0),
+            `Mean distance` = sprintf("%.2f km", mean_km),
+            `Child-km a day` = fmt_n(round(child_km_day)),
+            `Deprived, against the rest` = sprintf("%+.1f min", dep_gap)) %>%
+  knitr::kable(align = "lrrrrrr")
+```
+
+### Who makes the long journeys {#sec-fr-journey-equity}
+
+A mean journey for the city is not a measure of a fair system. The
+question that matters is whether the long journeys fall on the children
+least able to absorb them, and under the map in force they do.
+
+```{r fig-journey-equity}
+#| fig-cap: "Mean journey to the school offered, for children living in the 39 neighbourhoods in the three most deprived deciles nationally against everyone else. Both means are over children, so a large deprived neighbourhood counts for more than a small one."
+#| fig-height: 4.6
+
+eq <- js %>%
+  transmute(design,
+            `Everyone else` = min_rest,
+            `Most deprived neighbourhoods` = min_deprived) %>%
+  tidyr::pivot_longer(-design, names_to = "who", values_to = "min") %>%
+  mutate(who = factor(who, c("Everyone else", "Most deprived neighbourhoods")))
+
+# The same validated pair as the intake chart, and used the same way
+# round: the purple point is the reference, the amber one is the group
+# the section is asking about.
+EQ_COL <- setNames(c("#6b4fbb", "#c2701c"), levels(eq$who))
+eqw <- eq %>% tidyr::pivot_wider(names_from = who, values_from = min)
+
+ggplot(eq, aes(min, fct_rev(design))) +
+  geom_segment(data = eqw, aes(x = `Everyone else`,
+                               xend = `Most deprived neighbourhoods`,
+                               y = fct_rev(design), yend = fct_rev(design)),
+               inherit.aes = FALSE, colour = "grey70", linewidth = 1.1) +
+  geom_point(aes(colour = who), size = 3.4) +
+  # One decimal, because whole minutes made the two relocation rows read
+  # as a one-minute gap when the figure is 0.8.
+  geom_text(aes(label = sprintf("%.1f", min), colour = who),
+            vjust = -1.2, size = 2.8, show.legend = FALSE) +
+  scale_colour_manual(values = EQ_COL, name = NULL) +
+  scale_x_continuous(labels = function(x) paste0(x, " min"),
+                     limits = c(18, 32)) +
+  scale_y_discrete(labels = function(x) str_wrap(x, 26)) +
+  labs(x = "Mean journey to the school offered", y = NULL,
+       title = "Whose children make the long journeys",
+       subtitle = str_wrap(paste("Under every design that leaves the schools where they are,", "children in the most deprived neighbourhoods travel further."), 100),
+       caption = "Sources: routed walk-and-bus times; IMD 2019 IDACI; modelled allocation.") +
+  theme_bh(11) +
+  theme(legend.position = "top", panel.grid.major.y = element_blank())
+```
+
+**Children in the most deprived neighbourhoods travel
+`r sprintf("%.0f", j_now$dep_gap)` minutes longer than everyone else,
+each way, under the current map** ---
+`r sprintf("%.0f", j_now$min_deprived)` minutes against
+`r sprintf("%.0f", j_now$min_rest)`. That is a
+`r sprintf("%.0f", 100 * j_now$min_deprived / j_now$min_rest - 100)`%
+longer journey, twice a day, for the households with the least slack in
+them, and no redrawing of the boundaries closes it: the best of the
+in-place designs gets it to
+`r sprintf("%.1f", min(j_place$dep_gap))` minutes.
+
+**Moving Longhill to Elm Grove does close it**, and that is the
+strongest argument for the relocation anywhere in this document. The gap
+goes from `r sprintf("%+.1f", j_now$dep_gap)` minutes to
+`r sprintf("%+.1f", j_e150$dep_gap)`: children in the deprived east stop
+travelling further than everyone else, because the school they are
+entitled to has moved towards them instead of sitting at the far edge of
+the city.
+
+It is also the clearest illustration in this section of why one number
+is not enough. **The relocation costs the city
+`r sprintf("%.0f", 100 * j_e150$child_km_day / j_now$child_km_day - 100)`%
+more child-kilometres a day and makes the deprivation gap disappear.**
+Both are true. Which matters more is a judgement and it is the council's
+to make --- but it should be made knowing that the two point in opposite
+directions, rather than being told that one design is simply better.
+
+## Every measure side by side {#sec-fr-scorecard}
+
+```{r tbl-scorecard}
+#| tbl-cap: "Every measure in this section, for every design. The best figure in each row is in bold. Where a lower number is better the row says so in its name; the direction is set in R/03_flow_regions.R and the ranking is done from it, not by hand."
+#| column: page
+
+fmt_val <- function(v, f) dplyr::case_when(
+  is.na(v)    ~ "—",
+  f == "pct0" ~ fmt_pct(100 * v, 0),
+  f == "n0"   ~ fmt_n(round(v)),
+  TRUE        ~ sprintf(f, v))
+
+fr$score_long %>%
+  mutate(design = factor(design, fr_designs),
+         txt = fmt_val(value, fmt),
+         txt = if_else(!is.na(value) & best, paste0("**", txt, "**"), txt),
+         Measure = paste0(label, if_else(better == "low",
+                                         " (lower is better)",
+                                         " (higher is better)"))) %>%
+  # Row order comes from the spec, not from the alphabet, so the three
+  # families stay in the order the section argues them.
+  arrange(family, label) %>%
+  mutate(Measure = factor(Measure, unique(Measure))) %>%
+  select(family, Measure, design, txt) %>%
+  tidyr::pivot_wider(names_from = design, values_from = txt) %>%
+  arrange(family, Measure) %>%
+  select(-family) %>%
+  knitr::kable(align = "l")
+```
+
+```{r scorecard-prep}
+#| include: false
+# Only the measures the current map has a value for can be compared
+# against it: "neighbourhood children reassigned" is a change from the
+# current map and so has no reading for it. Counting each design against
+# a different denominator, which an earlier draft did, made the two
+# leading designs look closer than they are.
+ref_ok <- fr$score_long %>%
+  filter(design == "Current catchments", !is.na(value)) %>% pull(metric)
+
+beat <- fr$score_long %>%
+  filter(metric %in% ref_ok, design != "Current catchments") %>%
+  group_by(design) %>%
+  summarise(better = sum(beats_now, na.rm = TRUE),
+            worse  = sum(!beats_now, na.rm = TRUE),
+            same   = sum(is.na(beats_now)),
+            n = n(), .groups = "drop") %>%
+  mutate(design = factor(design, fr_designs)) %>%
+  arrange(desc(better))
+stopifnot(length(unique(beat$n)) == 1)
+b_of <- function(p) beat %>% filter(str_detect(design, p))
+wins <- fr$score_long %>% filter(best) %>% count(design, name = "firsts")
+w_of <- function(p) {
+  v <- wins$firsts[str_detect(wins$design, p)]
+  if (length(v)) sum(v) else 0L
+}
+```
+
+```{r tbl-scorecard-beats}
+#| tbl-cap: "How each design scores against the map in force, counted over the measures the current map can be scored on. A measure counts as the same where the two differ only in the fourth decimal."
+
+beat %>%
+  transmute(Design = design, `Better` = better, `Worse` = worse,
+            `The same` = same) %>%
+  knitr::kable(align = "lrrr")
+```
+
+**No design wins outright, and the two that come closest win on
+different things.** Of the `r beat$n[1]` measures the current map can be
+scored on, the flow regions with the council's pairings kept beat it on
+`r b_of("pairs kept")$better` and the power diagram on
+`r b_of("Power")$better`. Between them they take
+`r w_of("pairs kept") + w_of("Power")` of the
+`r sum(wins$firsts)` first places in the table above.
+
+- **The power diagram** is the design to take seriously if the criterion
+  is fairness and balance. It is best on both segregation measures, best
+  on capacity, has no shape faults, and moves the fewest
+  neighbourhoods.
+- **The flow regions** win the measures about where children actually
+  go: self-containment, being placed in your own catchment, and the
+  shortest mean journey of any design.
+- **One catchment per school** loses on almost everything, and should be
+  read as the negative result it is. The council's pairings are load
+  bearing.
+- **The two relocation designs** lose on travel and on segregation, and
+  win the one measure no boundary can touch --- who makes the long
+  journeys.
+
+**The measure nobody moves is the one families care about most.**
+First-preference success sits between
+`r fmt_pct(100 * min(fr$score_wide$first_pref), 0)` and
+`r fmt_pct(100 * max(fr$score_wide$first_pref), 0)` across all six
+designs. Every gain in this section is a gain in *fairness of
+entitlement* --- who is nearest, who is balanced against whom, who
+travels furthest. **None of it is a gain in getting children into the
+school their family chose**, because that is set by how many places the
+popular schools have, and a boundary does not create places.
 
 ::: {.callout-warning appearance="simple"}
 ## What this is and is not
