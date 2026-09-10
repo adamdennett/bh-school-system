@@ -4123,30 +4123,30 @@ FM_LABELS <- c(M0 = "Brightopia · Wj = 1",
                M1 = "With demand · Wj = weighted preferences",
                M4 = "Full model · capacity, catchment, competition")
 
-# One radio-button group per thing that can be shown. Longhill comes
-# first, under each of the three models, because the change between them
-# is the point; every other school follows under the full model only.
-fm_groups <- fm$net %>%
-  st_drop_geometry() %>%
-  distinct(model, name) %>%
-  mutate(is_lh = name == "Longhill High School",
-         label = if_else(
-           is_lh,
-           paste0("Longhill — ", recode(model, !!!as.list(FM_LABELS))),
-           short_sch(name))) %>%
-  arrange(desc(is_lh), match(model, names(FM_LABELS)), label)
+LH_NAME <- "Longhill High School"
 
-fm_net <- fm$net %>%
-  left_join(fm_groups %>% select(model, name, label), by = c("model", "name"))
-
-# One width scale across every group, so a thick line means the same
-# number of children whichever school is showing.
-FM_MAX <- max(fm_net$flow)
+# One width scale across every map in this section, so a thick line
+# means the same number of children in all of them - including the
+# all-schools map further down, where the flows are much larger.
+FM_MAX <- max(fm$net$flow)
 fm_w   <- function(x) 1.1 + 7.5 * sqrt(x / FM_MAX)
 
 FM_COL <- c(Bus = "#2166ac", Walk = "#d95f02")
 
-fm_sch <- schools_sf() %>% filter(name %in% fm_groups$name)
+fm_sch <- schools_sf() %>% filter(name %in% unique(fm$net$name))
+
+# This map is Longhill under each of the three models. Every group label
+# names its model, because a group that does not say which model it is
+# gets read as whichever one happens to be showing.
+fm_groups <- fm$net %>%
+  st_drop_geometry() %>%
+  filter(name == LH_NAME) %>%
+  distinct(model, name) %>%
+  arrange(match(model, names(FM_LABELS))) %>%
+  mutate(label = unname(FM_LABELS[model]))
+
+fm_net <- fm$net %>%
+  inner_join(fm_groups %>% select(model, name, label), by = c("model", "name"))
 ```
 
 ```{r fig-flow-longhill}
@@ -4182,7 +4182,7 @@ ggplot() +
 ```
 
 ```{r fig-flow-map}
-#| fig-cap: "The same flows, for every school and interactively. Use the control to switch school, and for Longhill to switch between the three models of section 7.4. Blue is a bus leg, orange a walking leg. These are modelled flows from an open-data model: no pupil record is drawn here."
+#| fig-cap: "The same three panels, interactively, so the corridors can be traced and the segments read. Blue is a bus leg, orange a walking leg; hover a segment for the number of children on it. These are modelled flows from an open-data model: no pupil record is drawn here. The other nine schools are in @fig-flow-all, under the full model."
 
 m <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
   add_carto("Positron") %>%
@@ -4205,7 +4205,7 @@ for (i in seq_len(nrow(fm_groups))) {
 
 # Every group is added at once, so leaflet's automatic bounds cover the
 # whole routed network and open at a Sussex-wide zoom. Frame the city.
-fm_bb <- st_bbox(fm_net %>% filter(name == "Longhill High School"))
+fm_bb <- st_bbox(fm_net)
 
 m %>%
   fitBounds(lng1 = unname(fm_bb["xmin"]) - 0.01, lat1 = unname(fm_bb["ymin"]) - 0.005,
@@ -4773,6 +4773,126 @@ to fill, and Cardinal Newman filled. A refinement that helps against the
 published second-preference profile hurts against total offers. Both
 targets are real, and no single specification here is best at both.
 :::
+
+
+## Every school, under the full model {#sec-flow-all}
+
+@sec-flow-map showed Longhill under each rung of the ladder. This is the
+other nine, all under the full model --- capacity ceiling, catchment
+term and competing-destinations term in place, the specification the
+tables above land on.
+
+```{r flow-all-data}
+#| include: false
+fa_groups <- fm$net %>%
+  st_drop_geometry() %>%
+  filter(model == fm$model) %>%
+  distinct(name) %>%
+  mutate(label = short_sch(name)) %>%
+  arrange(label)
+
+fa_net <- fm$net %>%
+  filter(model == fm$model) %>%
+  inner_join(fa_groups, by = "name")
+
+fa_bb <- st_bbox(fa_net)
+```
+
+```{r fig-flow-all}
+#| fig-cap: "Modelled flows into each school under the full model, routed over the walking and bus network and summed onto shared segments. Every panel is the same model; only the school changes. Line widths are on the same scale as the Longhill map above, so a thick line means the same number of children in both."
+
+ma <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  add_carto("Positron") %>%
+  addPolygons(data = catch, fill = FALSE, color = "#555555",
+              weight = 1, opacity = 0.5, group = "Catchment boundaries")
+
+for (i in seq_len(nrow(fa_groups))) {
+  g <- fa_groups$label[i]
+  d <- fa_net %>% filter(label == g) %>% arrange(flow)
+  ma <- ma %>%
+    addPolylines(data = d, group = g,
+                 color = ~ unname(FM_COL[leg_mode]),
+                 weight = ~ fm_w(flow), opacity = 0.75,
+                 label = ~ sprintf("%s leg · %.0f children", leg_mode, flow)) %>%
+    addCircleMarkers(
+      data = fm_sch %>% filter(name == fa_groups$name[i]), group = g,
+      radius = 6, color = "#111111", weight = 2, opacity = 1,
+      fillColor = "#ffffff", fillOpacity = 1, label = ~ name) %>%
+    addCircleMarkers(
+      data = fm_sch %>% filter(name != fa_groups$name[i]), group = g,
+      radius = 3, color = "#777777", weight = 1, opacity = 0.9,
+      fillColor = "#cccccc", fillOpacity = 0.9, label = ~ name)
+}
+
+ma %>%
+  fitBounds(lng1 = unname(fa_bb["xmin"]) - 0.01, lat1 = unname(fa_bb["ymin"]) - 0.005,
+            lng2 = unname(fa_bb["xmax"]) + 0.01, lat2 = unname(fa_bb["ymax"]) + 0.005) %>%
+  addLayersControl(baseGroups = fa_groups$label,
+                   overlayGroups = "Catchment boundaries",
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  hideGroup("Catchment boundaries") %>%
+  addLegend("bottomright", colors = unname(FM_COL), labels = names(FM_COL),
+            title = "Leg", opacity = 0.8)
+```
+
+```{r flow-all-stats}
+#| include: false
+# How concentrated each school's modelled intake is: the share coming
+# from its own catchment, and how many catchments supply a meaningful
+# slice of it. The faith schools have no catchment, so their own-share
+# is zero by construction rather than by unpopularity.
+fa_reach <- fm$by_catch %>%
+  filter(model == fm$model) %>%
+  left_join(oi$schools %>% select(name, sch_catch = catchment), by = "name") %>%
+  group_by(name) %>%
+  summarise(faith = all(is.na(sch_catch)),
+            own = sum(share[!is.na(sch_catch) & catchment == sch_catch]),
+            n5  = sum(share >= 0.05),
+            top = catchment[which.max(share)],
+            top_share = max(share), .groups = "drop") %>%
+  arrange(desc(own))
+
+fa_lh <- fa_reach %>% filter(name == LH_NAME)
+# The comparison schools, with Longhill itself taken out: leaving it in
+# made "the next most self-contained" report Longhill's own figure.
+fa_rest <- fa_reach %>% filter(!faith, name != LH_NAME) %>% arrange(desc(own))
+fa_cn   <- fa_reach %>% filter(str_detect(name, "Cardinal Newman"))
+stopifnot(fa_reach$name[1] == LH_NAME, nrow(fa_rest) == 7)
+```
+
+Switched one at a time, the maps sort the city into two kinds of school,
+and the sorting is not the one you might expect.
+
+**Longhill draws more locally than any other school in the city.**
+`r fmt_pct(100 * fa_lh$own, 0)` of its modelled intake starts inside its
+own catchment, against `r fmt_pct(100 * fa_rest$own[1], 0)` for
+`r short_sch(fa_rest$name[1])`, the next most self-contained, and
+`r fmt_pct(100 * fa_rest$own[nrow(fa_rest)], 0)` for
+`r short_sch(fa_rest$name[nrow(fa_rest)])`, the least. Only
+`r fa_lh$n5` catchments supply even a twentieth of it, the narrowest
+base in the city.
+
+That sounds like a virtue and is not. A school draws locally either
+because families nearby want it or because nobody else does, and
+@sec-brightopia-observed has already established which applies here: the
+same model that gives Longhill this tight local star gives it
+`r fmt_n(fm$by_catch$flow[fm$by_catch$model == fm$model & fm$by_catch$name == LH_NAME] %>% sum())`
+children in total. A narrow base is only good news when it is a full one.
+
+**The faith schools have no catchment and draw along every corridor.**
+Cardinal Newman's largest single source is the Hove Park / Blatchington
+catchment at `r fmt_pct(100 * fa_cn$top_share, 0)`, from the far side of
+the city. That is the geographic shape of the point @sec-choice makes
+about how heavily they are preferred.
+
+One more thing to watch for. **The paired catchments share their
+corridors almost exactly.** Switch between Blatchington Mill and Hove
+Park and the same roads carry both --- they draw
+`r fmt_pct(100 * fa_reach$own[fa_reach$name == "Blatchington Mill School"], 0)`
+and `r fmt_pct(100 * fa_reach$own[fa_reach$name == "Hove Park School"], 0)`
+from the same catchment. That is why @sec-model-terms could not separate
+them: the model can get the pair's total right and still split it
+wrongly, because geography barely distinguishes the two.
 
 ::: {.callout-warning appearance="simple"}
 ## This is an open-data model, and it is not calibrated
