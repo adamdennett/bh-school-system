@@ -44,6 +44,105 @@ fmt_n   <- function(x, d = 0) formatC(round(x, d), big.mark = ",", format = "f",
 fmt_pct <- function(x, d = 0) paste0(formatC(x, format = "f", digits = d), "%")
 ```
 
+```{r choice-fits}
+#| include: false
+
+# Section 5.4 asks which published number families respond to. Those
+# fits are built here, once, because the executive summary and section 9
+# both quote them before that section runs -- and because computing the
+# same relationship twice is how this document previously came to report
+# two different R-squared values for it.
+#
+# The specification, fixed in one place:
+#
+#   response   log(preferences per place). It is a positive ratio and
+#              the effect is multiplicative: a point of Attainment 8
+#              moves demand by a percentage, not by a fixed number of
+#              applications. This is the specification the open model's
+#              own choice regression uses.
+#   predictor  the score, entered linearly, as in section 2.3.
+#   window     a five-year mean -- the same window as the attractiveness
+#              weighting in section 4.5, so the two agree.
+#
+# The open model publishes the same regression fitted to the single 2024
+# round (os$choice_tbl). That is left as it is; the two differ, and
+# section 5.4 says by how much and why.
+
+DECAY_A  <- acc$pref$decay
+PREF_WIN <- 5
+ch_hi    <- max(fp$factsheets$year)
+ch_lo    <- ch_hi - PREF_WIN + 1
+
+ch_prefs <- fp$factsheets %>%
+  filter(name != "Total", year >= ch_lo) %>%
+  group_by(name) %>%
+  summarise(p1 = mean(pref1), p2 = mean(pref2), p3 = mean(pref3),
+            .groups = "drop") %>%
+  # The factsheets say "Hove Park School" and the performance tables
+  # "Hove Park School and Sixth Form Centre", so the join goes by URN.
+  inner_join(oi$attract %>% select(urn, name), by = "name")
+stopifnot(nrow(ch_prefs) == 10)
+
+CH_MEASURES <- c("Weighted (ranks 1-3)", "First preferences",
+                 "Second preferences", "Third preferences")
+CH_BUTTONS  <- c("Weighted", "First", "Second", "Third")
+CH_DEFAULT  <- "Weighted (ranks 1-3)"
+
+cd <- os$choice %>%
+  select(urn, school, pan, att8, va) %>%
+  inner_join(ch_prefs %>% select(-name), by = "urn") %>%
+  mutate(short = str_remove(school,
+           " (School|High School|Community Academy|Catholic School).*"),
+         `Weighted (ranks 1-3)` = (p1 + DECAY_A * p2 + DECAY_A^2 * p3) / pan,
+         `First preferences`    = p1 / pan,
+         `Second preferences`   = p2 / pan,
+         `Third preferences`    = p3 / pan)
+# All four measures must be strictly positive, or the log response fails.
+stopifnot(nrow(cd) == 10, min(as.matrix(cd[CH_MEASURES])) > 0)
+
+CH_PRED <- c(att8 = "Attainment 8 (headline)",
+             va   = "Value added (Lever report)")
+CH_COL  <- c(att8 = "#b2182b", va = "#2166ac")
+
+ch_fit <- function(x, y) {
+  m  <- lm(log(y) ~ x)
+  xs <- seq(min(x), max(x), length.out = 60)
+  list(x = xs, y = exp(coef(m)[[1]] + coef(m)[[2]] * xs),
+       r2 = summary(m)$r.squared, slope = coef(m)[[2]])
+}
+
+CH_FITS <- expand.grid(measure = CH_MEASURES, pred = names(CH_PRED),
+                       stringsAsFactors = FALSE) %>%
+  mutate(f  = map2(measure, pred, ~ ch_fit(cd[[.y]], cd[[.x]])),
+         r2 = map_dbl(f, "r2"))
+
+ch_one <- function(m, p) CH_FITS$f[[which(CH_FITS$measure == m &
+                                          CH_FITS$pred == p)]]
+ch_r2  <- function(m, p) ch_one(m, p)$r2
+
+# Does knowing the school's contribution add anything once its headline
+# score is already in the model? Fitted on the default measure.
+ch_combined    <- lm(log(cd[[CH_DEFAULT]]) ~ att8 + va, data = cd)
+ch_combined_r2 <- summary(ch_combined)$r.squared
+ch_combined_va <- coef(ch_combined)[["va"]]
+
+# Which admissions round the open model's own regression is fitted to.
+# Derived rather than assumed: its first-preference counts match exactly
+# one year of the factsheet panel, and the answer is not the latest one.
+ch_open_year <- fp$factsheets %>%
+  filter(name != "Total") %>%
+  select(name, year, pref1) %>%
+  inner_join(oi$attract %>% select(urn, name), by = "name") %>%
+  inner_join(os$choice %>% select(urn, first_pref), by = "urn") %>%
+  group_by(year) %>%
+  summarise(all_match = all(pref1 == first_pref), n = n(), .groups = "drop") %>%
+  filter(all_match, n == nrow(cd)) %>%
+  pull(year)
+stopifnot(length(ch_open_year) == 1)
+
+ch_open_r2 <- function(s) os$choice_tbl$r2[os$choice_tbl$spec == s]
+```
+
 ```{r exec-figures}
 #| include: false
 
@@ -66,8 +165,9 @@ ex_rat <- conv$conv %>%
   summarise(rate = sum(p1_offered) / sum(p1_named), .groups = "drop")
 ex_open <- sum(ex_rat$rate > 0.999)
 
-ex_r2_att8 <- os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"]
-ex_r2_va   <- os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"]
+# The weighted measure, which is what section 5.4 shows by default.
+ex_r2_att8 <- ch_r2(CH_DEFAULT, "att8")
+ex_r2_va   <- ch_r2(CH_DEFAULT, "va")
 
 # Same specification as section 2.3, which follows the Lever report:
 # log outcome, logged rates, KS2 score entered linearly.
@@ -3310,58 +3410,191 @@ The council's admissions guide points families at published performance
 data. It is worth asking which published number they respond to.
 
 ```{r fig-choice}
-#| fig-cap: "First preferences per place against headline attainment and against value added. Each point is a school."
-#| fig-height: 4.8
+#| fig-cap: "Preferences per place against headline attainment and against value added, for the ten Brighton & Hove secondary schools. Use the buttons to change which preference rank is counted. Five-year means; the vertical scale is logarithmic and the dashed line is the fitted log-linear relationship."
+#| fig-height: 5.4
+#| column: page
 
-os <- bh_data("open_scenarios.rds")
-ch <- os$choice
+# Two panels sharing a set of buttons that swap the preference measure.
+# Each panel holds all four measures as hidden trace pairs -- a fit line
+# then its points -- so a button is a visibility switch rather than a
+# redraw. Measure i therefore sits at traces 2i-1 and 2i within each
+# panel's block of eight, which is what btn() below relies on.
 
-p1 <- ggplot(ch, aes(att8, prefs_per_place)) +
-  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
-              colour = "grey35", linewidth = 0.7, linetype = "22") +
-  geom_point(colour = "#b2182b", size = 3) +
-  ggrepel::geom_text_repel(aes(label = school), size = 2.7, seed = 1,
-                           max.overlaps = 20) +
-  labs(x = "Attainment 8 (headline)", y = "First preferences per place",
-       subtitle = sprintf("Headline attainment (R² = %.2f)",
-                          os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"])) +
-  theme_bh(11)
+# Both panels take the same vertical range, so switching measure does
+# not silently rescale one against the other.
+ch_range <- function(y) log10(range(y) * c(0.60, 1.60))
 
-p2 <- ggplot(ch, aes(va, prefs_per_place)) +
-  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
-              colour = "grey35", linewidth = 0.7, linetype = "22") +
-  geom_point(colour = "#2166ac", size = 3) +
-  ggrepel::geom_text_repel(aes(label = school), size = 2.7, seed = 1,
-                           max.overlaps = 20) +
-  labs(x = "Value added (Lever report)", y = NULL,
-       subtitle = sprintf("Value added (R² = %.2f)",
-                          os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"])) +
-  theme_bh(11)
+# plotly has no repel, and these ten schools cluster tightly enough that
+# a fixed left/right rule collides three times per panel even at full
+# page width. So each label is tried in six positions and takes the one
+# that runs into the fewest markers and already-placed labels, most
+# crowded point choosing first. Scoring is in normalised panel
+# coordinates against a nominal panel size, so a browser that gives the
+# widget a different width degrades the placement rather than breaking
+# it. Positions are recomputed per measure, because the buttons move
+# every point.
+CH_PANEL_PX <- c(w = 495, h = 232)
 
-(p1 | p2) +
-  plot_annotation(
-    title = "Families track the headline score, not the school's contribution",
-    caption = "Sources: BHCC factsheets; DfE performance tables; How to Pull the Right Lever.",
-    theme = theme_bh())
+ch_place <- function(x, y, labs) {
+  xr <- range(x) + c(-0.13, 0.13) * diff(range(x))
+  yr <- ch_range(y)
+  nx <- (x - xr[1]) / diff(xr)
+  ny <- (log10(y) - yr[1]) / diff(yr)
+
+  wn <- (nchar(labs) * 5.6 + 6) / CH_PANEL_PX[["w"]]
+  hn <- 13 / CH_PANEL_PX[["h"]]
+  rx <- 6 / CH_PANEL_PX[["w"]]
+  ry <- 6 / CH_PANEL_PX[["h"]]
+
+  cand <- list(
+    `middle right`  = function(i) c(nx[i] + rx, ny[i] - hn / 2,
+                                    nx[i] + rx + wn[i], ny[i] + hn / 2),
+    `middle left`   = function(i) c(nx[i] - rx - wn[i], ny[i] - hn / 2,
+                                    nx[i] - rx, ny[i] + hn / 2),
+    `top center`    = function(i) c(nx[i] - wn[i] / 2, ny[i] + ry,
+                                    nx[i] + wn[i] / 2, ny[i] + ry + hn),
+    `bottom center` = function(i) c(nx[i] - wn[i] / 2, ny[i] - ry - hn,
+                                    nx[i] + wn[i] / 2, ny[i] - ry),
+    `top right`     = function(i) c(nx[i], ny[i] + ry,
+                                    nx[i] + wn[i], ny[i] + ry + hn),
+    `bottom left`   = function(i) c(nx[i] - wn[i], ny[i] - ry - hn,
+                                    nx[i], ny[i] - ry))
+
+  ov <- function(a, b) max(0, min(a[3], b[3]) - max(a[1], b[1])) *
+                       max(0, min(a[4], b[4]) - max(a[2], b[2]))
+  mk <- lapply(seq_along(x), function(i)
+    c(nx[i] - rx, ny[i] - ry, nx[i] + rx, ny[i] + ry))
+
+  # The y span is visually shorter than the x span, so crowding is
+  # measured with y weighted down before taking nearest neighbours.
+  d <- as.matrix(stats::dist(cbind(nx, ny * 0.6)))
+  diag(d) <- Inf
+
+  pos <- character(length(x)); placed <- list()
+  for (i in order(apply(d, 1, min))) {
+    best <- NULL; best_box <- NULL; best_s <- Inf
+    for (nm in names(cand)) {
+      b <- cand[[nm]](i)
+      s <- 3 * sum(vapply(mk[-i], ov, numeric(1), b = b)) +
+           3 * sum(vapply(placed, ov, numeric(1), b = b)) +
+           max(0, -b[1]) + max(0, b[3] - 1) +
+           max(0, -b[2]) + max(0, b[4] - 1)
+      if (s < best_s) { best_s <- s; best <- nm; best_box <- b }
+    }
+    pos[i] <- best
+    placed <- c(placed, list(best_box))
+  }
+  pos
+}
+
+ch_panel <- function(pred, show_ylab) {
+  x   <- cd[[pred]]
+  col <- CH_COL[[pred]]
+
+  p <- plotly::plot_ly()
+  for (m in CH_MEASURES) {
+    f    <- ch_one(m, pred)
+    tpos <- ch_place(x, cd[[m]], cd$short)
+    p <- p %>%
+      plotly::add_lines(
+        x = f$x, y = f$y, visible = (m == CH_DEFAULT), showlegend = FALSE,
+        hoverinfo = "skip", color = I("#8c8c8c"),
+        line = list(width = 1.4, dash = "dash")) %>%
+      plotly::add_trace(
+        x = x, y = cd[[m]], visible = (m == CH_DEFAULT), showlegend = FALSE,
+        type = "scatter", mode = "markers+text", color = I(col),
+        text = cd$short, textposition = tpos,
+        textfont = list(size = 10, color = "#333333"),
+        marker = list(size = 9, line = list(color = "white", width = 1)),
+        customdata = cd$school,
+        hovertemplate = paste0("<b>%{customdata}</b><br>", CH_PRED[[pred]],
+                               ": %{x:.1f}<br>%{y:.2f} preferences per place",
+                               "<extra></extra>"))
+  }
+
+  plotly::layout(
+    p,
+    xaxis = list(title = list(text = CH_PRED[[pred]], font = list(size = 11.5)),
+                 zeroline = FALSE, gridcolor = "#eeeeee",
+                 range = range(x) + c(-0.13, 0.13) * diff(range(x))),
+    yaxis = list(title = list(
+                   text = if (show_ylab) "Preferences per place" else "",
+                   font = list(size = 11.5)),
+                 type = "log", zeroline = FALSE, gridcolor = "#eeeeee",
+                 tickvals = c(0.1, 0.15, 0.25, 0.4, 0.6, 1, 1.5, 2.5),
+                 ticktext = c("0.1", "0.15", "0.25", "0.4", "0.6",
+                              "1.0", "1.5", "2.5")))
+}
+
+ch_ann <- function(m) list(
+  list(x = 0, y = 1.30, xref = "paper", yref = "paper",
+       xanchor = "left", yanchor = "top", showarrow = FALSE,
+       font = list(size = 11.5, color = "#444444"),
+       text = "Preferences counted:"),
+  list(x = 0.01, y = 1.01, xref = "paper", yref = "paper",
+       xanchor = "left", yanchor = "bottom", showarrow = FALSE,
+       font = list(size = 12.5, color = CH_COL[["att8"]]),
+       text = sprintf("<b>Headline attainment · R² = %.2f</b>",
+                      ch_r2(m, "att8"))),
+  list(x = 0.55, y = 1.01, xref = "paper", yref = "paper",
+       xanchor = "left", yanchor = "bottom", showarrow = FALSE,
+       font = list(size = 12.5, color = CH_COL[["va"]]),
+       text = sprintf("<b>Value added · R² = %.2f</b>",
+                      ch_r2(m, "va"))))
+
+ch_btn <- function(i) {
+  vis <- rep(FALSE, 16)
+  vis[c((2 * i - 1):(2 * i), 8 + (2 * i - 1):(2 * i))] <- TRUE
+  rg <- ch_range(cd[[CH_MEASURES[i]]])
+  list(method = "update", label = CH_BUTTONS[i],
+       args = list(list(visible = vis),
+                   list(annotations = ch_ann(CH_MEASURES[i]),
+                        yaxis.range = rg, yaxis2.range = rg)))
+}
+
+plotly::subplot(ch_panel("att8", TRUE), ch_panel("va", FALSE),
+                nrows = 1, shareY = FALSE, titleX = TRUE, titleY = TRUE,
+                margin = 0.055) %>%
+  plotly::layout(
+    annotations = ch_ann(CH_DEFAULT),
+    yaxis = list(range = ch_range(cd[[CH_DEFAULT]])),
+    yaxis2 = list(range = ch_range(cd[[CH_DEFAULT]])),
+    margin = list(t = 104, b = 54, l = 64, r = 14),
+    hoverlabel = list(bgcolor = "white"),
+    updatemenus = list(list(
+      type = "buttons", direction = "right",
+      active = which(CH_MEASURES == CH_DEFAULT) - 1,
+      x = 0.135, xanchor = "left", y = 1.36, yanchor = "top",
+      pad = list(t = 0, b = 0, l = 2, r = 2),
+      bgcolor = "white", bordercolor = "#cccccc",
+      font = list(size = 11),
+      buttons = lapply(seq_along(CH_MEASURES), ch_btn)))) %>%
+  plotly::config(displayModeBar = FALSE)
 ```
 
 ```{r tbl-choice}
-#| tbl-cap: "Explaining first preferences per place."
-os$choice_tbl %>%
-  transmute(Specification = spec,
-            `R²` = sprintf("%.2f", r2),
-            Coefficients = terms) %>%
-  knitr::kable()
+#| tbl-cap: "How much of each preference measure the two attainment measures explain. Log-linear fits on ten schools, so these are descriptive rather than inferential."
+
+CH_FITS %>%
+  mutate(r2 = sprintf("%.2f", r2),
+         pred = unname(CH_PRED[pred])) %>%
+  pivot_wider(id_cols = measure, names_from = pred, values_from = r2) %>%
+  mutate(measure = factor(measure, CH_MEASURES)) %>%
+  arrange(measure) %>%
+  rename(`Preferences counted` = measure) %>%
+  knitr::kable(align = "lrr")
 ```
 
-The result is stark. Headline Attainment 8 explains
-**`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"], 0)`**
-of the variation in how heavily each school is preferred. The
-value-added measure --- the one that actually isolates what the school
-contributes --- explains
-**`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"], 0)`**.
-Adding value added to the attainment model barely moves the fit, and its
-coefficient turns *negative*.
+The result is stark. Counting preferences the way section 4.5 does,
+headline Attainment 8 explains **`r fmt_pct(100 * ex_r2_att8, 0)`** of
+the variation in how heavily each school is preferred. The value-added
+measure --- the one that actually isolates what the school contributes
+--- explains **`r fmt_pct(100 * ex_r2_va, 0)`**. Adding value added to
+the attainment model lifts the fit from
+`r sprintf("%.2f", ex_r2_att8)` to
+`r sprintf("%.2f", ch_combined_r2)`, which is to say barely at all: once
+you know a school's headline score, knowing what it contributes tells
+you almost nothing more about how heavily families ask for it.
 
 Families are choosing on a number that is mostly a description of the
 existing intake. That makes school choice partly self-fulfilling: a
@@ -3373,138 +3606,77 @@ admissions problem, and the authority is not a neutral party in it,
 because the authority publishes the guide.
 
 ::: {.callout-note appearance="simple"}
+## Why these numbers differ from the open model's
 
-### Does the answer depend on which preference you count? {#sec-choice-ranks}
+The open Brightopia model publishes this same regression and reports
+`r sprintf("%.2f", ch_open_r2("Attainment 8"))` for headline attainment
+against `r sprintf("%.2f", ch_open_r2("Value-added"))` for value added.
+The chart above is the same specification --- log preferences per place,
+the score entered linearly --- on a different slice of the same data.
 
-The chart above counts first preferences. Section 4.5 argued that first
-preferences alone distort the picture, because the paired catchments
-force families to rank two local schools against each other. So it is
-worth asking whether the finding survives counting the other ranks.
+Two things change. The open model counts **first preferences in the
+single `r ch_open_year` round**; this chart counts a **five-year mean,
+`r ch_lo` to `r ch_hi`**, the same window section 4.5 uses to weight
+attractiveness. And the open model reports first preferences only, where
+this chart defaults to the weighted measure. Set the buttons to *First*
+and the five-year figures are
+`r sprintf("%.2f", ch_r2("First preferences", "att8"))` and
+`r sprintf("%.2f", ch_r2("First preferences", "va"))` --- close to the
+open model's, with what remains being one round against five.
 
-```{r rank-choice-data}
-#| include: false
+**One thing of substance changes with the window, and it cuts against
+this document.** Fitted to `r ch_open_year` alone, value added takes a
+*negative* coefficient once attainment is already in the model, which
+reads as families actively avoiding schools that add value. Across five
+years it does not: the coefficient is
+`r sprintf("%+.3f", ch_combined_va)` --- small, positive, and no basis
+for that reading. A single round is too few schools and too few years to
+carry a sign, and nothing here should be built on one.
+:::
 
-# Preference counts at each rank, five-year mean, joined to attainment
-# and value added. The factsheets call it "Hove Park School" and the
-# performance data "Hove Park School and Sixth Form Centre", so the join
-# goes through the URN in oi$attract rather than the name.
-rank_prefs <- fp$factsheets %>%
-  filter(name != "Total", year >= max(year) - 4) %>%
-  group_by(name) %>%
-  summarise(p1 = mean(pref1), p2 = mean(pref2), p3 = mean(pref3),
-            .groups = "drop") %>%
-  inner_join(oi$attract %>% select(urn, name), by = "name")
+::: {.callout-note appearance="simple"}
 
-stopifnot(nrow(rank_prefs) == 10)
+### What changes when you count a different preference {#sec-choice-ranks}
 
-rank_dat <- os$choice %>%
-  select(urn, school, pan, att8, va) %>%
-  inner_join(rank_prefs %>% select(-name), by = "urn") %>%
-  mutate(`First preferences`  = p1 / pan,
-         `Second preferences` = p2 / pan,
-         `Third preferences`  = p3 / pan,
-         `Weighted (ranks 1-3)` = (p1 + DECAY_A * p2 + DECAY_A^2 * p3) / pan)
+Section 4.5 argued that first preferences alone distort the picture,
+because the paired catchments force families to rank two local schools
+against each other. The buttons on the chart above are there so that
+objection can be tested rather than argued about, and @tbl-choice holds
+all eight fits at once.
 
-stopifnot(nrow(rank_dat) == 10)
-
-MEASURES <- c("First preferences", "Second preferences",
-              "Third preferences", "Weighted (ranks 1-3)")
-
-rank_long <- rank_dat %>%
-  select(school, att8, va, all_of(MEASURES)) %>%
-  pivot_longer(all_of(MEASURES), names_to = "measure", values_to = "per_place") %>%
-  pivot_longer(c(att8, va), names_to = "predictor", values_to = "x") %>%
-  mutate(measure = factor(measure, MEASURES),
-         predictor = factor(predictor, c("att8", "va"),
-                            c("Attainment 8 (headline)",
-                              "Value added (Lever report)")))
-
-# R-squared for every measure-by-predictor pair, on ten schools.
-rank_fit <- rank_long %>%
-  group_by(measure, predictor) %>%
-  summarise(r2 = summary(lm(per_place ~ x))$r.squared,
-            slope = coef(lm(per_place ~ x))[2], .groups = "drop")
-```
-
-```{r fig-choice-ranks}
-#| fig-cap: "Preferences per place at each rank, against headline attainment and against value added. Each point is a school; the dashed line is the fit and the figure in each panel is its R-squared."
-#| fig-height: 8
-
-rank_long %>%
-  left_join(rank_fit, by = c("measure", "predictor")) %>%
-  ggplot(aes(x, per_place)) +
-  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
-              colour = "grey35", linewidth = 0.7, linetype = "22") +
-  geom_point(aes(colour = predictor), size = 2.4, show.legend = FALSE) +
-  geom_text(aes(label = sprintf("R² = %.2f", r2)),
-            x = -Inf, y = Inf, hjust = -0.15, vjust = 1.4, size = 3.2,
-            check_overlap = TRUE) +
-  facet_grid(measure ~ predictor, scales = "free", switch = "y") +
-  scale_colour_manual(values = c("Attainment 8 (headline)" = "#b2182b",
-                                 "Value added (Lever report)" = "#2166ac")) +
-  labs(x = NULL, y = "Preferences per place",
-       title = "Families track the headline score at every rank",
-       subtitle = "Ten schools, five-year means. Left column: headline attainment. Right: value added.",
-       caption = "Sources: BHCC factsheets; DfE performance tables; How to Pull the Right Lever.") +
-  theme_bh(11) +
-  theme(strip.text.y.left = element_text(angle = 0, hjust = 0, face = "bold"),
-        strip.placement = "outside")
-```
-
-```{r tbl-choice-ranks}
-#| tbl-cap: "How much of each preference measure the two attainment measures explain. Ten schools, so these are descriptive rather than inferential."
-
-rank_fit %>%
-  mutate(r2 = sprintf("%.2f", r2)) %>%
-  pivot_wider(id_cols = measure, names_from = predictor, values_from = r2) %>%
-  rename(`Preference measure` = measure) %>%
-  knitr::kable(align = "lrr")
-```
-
-```{r rank-stats}
-#| include: false
-att_lab <- "Attainment 8 (headline)"; va_lab <- "Value added (Lever report)"
-g <- function(m, p) rank_fit$r2[rank_fit$measure == m & rank_fit$predictor == p]
-r_p1 <- g("First preferences", att_lab)
-r_p2 <- g("Second preferences", att_lab)
-r_p3 <- g("Third preferences", att_lab)
-r_pw <- g("Weighted (ranks 1-3)", att_lab)
-v_p1 <- g("First preferences", va_lab)
-v_pw <- g("Weighted (ranks 1-3)", va_lab)
-```
-
-The answer is that it survives, it strengthens, and there is one
-exception worth dwelling on.
+The answer is that the finding survives, it strengthens, and there is
+one exception worth dwelling on.
 
 **It strengthens.** The weighted measure gives the *strongest*
 association of all with headline attainment, R²
-`r sprintf("%.2f", r_pw)` against `r sprintf("%.2f", r_p1)` for first
+`r sprintf("%.2f", ch_r2(CH_DEFAULT, "att8"))` against
+`r sprintf("%.2f", ch_r2("First preferences", "att8"))` for first
 preferences alone. Counting the other ranks does not dilute the finding;
-it sharpens it. So the association in the chart above is not an artefact
-of looking only at firsts --- if anything, firsts understate it.
+it sharpens it. So the association is not an artefact of looking only at
+firsts --- if anything, firsts understate it.
 
 **Attainment's grip weakens down the ranks.** It explains
-`r sprintf("%.2f", r_p1)` of first preferences,
-`r sprintf("%.2f", r_p2)` of seconds and `r sprintf("%.2f", r_p3)` of
+`r sprintf("%.2f", ch_r2("First preferences", "att8"))` of first
+preferences, `r sprintf("%.2f", ch_r2("Second preferences", "att8"))` of
+seconds and `r sprintf("%.2f", ch_r2("Third preferences", "att8"))` of
 thirds. That is what you would expect if the headline score is what
 families reach for when choosing freely, while lower preferences are
 increasingly shaped by catchment structure and proximity.
 
 **And then the exception.** At second preferences, and *only* there,
-value added explains almost as much as attainment does ---
-`r sprintf("%.2f", g("Second preferences", va_lab))` against
-`r sprintf("%.2f", r_p2)`. On first preferences value added manages
-`r sprintf("%.2f", v_p1)`; on thirds,
-`r sprintf("%.2f", g("Third preferences", va_lab))`, which is nothing at
-all.
+value added explains a substantial share ---
+`r sprintf("%.2f", ch_r2("Second preferences", "va"))`, against
+`r sprintf("%.2f", ch_r2("First preferences", "va"))` on firsts and
+`r sprintf("%.2f", ch_r2("Third preferences", "va"))` on thirds, which
+is nothing at all.
 
 ```{r loo-check}
 #| include: false
 # With ten points a single school can manufacture an R-squared, so the
 # second-preference result is checked by refitting without each school
 # in turn.
-loo_r2 <- vapply(seq_len(nrow(rank_dat)), function(i)
-  summary(lm(rank_dat$`Second preferences`[-i] ~ rank_dat$va[-i]))$r.squared,
+loo_r2 <- vapply(seq_len(nrow(cd)), function(i)
+  summary(lm(log(cd$`Second preferences`[-i]) ~ cd$va[-i]))$r.squared,
   numeric(1))
 ```
 
@@ -3519,24 +3691,24 @@ about beyond the league table. Whether that is families accessing better
 information at the margin, or something about how paired catchments
 generate second preferences in the first place, ten schools cannot say.
 
-::: {.callout-warning appearance="simple"}
+:::: {.callout-warning appearance="simple"}
 ## Ten points
 
-Every panel here is fitted on ten schools. That is enough to show an
-association and nowhere near enough to separate attainment from the
-things correlated with it --- intake, location, reputation, or the
-Ofsted grade families may actually be reading. Nothing here identifies
-what causes what.
+Every fit here is on ten schools. That is enough to show an association
+and nowhere near enough to separate attainment from the things
+correlated with it --- intake, location, reputation, or the Ofsted grade
+families may actually be reading. Nothing here identifies what causes
+what.
 
 The point is narrower: **the relationship with the headline score is not
 an artefact of which preference rank you count.** That is worth
-establishing, because it is the obvious objection to the single chart
-above, and it is the objection the council could most easily raise.
+establishing, because it is the obvious objection to the chart above,
+and it is the objection the council could most easily raise.
 
 The second-preference result should be read as a question rather than a
 finding. It is the kind of thing the council's own preference records
 would settle in an afternoon, and section 9 asks for them.
-:::
+::::
 
 ## What pupil-level data would add here
 
@@ -3816,9 +3988,9 @@ finances do not have.
 
 **Stop pointing families at Attainment 8.** The council publishes the
 admissions guide. Section 5 shows families track the headline score at
-`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Attainment 8"], 0)`
+`r fmt_pct(100 * ex_r2_att8, 0)`
 and the value-added measure at
-`r fmt_pct(100 * os$choice_tbl$r2[os$choice_tbl$spec == "Value-added"], 0)`.
+`r fmt_pct(100 * ex_r2_va, 0)`.
 Publishing a contextualised measure alongside the headline would cost
 nothing and would begin to unwind a self-fulfilling loop the authority
 currently sustains.
