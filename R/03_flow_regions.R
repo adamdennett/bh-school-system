@@ -155,6 +155,16 @@ W_ELM210 <- world("ELM210", oi$costs_elm, "Elm Grove, PAN 210", lh_pan = 210)
 W_ELM$seed_mode    <- "accessibility"
 W_ELM210$seed_mode <- "accessibility"
 
+# Distance carries more weight in these two than in the others, because
+# the relocation is what puts the eastern edge of the city at risk of
+# being handed to a school an hour away. Neighbourhoods are given up in
+# order of the journey they would then make, not of how much that
+# journey changes, and one already sitting with its nearest catchment is
+# never pushed more than MOVE_TOL minutes beyond it.
+PROTECT_MIN <- 35
+W_ELM$move_cost    <- W_ELM210$move_cost <- "absolute"
+W_ELM$protect_min  <- W_ELM210$protect_min <- PROTECT_MIN
+
 message(sprintf("  %d LSOAs, %s children; %.0f%% have a school with a catchment as their destination",
                 nrow(lsoa_children),
                 format(round(sum(lsoa_children$Oi)), big.mark = ","),
@@ -258,6 +268,7 @@ regionalise <- function(w, groups, tol = 0.05, max_moves = 400, seed = NULL) {
     v <- acc_key[paste(ls, g)]
     ifelse(is.na(v), Inf, v)
   }
+  acc_to_v <- function(ls, g) unname(vapply(ls, acc_to, numeric(1), g = g))
 
   # The LSOA each school sits in. A catchment that does not contain its
   # own school is not a catchment, and without this the relocation
@@ -387,10 +398,48 @@ regionalise <- function(w, groups, tol = 0.05, max_moves = 400, seed = NULL) {
         cand <- cand[sapply(cand, function(l)
           any(assign$grp[match(NB[[l]], assign$lsoa)] == to, na.rm = TRUE))]
         if (!length(cand)) next
-        # Cheapest move first, cost being how much worse the receiving
-        # region is to reach than the donating one. Accessibility rather
-        # than flow, so a boundary never jumps a hill to balance a number.
-        cost_l <- sapply(cand, function(l) acc_to(l, to) - acc_to(l, from))
+
+        # WHICH NEIGHBOURHOOD TO GIVE UP.
+        #
+        # Ranking by how much WORSE the receiving catchment is than the
+        # donating one looks right and behaves badly at the edges of the
+        # city. Rottingdean and Saltdean are 46 to 52 minutes from
+        # Longhill at Elm Grove and 54 to 67 from Stringer/Varndean: a
+        # difference of only 8 to 15 minutes, so on that ranking they
+        # are cheap to give away, and they went first. Somewhere in
+        # Hanover, five minutes from Elm Grove and twelve from Varndean,
+        # scored worse and was kept.
+        #
+        # The ranking is therefore on the journey the child would
+        # actually make after the move, not on the change in it. A
+        # neighbourhood with a short alternative is given up before one
+        # whose only alternative is an hour away.
+        cost_l <- if (identical(w$move_cost, "absolute"))
+          sapply(cand, function(l) acc_to(l, to))
+        else
+          sapply(cand, function(l) acc_to(l, to) - acc_to(l, from))
+
+        # And a hard floor under it, for the remote end of the city
+        # only. A neighbourhood whose nearest catchment is already
+        # PROTECT_MIN minutes away is never moved further from it,
+        # whatever that does for the capacity balance: Rottingdean and
+        # Saltdean have no good option and should keep their least bad
+        # one. Everywhere with a reasonable alternative stays fully
+        # tradeable, which is the point - the inner neighbourhoods are
+        # the ones that should absorb the balancing.
+        #
+        # A blanket tolerance was tried first and was worse than useless.
+        # Six minutes blocked the inner moves as well, the balancer could
+        # shed almost nothing, and Longhill finished 231% over.
+        if (is.finite(w$protect_min %||% Inf)) {
+          best_t <- vapply(cand, function(l) min(acc$cij[acc$lsoa == l]),
+                           numeric(1))
+          keep <- best_t < w$protect_min |
+                  acc_to_v(cand, to) <= acc_to_v(cand, from) + 1e-9
+          cand <- cand[keep]; cost_l <- cost_l[keep]
+          if (!length(cand)) next
+        }
+
         for (pick in cand[order(cost_l)]) {
           trial <- set_grp(assign, pick, to)
           if (clean(trial, c(from, to))) { assign <- trial; done <- TRUE; break }
@@ -664,6 +713,7 @@ elm_sweep <- purrr::map_dfr(ELM_SWEEP, function(p) {
   w <- world("ELMU", oi$costs_elm, sprintf("Elm Grove, PAN %d", p), lh_pan = p)
   w$moved_school <- W_ELM$moved_school
   w$seed_mode <- "accessibility"
+  w$move_cost <- "absolute"; w$protect_min <- PROTECT_MIN
   r <- regionalise(w, GROUPS_PAIRED)
   e <- east_of(r, w, sprintf("PAN %d", p))
   tibble(pan = p,
@@ -949,6 +999,7 @@ saveRDS(list(
   designs = designs, alloc = alloc, regions_sf = regions_sf,
   changed = changed, idaci_profiles = idaci_profiles, shape = shape,
   elm_sweep = elm_sweep %>% select(-assign, -regionalised, -world),
+  protect_min = PROTECT_MIN,
   east_check = east_check,
   idaci_summary = idaci_summary, idaci_region = idaci_region,
   idaci_table = idaci_table,

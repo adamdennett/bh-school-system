@@ -5246,6 +5246,9 @@ n_east <- n_distinct(ec$lsoa)
 sw <- fr$elm_sweep
 sw_bal <- sw %>% filter(abs(longhill_gap) <= 0.05) %>% slice_min(pan, n = 1)
 elm_moved <- fr$changed %>% filter(str_detect(design, "Elm Grove, PAN 210"))
+PROTECT_MIN <- fr$protect_min
+a_e210 <- fr$alloc %>% filter(str_detect(design, "Elm Grove, PAN 210"))
+a_elm  <- fr$alloc %>% filter(str_detect(design, "Elm Grove, PAN 150"))
 ```
 
 ::: {.callout-note appearance="simple"}
@@ -5289,23 +5292,48 @@ ec %>%
   knitr::kable(align = "lrrrrrr")
 ```
 
-**The east is now served from the east.** Of the `r n_east`
-easternmost neighbourhoods, `r sum(ec210$assigned == "Longhill")` are in
-Longhill's catchment and `r sum(ec210$assigned == "BACA")` in BACA's,
-both eastern schools. The mean journey to an assigned catchment school
-is `r sprintf("%.0f", weighted.mean(ec210$t_assigned, ec210$Oi))` minutes
-against `r sprintf("%.0f", weighted.mean(ec210$t_near, ec210$Oi))` if
-every one went to whichever it could reach quickest --- a penalty of
-about `r sprintf("%.0f", weighted.mean(ec210$t_assigned, ec210$Oi) - weighted.mean(ec210$t_near, ec210$Oi))`
-minutes. Under the flow-seeded version it was twenty.
+**Every one of the `r n_east` easternmost neighbourhoods is now in
+Longhill's catchment, at the journey it could not better.** Rottingdean,
+Saltdean, Ovingdean and Woodingdean all sit with the school they can
+reach quickest, and the mean journey to an assigned catchment school is
+`r sprintf("%.0f", weighted.mean(ec210$t_assigned, ec210$Oi))` minutes
+--- identical to the
+`r sprintf("%.0f", weighted.mean(ec210$t_near, ec210$Oi))` they would get
+if each simply went to its nearest. Under the first flow-seeded version
+they averaged sixty.
 
-The `r sum(ec210$assigned == "DS_Varndean")` that still go west are the
-far coastal strip, `r sprintf("%.0f", min(ec210$t_near[ec210$assigned == "DS_Varndean"]))`
-to `r sprintf("%.0f", max(ec210$t_near[ec210$assigned == "DS_Varndean"]))`
-minutes from Elm Grove even at their nearest. They are a long way from
-every school in the city, and no boundary changes that.
+That took a second rule beyond the accessibility seed, because the
+capacity balancer promptly gave them away again.
 
-### What the two admission numbers actually decide {#sec-fr-elm-pan}
+::: {.callout-note appearance="simple"}
+## Which neighbourhood a catchment gives up when it is over capacity
+
+Ranking candidates by how much **worse** the receiving catchment is than
+the donating one is the obvious rule and it behaves badly at the edges
+of the city. Rottingdean and Saltdean are `r sprintf("%.0f", min(ec210$t_near))`
+to `r sprintf("%.0f", max(ec210$t_near))` minutes from Longhill at Elm
+Grove and around ten minutes more from Stringer/Varndean --- a small
+*difference*, so they looked cheap to give away and went first.
+Somewhere in Hanover, five minutes from Elm Grove and twelve from
+Varndean, scored worse and was kept.
+
+Two changes fix it, and both are confined to the relocation designs:
+
+- **Rank on the journey the child would actually make**, not on the
+  change in it. A neighbourhood with a short alternative is given up
+  before one whose only alternative is an hour away.
+- **Never move a neighbourhood whose nearest catchment is already more
+  than `r PROTECT_MIN` minutes away further from it.** The far east has
+  no good option and keeps its least bad one. Everywhere with a
+  reasonable alternative stays fully tradeable, which is the point: the
+  inner neighbourhoods absorb the balancing instead.
+
+A blanket tolerance was tried first and was worse than useless. Six
+minutes blocked the inner moves as well, the balancer could shed almost
+nothing, and Longhill finished 231% over its admission number.
+:::
+
+### What this costs, and what the admission number decides {#sec-fr-elm-pan}
 
 ```{r tbl-elm-sweep}
 #| tbl-cap: "Longhill at Elm Grove, swept across admission numbers. The capacity gap is its catchment's demand against its fair share of the city's places: a positive figure means the area it is nearest to holds more children than it has room for."
@@ -5319,43 +5347,63 @@ sw %>%
   knitr::kable(align = "rrrr")
 ```
 
-**Raising the admission number from `r sw$pan[1]` to 210 barely changes
-the map and changes the arithmetic a great deal.** One more
-neighbourhood joins Longhill's catchment. But the capacity gap falls
-from `r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 150])` to
-`r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 210])`, because at
-Elm Grove **Longhill is the nearest school for far more of the city than
-it has places for**.
+**The admission number does not decide the map. It decides whether the
+map is affordable.** The east is in Longhill's catchment at every number
+in the sweep, from `r min(sw$pan)` to `r max(sw$pan)`, because that is
+where the geography puts it. What changes is the gap between what the
+catchment holds and what the school can take:
+`r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 150])` at
+`r sw$pan[1]` places,
+`r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 210])` at 210, and
+still `r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == max(sw$pan)])`
+at `r max(sw$pan)`.
 
-That is the real result of moving it. A site in the middle of Brighton
-is close to a great many children; a site at Ovingdean is close to few.
-The sweep says the area Longhill would be nearest to at Elm Grove needs
-about `r sw_bal$pan[1]` places to balance ---
-`r sprintf("%+.0f%%", 100 * sw_bal$longhill_gap[1])` at that number ---
-which is larger than Longhill has been at any point in this document.
+That is the real result of moving the school. A site in the middle of
+Brighton is close to a great many children; Ovingdean is close to few.
+Drawing an honest catchment round a relocated Longhill produces a
+catchment far larger than 150 or 210 places can serve, and the corridor
+between Elm Grove and the coast has to be inside it or the catchment is
+in two pieces.
+
+**And the journey times are the best on offer.** At 210 places this
+design has a mean journey to a catchment school of
+`r sprintf("%.1f", d_e210$mean_journey)` minutes, against
+`r sprintf("%.1f", d_now$mean_journey)` for the map in force --- the
+shortest of any design here, because the east finally sits with the
+school it is nearest to.
+
+**The cost lands in the allocation.** A catchment holding
+`r sprintf("%.0f%%", 100 * d_e210$worst_gap)` more children than its
+school has places cannot admit them all, so they are bumped to their
+next preference: `r fmt_pct(100 * a_e210$cross_share, 0)` of the city's
+children cross a boundary under this design against
+`r fmt_pct(100 * a_now$cross_share, 0)` now, the highest of any design
+tested, and only `r fmt_pct(100 * a_e210$local_share, 0)` are placed in
+their own catchment.
 
 ::: {.callout-important appearance="simple"}
-## Reducing Stringer's admission number would not fix this
+## You can draw the boundary properly or size the school properly. 210 places cannot do both.
 
-It is the obvious lever and it does not reach. Targets are shares of the
-city's places, so taking 120 places off the Stringer/Varndean pair moves
-Longhill's target by about **eleven children**. The binding constraint
-is Longhill's own admission number, not its neighbour's.
+Reducing Stringer's admission number was the obvious lever and it does
+not reach: targets are shares of the city's places, so taking 120 places
+off the Stringer/Varndean pair moves Longhill's target by about **eleven
+children**. The binding constraint is Longhill's own number.
 
-The choice the relocation actually presents is between three things,
-and only two of them can hold at once:
+Three things, and only two can hold at once:
 
 - **A school of 150 or 210 places at Elm Grove.**
-- **A catchment drawn round the children it is nearest to.**
-- **A capacity balance across the city.**
+- **A catchment containing the children it is nearest to** --- which
+  means Rottingdean and Saltdean, and the corridor connecting them to
+  the site.
+- **A catchment it can actually admit**, so that in-catchment children
+  are not bumped across the city.
 
-At `r sw$pan[1]` places the first two force a gap of
-`r sprintf("%+.0f%%", 100 * sw$longhill_gap[sw$pan == 150])`. Keeping the
-balance instead means handing the east to schools it is not nearest to,
-which is what the flow-seeded version did. Only a substantially larger
-school at Elm Grove holds all three, and that is a different proposal
-from the one on the table.
-:::
+This section takes the first two, because a boundary that sends
+Saltdean an hour west to a school it is not nearest to is not a boundary
+anyone should propose. The arithmetic then shows up in the allocation
+instead of on the map, which is the honest place for it: the school is
+too small for the geography it would serve, and that is a decision about
+the admission number, not about the lines.
 
 ```{r fr-elm-more}
 #| include: false
