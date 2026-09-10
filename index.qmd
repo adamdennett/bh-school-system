@@ -5162,106 +5162,184 @@ i_best <- fr$idaci_summary %>% slice_min(gorard, n = 1)
 i_worse <- fr$idaci_summary %>% filter(gorard > i_now$gorard + 5e-4)
 i_same  <- fr$idaci_summary %>%
   filter(!str_detect(design, "Current"), abs(gorard - i_now$gorard) <= 5e-4)
+
+# One hue, three steps, validated against the chart surface: deprivation
+# is ordered magnitude, not category, so it takes a sequential ramp. Ten
+# deciles do not survive that treatment - ten steps of one hue are
+# closer together than a reader can separate - which is why the bands
+# are three and the ten-column table is gone.
+BAND_COL <- setNames(c("#0d366b", "#2a78d6", "#86b6ef"), fr$idaci_band_levels)
 ```
 
-```{r tbl-idaci-deciles}
-#| tbl-cap: "The share of each catchment's households with dependent children falling in each IDACI decile, under each design. Decile 1 is the most deprived tenth of neighbourhoods in England. Rows sum to 100%."
+```{r fig-idaci-bands}
+#| fig-cap: "How each catchment's households with dependent children divide between the most deprived three deciles nationally, the middle four, and the least deprived three. Every bar is one catchment; bars are grouped by design and ordered within it by how deprived the catchment is."
+#| fig-height: 9
+#| column: page
 
-fr$idaci_table %>%
-  mutate(design = factor(design, fr_designs), region = fr_lab(grp)) %>%
-  arrange(design, region) %>%
-  mutate(share = sprintf("%.0f", 100 * share)) %>%
-  pivot_wider(id_cols = c(design, region), names_from = idaci_decile,
-              values_from = share) %>%
-  rename(Design = design, Catchment = region) %>%
-  knitr::kable(align = c("l", "l", rep("r", 10)))
+bd <- fr$idaci_bands %>%
+  mutate(design = factor(design, fr_designs),
+         band = factor(band, fr$idaci_band_levels),
+         region = fr_lab(grp)) %>%
+  group_by(design, region) %>%
+  mutate(dep = sum(share[band == fr$idaci_band_levels[1]])) %>%
+  ungroup() %>%
+  arrange(design, dep)
+
+# The row key has to be unique across designs, because a catchment
+# appears in several of them; the label shown is just the catchment.
+row_lv <- unique(paste(bd$design, bd$region, sep = "|"))
+bd <- bd %>% mutate(row = factor(paste(design, region, sep = "|"), row_lv))
+row_lab <- setNames(sub("^.*\\|", "", row_lv), row_lv)
+
+# The share in the most deprived band is printed OUTSIDE the bar. Inside
+# it sat on the darkest fill and could not be read.
+lab <- bd %>% filter(band == fr$idaci_band_levels[1])
+
+ggplot(bd, aes(share, row, fill = band)) +
+  geom_col(width = 0.72, colour = "white", linewidth = 0.6,
+           position = position_stack(reverse = TRUE)) +
+  geom_text(data = lab, aes(x = 1.03, y = row,
+                            label = sprintf("%.0f%%", 100 * share)),
+            hjust = 0, size = 2.9, colour = "grey25", inherit.aes = FALSE) +
+  facet_grid(design ~ ., scales = "free_y", space = "free_y",
+             labeller = label_wrap_gen(18), switch = "y") +
+  scale_y_discrete(labels = row_lab) +
+  scale_x_continuous(labels = scales::label_percent(),
+                     breaks = seq(0, 1, 0.25), limits = c(0, 1.13),
+                     expand = expansion(mult = c(0, 0))) +
+  scale_fill_manual(values = BAND_COL, name = NULL) +
+  labs(x = "Households with dependent children", y = NULL,
+       title = "What kind of neighbourhood each catchment holds",
+       subtitle = str_wrap(paste("Each bar is one catchment, ordered within its design by how deprived it is.",
+                                 "The figure at the right is the share in the three most deprived deciles in England."), 96),
+       caption = "Sources: ONS postcode household counts; IMD 2019 IDACI.") +
+  theme_bh(10) +
+  theme(legend.position = "top",
+        panel.grid.major.y = element_blank(),
+        strip.placement = "outside",
+        strip.text.y.left = element_text(angle = 0, hjust = 1, face = "bold",
+                                         size = 8))
 ```
 
-```{r fig-idaci-spread}
-#| fig-cap: "Each catchment's share of households with dependent children in the three most deprived deciles, by design. One point per catchment. A design whose points are bunched spreads disadvantage evenly; one with a point far to the right has a catchment carrying much more of it than the others."
-#| fig-height: 4.2
+**BACA's catchment is the outlier under every design**, and under the
+current map it is extreme: `r fmt_pct(100 * i_now$hi, 0)` of its
+households with dependent children are in the three most deprived
+deciles nationally, against `r fmt_pct(100 * i_now$lo, 0)` in the least
+deprived catchment. No alternative has a catchment above
+`r fmt_pct(100 * max(is_$hi[!str_detect(is_$design, "Current")]), 0)`.
 
-fr$idaci_region %>%
-  mutate(design = factor(design, rev(fr_designs)), region = fr_lab(grp)) %>%
-  ggplot(aes(dep3, design)) +
-  geom_line(aes(group = design), colour = "grey70", linewidth = 3, alpha = 0.5) +
-  geom_point(aes(size = hh), colour = "#b2182b", alpha = 0.85) +
-  ggrepel::geom_text_repel(aes(label = region), size = 2.5, seed = 1,
-                           max.overlaps = 30, box.padding = 0.35) +
-  scale_x_continuous(labels = scales::label_percent()) +
-  scale_size_continuous(range = c(1.5, 6), guide = "none") +
-  labs(x = "Households with dependent children in the three most deprived deciles",
-       y = NULL,
+That range is the obvious summary and it is a poor one, because it says
+nothing about **how many households sit at each end**. A design can have
+a narrow range and still concentrate deprivation, and one here does. The
+measure that does not have that problem is a segregation curve.
+
+```{r fig-idaci-curve}
+#| fig-cap: "Segregation curves. Catchments are ordered from least to most deprived, then the cumulative share of all households with dependent children is plotted against the cumulative share of those in the three most deprived deciles. A design that spread deprivation evenly would trace the diagonal; the further a line bows below it, the more one catchment carries."
+#| fig-height: 5.6
+
+cv <- fr$idaci_curve %>% mutate(design = factor(design, fr_designs))
+ends <- cv %>% group_by(design) %>% slice_max(x, n = 1) %>% ungroup()
+worst <- cv %>% group_by(design) %>% slice_max(gap, n = 1) %>% ungroup()
+
+DESIGN_COL <- setNames(
+  c("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"),
+  fr_designs)
+
+# Six lines is past the point where direct-labelling every one is
+# readable - four of them run through the same cluster around 45% and
+# the labels sat on top of each other. Legend for identity, direct
+# labels for the two that matter: the best and the worst.
+mark <- worst %>%
+  filter(design %in% c(fr$idaci_summary$design[which.min(fr$idaci_summary$gorard)],
+                       fr$idaci_summary$design[which.max(fr$idaci_summary$gorard)]))
+
+ggplot(cv, aes(x, y, colour = design)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey55", linetype = "31") +
+  geom_segment(data = mark, aes(x = x, xend = x, y = y, yend = x),
+               linewidth = 0.6, alpha = 0.6) +
+  geom_line(linewidth = 0.9) +
+  geom_point(data = mark, size = 2.6) +
+  ggrepel::geom_text_repel(
+    data = mark, aes(label = sprintf("%s\nwidest gap %.2f", str_wrap(design, 24), gap)),
+    size = 2.8, hjust = 0, nudge_x = 0.07, nudge_y = -0.09,
+    segment.size = 0.25, min.segment.length = 0, seed = 1, lineheight = 0.95,
+    show.legend = FALSE) +
+  scale_colour_manual(values = DESIGN_COL, name = NULL,
+                      guide = guide_legend(nrow = 2, byrow = TRUE)) +
+  scale_x_continuous(labels = scales::label_percent(),
+                     limits = c(0, 1.02), breaks = seq(0, 1, 0.25)) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(x = "Cumulative share of all households with dependent children",
+       y = "Cumulative share of those in the three most deprived deciles",
        title = "How evenly each design spreads disadvantage",
-       subtitle = "One point per catchment, sized by how many households it holds.",
+       subtitle = str_wrap(paste("The dashed line is a perfectly even spread.", "The marked points are the most and least even designs, at their widest gap from it - the dissimilarity index."), 100),
        caption = "Sources: ONS postcode household counts; IMD 2019 IDACI.") +
   theme_bh(11) +
-  theme(panel.grid.major.y = element_blank())
+  theme(legend.position = "top", legend.text = element_text(size = 8))
 ```
 
 ```{r tbl-idaci-even}
-#| tbl-cap: "How evenly each design spreads disadvantage. Gorard's segregation index is the measure the open model uses for the same question: half the sum of the absolute difference between each catchment's share of the city's deprived households and its share of all households. Zero would be a perfectly even spread. Ranked best first."
+#| tbl-cap: "How evenly each design spreads disadvantage. The share columns are households with dependent children in the three most deprived deciles, for the least and most deprived catchment of each design. Gorard's segregation index is the measure the open model uses for the same question: half the sum of the absolute difference between each catchment's share of the city's deprived households and its share of all households. Zero would be a perfectly even spread. Ranked best first."
 
 fr$idaci_summary %>%
+  left_join(fr$idaci_curve %>% group_by(design) %>%
+              summarise(dis = max(gap), .groups = "drop"), by = "design") %>%
+  arrange(gorard) %>%
   transmute(Design = design,
             `Least deprived catchment` = fmt_pct(100 * lo, 0),
             `Most deprived catchment` = fmt_pct(100 * hi, 0),
-            `Spread` = sprintf("%.0f points", 100 * spread),
+            `Range` = sprintf("%.0f points", 100 * spread),
+            `Dissimilarity` = sprintf("%.2f", dis),
             `Gorard index` = sprintf("%.3f", gorard)) %>%
-  knitr::kable(align = "lrrrr")
+  knitr::kable(align = "lrrrrr")
 ```
 
 **The power diagram spreads disadvantage most evenly, and it is not
 close.** Its Gorard index is `r sprintf("%.3f", i_pd$gorard)` against
 `r sprintf("%.3f", i_now$gorard)` for the map in force --- about a
-`r sprintf("%.0f", 100 * (1 - i_pd$gorard / i_now$gorard))`% reduction.
-It gets there by having no catchment above
-`r fmt_pct(100 * i_pd$hi, 0)`, where the current map has one at
-`r fmt_pct(100 * i_now$hi, 0)`.
+`r sprintf("%.0f", 100 * (1 - i_pd$gorard / i_now$gorard))`% reduction
+--- and its curve sits closest to the diagonal at every point.
 
-**`r nrow(i_worse)` of the four alternatives are *worse* than the
-current map, and `r nrow(i_same)` matches it**, which the obvious
-summary statistic hides. Look at the spread column: the flow-paired
-design has the narrowest range of any design here,
-`r sprintf("%.0f", 100 * i_pair$spread)` points against
-`r sprintf("%.0f", 100 * i_now$spread)` for the current map. On that
-measure it is the clear winner. On Gorard it is
-`r sprintf("%.3f", i_pair$gorard)` --- the same as the map it replaces.
+**`r nrow(i_worse)` of the alternatives are *worse* than the current
+map**, which the range column hides. Look at the flow-region design with
+one catchment per school: its range is
+`r sprintf("%.0f", 100 * i_one$spread)` points, narrower than the
+current map's `r sprintf("%.0f", 100 * i_now$spread)`, and its curve
+bows furthest from the diagonal of any design here. A narrow range
+across catchments of very different sizes is not evenness.
 
-The two disagree because **a narrow range says nothing about how many
-households sit at each end**. The current map's most deprived catchment
-is `r fmt_pct(100 * i_now$hi, 0)` deprived, which is extreme --- but it
-is BACA, and BACA is small. Concentrating disadvantage in a small
-catchment moves fewer households than spreading a moderate excess across
-two large ones. Gorard weights by size and max-minus-min does not, which
-is why the ranking here uses Gorard: it is the measure the rest of this
-work uses for exactly this question.
+The current map's extreme catchment is BACA, and BACA is small.
+Concentrating disadvantage in a small catchment moves fewer households
+than spreading a moderate excess across two large ones --- which is what
+the curve shows and the range cannot. Gorard weights by size; maximum
+minus minimum does not.
 
 ::: {.callout-important appearance="simple"}
 ## A finding that reversed under a better measure
 
 An earlier version of this section reported that **every** alternative
-was less segregated than the current map. That was computed as the
-range between the least and most deprived catchment, and on that
-statistic it was true.
+was less segregated than the current map. That was computed as the range
+between the least and most deprived catchment, and on that statistic it
+was true.
 
 It does not survive being measured properly. Once catchment size is
-taken into account, `r nrow(i_worse)` of the four alternatives spread
+taken into account, `r nrow(i_worse)` of the alternatives spread
 disadvantage *less* evenly than the map in force and
 `r nrow(i_same)` matches it. The claim has been withdrawn and the
 ranking above is by Gorard.
 
 What survives is narrower and still worth having: **one design, the
 power diagram, is clearly better than the current map on this measure**,
-and it is better on capacity and journey time too.
+and it is better on capacity and shape too.
 :::
 
 And a caution against reading any of this as a solution.
-`r sprintf("%.3f", i_best$gorard)` is a large index. **No redrawing of a
+`r sprintf("%.3f", i_best$gorard)` is a large index, and the best curve
+here still bows a long way from the diagonal. **No redrawing of a
 catchment map fixes residential segregation**, because the segregation
-is in where families live, not in where the lines are. What a map can
-do is stop amplifying it, and the difference between the best and worst
-design here is the size of that amplification.
+is in where families live, not in where the lines are. What a map can do
+is stop amplifying it, and the distance between the best and worst
+curves is the size of that amplification.
 
 ## And if Longhill moves {#sec-fr-elm}
 

@@ -1021,6 +1021,53 @@ idaci_table <- idaci_profiles %>%
   tidyr::complete(tidyr::nesting(design, grp), idaci_decile = 1:10,
                   fill = list(share = 0))
 
+# Three bands rather than ten deciles. Ten single-hue steps are closer
+# together than a reader can tell apart - the colour validator fails the
+# ramp outright - and ten columns of percentages is the table that
+# prompted this rewrite. Three bands answer the question the section
+# actually asks.
+IDACI_BANDS <- c("Deciles 1-3 (most deprived)", "Deciles 4-7",
+                 "Deciles 8-10 (least deprived)")
+idaci_bands <- idaci_profiles %>%
+  mutate(band = factor(cut(idaci_decile, c(0, 3, 7, 10), labels = IDACI_BANDS),
+                       IDACI_BANDS)) %>%
+  group_by(design, grp, band) %>%
+  summarise(share = sum(share), hh = sum(hh), .groups = "drop") %>%
+  # A catchment with nobody in a band has no row for it, which left
+  # Patcham unlabelled in the two relocation designs rather than
+  # labelled zero. Fill the gaps.
+  tidyr::complete(tidyr::nesting(design, grp), band,
+                  fill = list(share = 0, hh = 0))
+
+# The segregation curve. Catchments are ordered from least to most
+# deprived, then the cumulative share of all households with dependent
+# children is plotted against the cumulative share of the DEPRIVED ones.
+# A design that spread deprivation perfectly evenly would trace the
+# diagonal; the largest vertical gap from it is the dissimilarity index,
+# and the area between is what Gorard summarises. One line per design,
+# which is what makes five designs comparable at a glance in a way the
+# decile table never was.
+idaci_curve <- idaci_region %>%
+  group_by(design) %>%
+  arrange(dep3, .by_group = TRUE) %>%
+  mutate(dep_hh = hh * dep3,
+         x = cumsum(hh) / sum(hh),
+         y = cumsum(dep_hh) / sum(dep_hh),
+         gap = x - y) %>%
+  ungroup()
+
+idaci_curve <- bind_rows(
+  idaci_curve %>% distinct(design) %>% mutate(grp = NA_character_, x = 0, y = 0,
+                                              gap = 0, dep3 = NA, hh = NA,
+                                              dep_hh = NA),
+  idaci_curve) %>%
+  arrange(design, x)
+
+message("\n  Segregation curve, largest gap from the diagonal (dissimilarity):")
+print(as.data.frame(idaci_curve %>% group_by(design) %>%
+  summarise(dissimilarity = round(max(gap), 3), .groups = "drop") %>%
+  arrange(dissimilarity)), row.names = FALSE)
+
 # ---- What moves against the current map -----------------------------
 
 # Only designs that use the SAME grouping of schools can be compared
@@ -1057,7 +1104,8 @@ saveRDS(list(
   protect_min = PROTECT_MIN,
   east_check = east_check,
   idaci_summary = idaci_summary, idaci_region = idaci_region,
-  idaci_table = idaci_table,
+  idaci_table = idaci_table, idaci_bands = idaci_bands,
+  idaci_curve = idaci_curve, idaci_band_levels = IDACI_BANDS,
   regions = list(single = R_SINGLE, paired = R_PAIRED, elm = R_ELM,
                  elm210 = R_ELM210),
   now_assign = now_assign, pd_assign = pd_assign,
