@@ -3193,9 +3193,8 @@ ggplot(fs, aes(year, pref1, colour = name)) +
 
 ## Who gained and who lost {#sec-winners-losers}
 
-```{r fig-demand-change}
-#| fig-cap: "Change in weighted preferences between the first and last five-year windows in the published series. Preferences are counted at all three ranks with the same geometric decay used in section 4, so a school that families consistently name second is not scored as though nobody wanted it."
-#| fig-height: 5
+```{r demand-change-data}
+#| include: false
 
 # The same attractiveness measure as section 4, applied year by year:
 # ranks 1-3 with a geometric decay. Counting first preferences alone
@@ -3220,24 +3219,6 @@ chg <- inner_join(early, late, by = "name") %>%
   mutate(change = late - early, pct = 100 * change / early,
          change_p1 = late_p1 - early_p1) %>%
   arrange(change)
-
-ggplot(chg, aes(reorder(name, change), change, fill = change > 0)) +
-  geom_col(width = 0.7) +
-  geom_hline(yintercept = 0, colour = "grey30") +
-  geom_text(aes(label = sprintf("%+.0f%%", pct),
-                hjust = ifelse(change > 0, -0.15, 1.15)), size = 3.1) +
-  coord_flip() +
-  scale_y_continuous(expand = expansion(mult = 0.12)) +
-  scale_fill_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b"),
-                    guide = "none") +
-  labs(x = NULL, y = "Change in average weighted preferences",
-       title = "Where demand has moved under the catchment system",
-       subtitle = sprintf(
-         "Average of %d-%d against average of %d-%d, ranks 1-3 with decay %.2f.\nThe whole series post-dates the 2008 move to catchments with a lottery tie-break.",
-         yr_rng[1], yr_rng[1] + 4, yr_rng[2] - 4, yr_rng[2], DECAY),
-       caption = "Source: BHCC published allocation factsheets.") +
-  theme_bh() +
-  theme(panel.grid.major.y = element_blank())
 ```
 
 ```{r chg-stats}
@@ -3255,14 +3236,17 @@ hp <- chg %>% filter(str_detect(name, "Hove Park"))
 vd <- chg %>% filter(str_detect(name, "Varndean"))
 ```
 
-The largest falls are at **`r paste(biggest_loss$name, collapse = " and ")`**;
-the largest rises at **`r paste(biggest_gain$name, collapse = " and ")`**.
+Comparing each school's first five years in the published series with
+its last, the largest falls are at
+**`r paste(biggest_loss$name, collapse = " and ")`**; the largest rises
+at **`r paste(biggest_gain$name, collapse = " and ")`**.
+@fig-demand-trajectory shows how each school got there.
 This is not a system in equilibrium. It is one where a shrinking cohort
 is being redistributed towards a small number of schools, and away from
 others, faster than the cohort itself is shrinking.
 
 ```{r fig-demand-trajectory}
-#| fig-cap: "The same weighted preferences as a trajectory rather than a start-and-end comparison. Each school is indexed to 100 at its own five-year opening average, so the lines show relative movement rather than size."
+#| fig-cap: "Weighted preferences over the published series. Preferences are counted at all three ranks with the same geometric decay used in section 4, so a school that families consistently name second is not scored as though nobody wanted it. Each school is indexed to 100 at its own five-year opening average, so the lines show relative movement rather than size."
 #| fig-height: 6
 
 base_w <- fs_w %>%
@@ -3288,9 +3272,10 @@ ggplot(traj, aes(year, idx, colour = name)) +
   scale_colour_brewer(palette = "Paired", guide = "none") +
   scale_x_continuous(expand = expansion(mult = c(0.02, 0.28))) +
   labs(x = NULL, y = "Weighted preferences, indexed to opening average = 100",
-       title = "The same movement, seen as trajectories",
-       subtitle = sprintf("Ranks 1-3 with decay %.2f. Above the dashed line is growth on the %d-%d baseline.",
-                          DECAY, yr_rng[1], yr_rng[1] + 4),
+       title = "Where demand has moved under the catchment system",
+       subtitle = sprintf(
+         "Ranks 1-3 with decay %.2f. Above the dashed line is growth on the %d-%d baseline.\nThe whole series post-dates the 2008 move to catchments with a lottery tie-break.",
+         DECAY, yr_rng[1], yr_rng[1] + 4),
        caption = "Source: BHCC published allocation factsheets.") +
   theme_bh() +
   theme(strip.text = element_text(face = "bold", hjust = 0))
