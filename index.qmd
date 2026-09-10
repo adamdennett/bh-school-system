@@ -39,6 +39,9 @@ rc     <- bh_data("reception_cohort.rds")
 os     <- bh_data("open_scenarios.rds")
 conv   <- bh_data("adjudicator_conversion.rds")
 fp     <- bh_data("factsheet_panel.rds")
+# Section 6 builds on this, and the executive summary quotes it before
+# section 6 runs, so it is loaded here with everything else.
+sfin   <- bh_data("school_finance.rds")
 
 fmt_n   <- function(x, d = 0) formatC(round(x, d), big.mark = ",", format = "f", digits = d)
 fmt_pct <- function(x, d = 0) paste0(formatC(x, format = "f", digits = d), "%")
@@ -317,6 +320,15 @@ the reduced `r fmt_n(ex_lh$pan2026)` now in force. The reduction has
 already done most of what a reduction can do, and the remaining problem
 is a falling cohort against a reserve that supports about
 `r sprintf("%.1f", os$years_left)` more years.
+
+**But the money is not a Longhill problem.**
+`r sum(sfin$change$res_change < 0)` of the city's
+`r nrow(sfin$change)` secondary schools have been spending their
+reserves, `r sum(sfin$exposure$reserve_pct < 0)` are now overdrawn, and
+the two in the deepest deficit are not Longhill --- they are Hove Park
+and Cardinal Newman, one of them the largest and fastest-growing school
+in the city. @sec-money sets out every school's position and which of
+them the pupil projections put next in line.
 
 ## What follows
 
@@ -3738,6 +3750,202 @@ per-pupil. A school losing children is therefore losing income against a
 cost base that does not shrink at the same rate --- the building, the
 leadership team and the curriculum offer are all substantially fixed.
 
+That is the mechanism. This section asks what it has already done to the
+city's ten state secondary schools, and what the projections in
+@sec-demography will do to them next.
+
+```{r money-prep}
+#| include: false
+fpan <- sfin$panel
+fex  <- sfin$exposure %>% mutate(short = short_sch(name))
+fch  <- sfin$change
+
+# The academies report to a different year end and their latest return
+# is a year behind the maintained schools', so "the latest year" is two
+# different years. Every figure below says which.
+yr_cfr <- max(fpan$year_label[fpan$source == "CFR"])
+yr_aar <- max(fpan$year_label[fpan$source == "AAR"])
+
+# The city aggregate has to be taken over years every school reports, or
+# it measures which schools happen to have filed rather than what
+# happened to the money.
+yr_all  <- fpan %>% count(year_label) %>%
+  filter(n == n_distinct(fpan$name)) %>% pull(year_label)
+city <- fpan %>%
+  filter(year_label %in% yr_all) %>%
+  # The two counts are made BEFORE the sums. Written inside the same
+  # summarise() after reserve = sum(reserve), dplyr evaluates in order
+  # and sum(reserve < 0) tests the city total against zero, which is
+  # never negative: the document reported "schools with a negative
+  # reserve went from 0 to 0" while three of them were overdrawn.
+  mutate(is_deficit = reserve < 0, is_in_year_neg = balance < 0) %>%
+  group_by(year_label) %>%
+  summarise(roll = sum(roll), income = sum(income), reserve = sum(reserve),
+            deficit = sum(is_deficit), in_year_neg = sum(is_in_year_neg),
+            n = n(), .groups = "drop")
+stopifnot(city$deficit[city$year_label == max(yr_all)] ==
+            sum(fpan$reserve[fpan$year_label == max(yr_all)] < 0))
+city_a <- city %>% slice_min(year_label, n = 1)
+city_z <- city %>% slice_max(year_label, n = 1)
+
+# The maintained seven, who have filed a fourth year.
+maint <- fpan %>% filter(source == "CFR") %>% group_by(year_label) %>%
+  summarise(reserve = sum(reserve), balance = sum(balance), n = n(),
+            .groups = "drop")
+m_a <- maint %>% slice_min(year_label, n = 1)
+m_z <- maint %>% slice_max(year_label, n = 1)
+m_excl_cn <- sum(fpan$reserve[fpan$year_label == yr_cfr &
+                              fpan$name != "Cardinal Newman Catholic School"])
+
+# One school, or the render stops. "Aldridge" matches both academies,
+# and without the check the prose printed Brighton Aldridge's reserve as
+# "£1k, £534k" and its intake fall as "-40%, -7%".
+f_of <- function(p) {
+  r <- fex %>% filter(str_detect(name, p))
+  if (nrow(r) != 1)
+    stop(sprintf("f_of('%s') matched %d schools: %s", p, nrow(r),
+                 paste(r$name, collapse = "; ")), call. = FALSE)
+  r
+}
+gbp  <- function(x, d = 1) {
+  a <- abs(x)
+  s <- if_else(x < 0, "−", "")
+  case_when(a >= 1e6 ~ sprintf("%s£%.*fm", s, d, a / 1e6),
+            a >= 1e3 ~ sprintf("%s£%.0fk", s, a / 1e3),
+            TRUE     ~ sprintf("%s£%.0f", s, a))
+}
+# A typographic minus, to match gbp() above: the two appear in the same
+# table rows and sprintf's hyphen next to a proper minus sign reads as a
+# different quantity.
+pp <- function(x, d = 1)
+  sub("-", "\u2212", sprintf("%+.*f%%", d, 100 * x), fixed = TRUE)
+```
+
+## Nine of the ten schools are spending their reserves {#sec-city-finance}
+
+**Across the three years every school has filed, the city's ten
+secondary schools spent
+`r gbp(city_a$reserve - city_z$reserve)` of their combined revenue
+reserves** --- from `r gbp(city_a$reserve)` in `r city_a$year_label` to
+`r gbp(city_z$reserve)` in `r city_z$year_label`, a fall of
+`r fmt_pct(100 * (1 - city_z$reserve / city_a$reserve), 0)`. Schools
+with a negative reserve went from `r city_a$deficit` to
+`r city_z$deficit`, and schools spending more in the year than they
+received went from `r city_a$in_year_neg` to `r city_z$in_year_neg`.
+
+`r sum(fch$res_change < 0)` of the `r nrow(fch)` schools ran their
+reserve down over the period. `r sum(fch$res_change > 0)` did not.
+
+The `r m_z$n` maintained schools have filed a fourth year, and it is
+worse: their combined reserve went from `r gbp(m_a$reserve)` in
+`r m_a$year_label` to **`r gbp(m_z$reserve)` in `r m_z$year_label`**,
+and their combined in-year balance from `r gbp(m_a$balance)` to
+`r gbp(m_z$balance)`.
+
+::: {.callout-note appearance="simple"}
+## That aggregate is carried by two schools, and it matters which
+
+The combined figure crosses zero because of Cardinal Newman alone. Take
+it out and the other `r m_z$n - 1` maintained schools still hold
+`r gbp(m_excl_cn)` between them.
+
+The aggregate is worth reporting because it is the sum the council is
+responsible for, but the *distribution* is the finding. Two schools are
+in serious deficit, one is at the line, and the rest are comfortable and
+getting less so.
+:::
+
+```{r tbl-school-finance}
+#| tbl-cap: "Every state secondary school in the city, at its latest published return. Maintained schools report to 31 March on the Consistent Financial Reporting return; academies report to 31 August on the Academies Accounts Return, so their latest published year is one behind. The revenue reserve is the accumulated surplus or deficit carried forward; it is shown as a share of annual income, because a given sum of money means different things at a school of 723 and a school of 2,625. Ranked worst first."
+#| column: page
+
+fex %>%
+  arrange(reserve_pct) %>%
+  transmute(School = name,
+            Year = year_label,
+            Roll = fmt_n(roll),
+            Income = gbp(income),
+            `Per pupil` = paste0("£", fmt_n(income_pp)),
+            # Two columns called "— % of income" is one column: the
+            # second silently replaced the first, and the table printed
+            # the reserve percentage in the in-year column.
+            `In-year balance` = gbp(balance_pct * income),
+            `In-year, % of income` = pp(balance_pct),
+            `Revenue reserve` = gbp(reserve),
+            `Reserve, % of income` = pp(reserve_pct),
+            `Staff costs, % of income` = sprintf("%.0f%%", 100 * staff_pct)) %>%
+  knitr::kable(align = "llrrrrrrrr")
+```
+
+**Two schools are in serious deficit.** Hove Park's revenue reserve is
+`r gbp(f_of("Hove Park")$reserve)`, or
+`r pp(f_of("Hove Park")$reserve_pct)` of its annual income, and it spent
+`r gbp(abs(f_of("Hove Park")$balance_pct * f_of("Hove Park")$income))`
+more than it received in `r f_of("Hove Park")$year_label`. Cardinal
+Newman's reserve is `r gbp(f_of("Cardinal Newman")$reserve)`, or
+`r pp(f_of("Cardinal Newman")$reserve_pct)`, and its in-year deficit was
+`r gbp(abs(f_of("Cardinal Newman")$balance_pct * f_of("Cardinal Newman")$income))`.
+
+**They are in trouble for opposite reasons, and the difference is the
+whole argument of this section.** Hove Park's roll fell from
+`r fmt_n(fch$roll_from[str_detect(fch$name, "Hove Park")])` to
+`r fmt_n(fch$roll_to[str_detect(fch$name, "Hove Park")])` over four
+years --- `r fmt_n(abs(fch$roll_change[str_detect(fch$name, "Hove Park")]))`
+pupils, each of them carrying funding out of the building. Cardinal
+Newman's roll *rose*, by
+`r fmt_n(fch$roll_change[str_detect(fch$name, "Cardinal Newman")])`. It
+is the largest school in the city and it is growing, and it is still the
+deepest deficit in the city.
+
+The number that separates them from everybody else is the last column.
+**Staff costs are `r sprintf("%.0f%%", 100 * f_of("Cardinal Newman")$staff_pct)`
+of income at Cardinal Newman and
+`r sprintf("%.0f%%", 100 * f_of("Hove Park")$staff_pct)` at Hove Park,
+against `r sprintf("%.0f%%", 100 * median(fex$staff_pct))` across the
+city.** A school whose staffing is a fifth higher, as a share of income,
+than its neighbours' has no room to absorb anything, and staffing is the
+cost that takes years and redundancies to move.
+
+```{r fig-school-reserves}
+#| fig-cap: "Revenue reserve as a share of annual income, for every state secondary school in the city. Panels are ordered by the latest figure, worst first. Shading marks the years a school was carrying a deficit. The academies' series ends a year earlier because their accounts are published on a different cycle."
+#| fig-height: 6.4
+#| column: page
+
+# Deficit is a status, not a category or a magnitude, so it takes a
+# status colour and it ships with a label rather than being left as
+# "the red one".
+DEFICIT_COL <- "#d03b3b"
+
+ord <- fex %>% arrange(reserve_pct) %>% pull(name)
+rp <- fpan %>%
+  mutate(school = factor(short_sch(name), short_sch(ord)),
+         yr = year,
+         neg = pmin(reserve_pct, 0))
+
+ggplot(rp, aes(yr, reserve_pct)) +
+  geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+  geom_ribbon(aes(ymin = neg, ymax = 0), fill = DEFICIT_COL, alpha = 0.28) +
+  geom_line(linewidth = 0.8, colour = "grey20") +
+  geom_point(size = 1.5, colour = "grey20") +
+  facet_wrap(~ school, ncol = 5) +
+  scale_x_continuous(breaks = sort(unique(rp$yr)),
+                     labels = function(x) paste0(substr(x, 3, 4), "/",
+                                                 substr(x + 1, 3, 4))) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(x = NULL, y = "Revenue reserve as a share of annual income",
+       title = "Every school but one has been spending its reserve",
+       subtitle = str_wrap(paste("Shaded years are years the school was carrying a deficit.", "The line is the accumulated surplus, not the in-year balance."), 100),
+       caption = "Source: DfE school income and expenditure (CFR and academy accounts returns).") +
+  theme_bh(10) +
+  theme(axis.text.x = element_text(size = 7),
+        panel.spacing.x = unit(9, "pt"))
+```
+
+## Small schools receive more per pupil and are still likelier to be in deficit {#sec-size-finance}
+
+The national picture says why a shrinking school is a financial problem
+rather than merely a smaller one.
+
 ```{r fig-size-finance}
 #| fig-cap: "Income per pupil and the proportion of schools in deficit, by size band, nationally."
 #| fig-height: 4.8
@@ -3771,6 +3979,206 @@ than the largest band. They are nonetheless the likeliest to be in
 deficit: `r fmt_pct(sf_$pct_deficit[1], 0)` of schools under 500 pupils,
 against `r fmt_pct(min(sf_$pct_deficit), 0)` at the most favourable size.
 Extra funding per head does not compensate for the loss of scale.
+
+## What the projections do to this {#sec-finance-exposure}
+
+@sec-demography projects the cohort. @sec-brightopia turns it into
+intakes school by school. Putting the two next to the accounts gives the
+question this section exists to answer: **which schools are heading into
+a smaller roll from a weak financial position**.
+
+```{r exposure-prep}
+#| include: false
+cy <- os$central %>%
+  filter(substr(config, 1, 2) == "A.",
+         name != "Peacehaven Community School") %>%
+  group_by(entry_year) %>%
+  summarise(intake = sum(intake), pan = sum(pan), .groups = "drop")
+cy_a <- cy %>% slice_min(entry_year, n = 1)
+cy_z <- cy %>% slice_max(entry_year, n = 1)
+risk_total <- sum(fex$income_change)
+```
+
+The arithmetic is deliberately crude, and it is stated so that a reader
+can redo it. Each Year 7 place a school loses takes
+`r sfin$years_in_school` pupils off its roll once the smaller cohort has
+worked through. Multiplied by that school's own income per pupil, that
+is the annual income it is heading for in today's money.
+
+**The city has `r fmt_n(cy_a$pan)` Year 7 places in these ten schools.
+The model puts `r fmt_n(cy_a$intake)` children into them in
+`r cy_a$entry_year` and `r fmt_n(cy_z$intake)` in `r cy_z$entry_year`**
+--- a fill rate falling from
+`r fmt_pct(100 * cy_a$intake / cy_a$pan, 0)` to
+`r fmt_pct(100 * cy_z$intake / cy_z$pan, 0)`, and
+`r fmt_n(cy_z$pan - cy_z$intake)` empty places. Carried through to the
+whole roll at each school's own funding rate, that is about
+**`r gbp(abs(risk_total))` a year of income** gone from a system that
+currently receives `r gbp(sum(fex$income))`.
+
+```{r fig-finance-exposure}
+#| fig-cap: "Financial position against projected intake. The vertical axis is the revenue reserve as a share of annual income at the latest published return; the horizontal axis is the change in modelled Year 7 intake between 2026 and 2035 under the city as it stands. Circle area is proportional to the school's roll. The shaded corner is a thin or negative reserve together with a shrinking intake. Hollow circles are the two faith schools, whose modelled intake is the least reliable figure in this document."
+#| fig-height: 5.8
+
+xr <- range(fex$intake_pct)
+PT_MAX <- 11
+
+ggplot(fex, aes(intake_pct, reserve_pct)) +
+  annotate("rect", xmin = -Inf, xmax = 0, ymin = -Inf,
+           ymax = sfin$reserve_thin, fill = DEFICIT_COL, alpha = 0.07) +
+  # The shaded corner needs naming inside the plot, but the obvious
+  # place for the label is on top of Longhill. It goes in the empty band
+  # to the left of Patcham instead.
+  annotate("text", x = xr[1] - 0.05, y = -0.055,
+           label = "Thin reserve,\nand a shrinking intake", hjust = 0,
+           vjust = 1, size = 3, lineheight = 0.95, colour = DEFICIT_COL,
+           fontface = "bold") +
+  geom_hline(yintercept = 0, colour = "grey45", linewidth = 0.4) +
+  geom_hline(yintercept = sfin$reserve_thin, colour = "grey65",
+             linetype = "31") +
+  geom_vline(xintercept = 0, colour = "grey65", linetype = "31") +
+  # Filled for the eight schools whose modelled intake can be read as a
+  # projection, hollow for the two whose cannot. Setting fill outside
+  # aes() drew every circle white and lost the distinction entirely.
+  geom_point(aes(size = roll, fill = faith), shape = 21,
+             colour = "#1f3b57", stroke = 0.9) +
+  # ggrepel does not know how big a point is unless it is told, and it
+  # wants that size in the same millimetres the point scale uses, not in
+  # pupils: handed the raw roll it treated every circle as enormous and
+  # threw the labels to the edges of the panel. scale_size_area() draws
+  # a point at max_size * sqrt(value / max(value)), so that is what it
+  # is given.
+  ggrepel::geom_text_repel(
+    aes(label = short, point.size = PT_MAX * sqrt(roll / max(roll))),
+    size = 3, seed = 3, min.segment.length = 0, segment.size = 0.25,
+    box.padding = 0.5, max.overlaps = Inf, colour = "grey15") +
+  scale_fill_manual(values = c(`FALSE` = "#1f3b57", `TRUE` = "white"),
+                    guide = "none") +
+  scale_size_area(max_size = PT_MAX, guide = "none") +
+  scale_x_continuous(labels = scales::label_percent(),
+                     limits = c(xr[1] - 0.07, 0.07)) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(x = "Change in modelled Year 7 intake, 2026 to 2035",
+       y = "Revenue reserve as a share of annual income",
+       title = "Where the money is, and where the children are going",
+       subtitle = str_wrap(paste("Circle area is the school's roll.", "Hollow circles are the two faith schools, whose modelled intake should not be read as a forecast."), 100),
+       caption = "Sources: DfE school income and expenditure; modelled intakes, configuration A of the open scenarios.") +
+  theme_bh(11)
+```
+
+```{r tbl-finance-exposure}
+#| tbl-cap: "What the projected intakes are worth. The intake columns are modelled, not forecast: they are configuration A of the open scenarios — the city exactly as it stands. The income column applies each school's own income per pupil to the steady-state change in roll, in today's money. It is an order of magnitude, not a budget line."
+#| column: page
+
+fex %>%
+  arrange(income_pct) %>%
+  transmute(School = paste0(name, if_else(faith, " †", "")),
+            `Reserve, % of income` = pp(reserve_pct),
+            `Intake 2026` = fmt_n(intake_first),
+            `Intake 2035` = fmt_n(intake_last),
+            Change = pp(intake_pct, 0),
+            `Roll, steady state` = sub("-", "\u2212",
+                                       sprintf("%+.0f", roll_change_ss),
+                                       fixed = TRUE),
+            `Income a year` = gbp(income_change),
+            `— % of income` = pp(income_pct, 0)) %>%
+  knitr::kable(align = "lrrrrrrr")
+```
+
+† Cardinal Newman and King's are faith schools. The model admits to them
+on distance alone, because their actual criteria are not in any
+published dataset, so their intake columns are the least reliable
+figures in this document. Cardinal Newman is currently over-subscribed
+and growing.
+
+**`r nrow(fex %>% filter(exposed))` schools sit in the corner that
+matters --- a reserve under
+`r fmt_pct(100 * sfin$reserve_thin, 0)` of income and an intake the
+model expects to fall.** They are
+`r knitr::combine_words(sort(fex$short[fex$exposed]))`.
+
+Three of them are worth naming individually. **Cardinal Newman** is the
+largest school in the city and already
+`r pp(f_of("Cardinal Newman")$reserve_pct)` on its reserve, though its
+intake column is the unreliable one. **Patcham** is at
+`r pp(f_of("Patcham")$reserve_pct)` with a projected fall of
+`r pp(f_of("Patcham")$intake_pct, 0)` --- worth
+`r gbp(f_of("Patcham")$income_change)` a year, or
+`r pp(f_of("Patcham")$income_pct, 0)` of its income. **Brighton
+Aldridge** has spent its reserve down to
+`r gbp(f_of("Brighton Aldridge")$reserve)` and faces the steepest projected fall
+in intake of any school whose modelled intake can be trusted,
+`r pp(f_of("Brighton Aldridge")$intake_pct, 0)`.
+
+Blatchington Mill is the fourth, and it is there on a technicality
+worth stating: its reserve is `r pp(f_of("Blatchington")$reserve_pct)`,
+just under the line, and its projected fall is only
+`r pp(f_of("Blatchington")$intake_pct, 0)`. It is the least worrying
+school in the shaded corner and it is in it because the threshold is a
+line rather than a judgement.
+
+```{r longhill-rank}
+#| include: false
+# Superlatives here are computed rather than asserted. A draft of this
+# paragraph called Longhill's the largest projected fall of any school;
+# it is the fourth largest, and the largest only as a share of the
+# school's own income - which is the figure that actually bears on
+# whether it can carry the loss.
+nf <- fex %>% filter(!faith)
+stopifnot(
+  # Longhill loses the largest share of its own income of any school in
+  # the city, faith schools included.
+  str_detect(fex %>% slice_min(income_pct, n = 1) %>% pull(name), "Longhill"),
+  # Brighton Aldridge has the steepest fall in intake of the eight whose
+  # modelled intake is worth reading.
+  str_detect(nf %>% slice_min(intake_pct, n = 1) %>% pull(name), "Aldridge"),
+  # And Hove Park, not Cardinal Newman, holds the worst reserve position
+  # once it is put as a share of income - which is the comparison this
+  # section makes throughout.
+  str_detect(fex %>% slice_min(reserve_pct, n = 1) %>% pull(name), "Hove Park"))
+```
+
+**Longhill stands to lose more of its income than any other school**
+(`r pp(f_of("Longhill")$income_pct, 0)`, or
+`r gbp(f_of("Longhill")$income_change)` a year on a fall of
+`r pp(f_of("Longhill")$intake_pct, 0)` in intake) **and it is not yet in
+deficit.** It is the school with the most reserve left of the shrinking
+ones and the least time to use it, which is the subject of the next
+part of this section and of @sec-longhill.
+
+**Hove Park is the counter-example that stops this being a story about
+falling rolls.** Its modelled intake does not fall at all --- it is at
+its admission number in `r cy_a$entry_year` and still at it in
+`r cy_z$entry_year` --- and it has the worst reserve position in the
+city as a share of income. Its roll has already fallen, by
+`r fmt_n(abs(fch$roll_change[str_detect(fch$name, "Hove Park")]))` in
+four years, and its costs have not followed. The damage is done rather
+than coming.
+
+::: {.callout-warning appearance="simple"}
+## Four things this arithmetic is not
+
+**It is not a forecast of any school's budget.** It is a projection of
+pupil numbers multiplied by a current funding rate. Real budgets move
+with pay awards, energy, the national funding formula, sixth-form
+funding, high-needs recoupment and one-off capital, none of which is
+here.
+
+**The intakes are modelled.** They come from the open model at
+configuration A --- the city as it stands, with today's admission
+numbers held constant to 2035. That is the point of the exercise, not a
+prediction: it is what happens *if nothing is decided*. The council is
+already reducing admission numbers, which changes every column.
+
+**The per-pupil rate is each school's own average**, and for the four
+schools with a sixth form it blends 11--16 and 16--18 funding. Their
+pound figures are rougher than the others'.
+
+**Two reporting cycles are being read side by side.** Maintained schools
+file to 31 March and academies to 31 August, so `r yr_cfr` figures sit
+next to `r yr_aar` ones. Nothing has been adjusted to hide the gap; the
+year is in the table.
+:::
 
 ## Longhill's position {#sec-longhill-money}
 
