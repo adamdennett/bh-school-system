@@ -289,6 +289,11 @@ add_school_layer <- function(map, s = schools_sf(), group = "Schools",
   map
 }
 
+# The register of what this document is built from, and the scan that
+# works out which sections use which of it. Kept in its own file because
+# it is a table of metadata rather than code.
+source(file.path(ROOT, "R", "00_sources.R"))
+
 # ---- Plot theme ------------------------------------------------------
 
 theme_bh <- function(base_size = 12) {

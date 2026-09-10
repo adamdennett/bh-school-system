@@ -26,7 +26,10 @@ knitr::opts_chunk$set(dev = "ragg_png", dpi = 150)
 # ---- Everything the document draws on --------------------------------
 oi     <- bh_data("open_inputs.rds")
 acc    <- bh_data("accessibility.rds")
-dep    <- bh_data("deprivation_open.rds")
+# deprivation_open.rds is not loaded here. The document does not read it
+# directly - R/02_accessibility.R and R/03_flow_regions.R do, and it
+# reaches these pages through what they build. The sources appendix
+# checks that claim rather than asserting it.
 brt    <- bh_data("brightopia.rds")
 env    <- bh_data("sensitivity_envelope.rds")
 perf   <- bh_data("performance_panel.rds")
@@ -2105,7 +2108,6 @@ appearing unreachable because the timetable runs out.
 ```{r journey-surfaces}
 #| include: false
 
-nm <- bh_data("network_maps.rds")
 
 # One surface per school, from the zone x school cost table. Zones are
 # LSOA x catchment, so collapse to LSOA weighting by the child
@@ -4005,14 +4007,46 @@ can redo it. Each Year 7 place a school loses takes
 worked through. Multiplied by that school's own income per pupil, that
 is the annual income it is heading for in today's money.
 
-**The city has `r fmt_n(cy_a$pan)` Year 7 places in these ten schools.
-The model puts `r fmt_n(cy_a$intake)` children into them in
-`r cy_a$entry_year` and `r fmt_n(cy_z$intake)` in `r cy_z$entry_year`**
---- a fill rate falling from
-`r fmt_pct(100 * cy_a$intake / cy_a$pan, 0)` to
-`r fmt_pct(100 * cy_z$intake / cy_z$pan, 0)`, and
-`r fmt_n(cy_z$pan - cy_z$intake)` empty places. Carried through to the
-whole roll at each school's own funding rate, that is about
+::: {.callout-important appearance="simple"}
+## The baseline is the intake that happened, not the modelled one
+
+An earlier version of this section took the **modelled** `r sfin$base_year`
+intake as each school's starting point. That was wrong, and the error
+was not small.
+
+The model places every child in the projected cohort somewhere in the
+city. The schools that are full absorb only their admission number, so
+the surplus lands on the schools that are not full --- which is exactly
+where this section is looking. Against the offers the council actually
+made for September `r sfin$base_year` it puts
+`r fmt_n(f_of("Longhill")$intake_first)` children into Longhill, which
+admitted **`r fmt_n(f_of("Longhill")$offers)`**, and
+`r fmt_n(f_of("Cardinal Newman")$intake_first)` into Cardinal Newman,
+which admitted `r fmt_n(f_of("Cardinal Newman")$offers)`.
+
+In total it is close: `r fmt_n(sum(fex$intake_first))` modelled against
+`r fmt_n(sum(fex$offers))` offered across the ten schools,
+`r fmt_pct(100 * abs(sum(fex$intake_first) / sum(fex$offers) - 1), 0)`
+out. The error is in the **distribution**, which is a fair thing to ask
+of a model with no calibration data and a fatal thing to build a
+financial table on.
+
+So the baseline below is the **published offer count**, and the model
+supplies only the **trajectory** --- the proportional change in a
+school's intake to `r max(sfin$proj_years)`, driven by the cohort in its
+catchment shrinking. Read the "modelled" column as a diagnostic, not as
+an intake.
+:::
+
+**The city has `r fmt_n(cy_a$pan)` Year 7 places in these ten schools
+and made `r fmt_n(sum(fex$offers))` offers for `r sfin$base_year`
+entry.** On the model's trajectory that becomes
+`r fmt_n(sum(fex$intake_proj))` by `r max(sfin$proj_years)` --- a fill
+rate falling from
+`r fmt_pct(100 * sum(fex$offers) / cy_a$pan, 0)` to
+`r fmt_pct(100 * sum(fex$intake_proj) / cy_a$pan, 0)`, and
+`r fmt_n(cy_a$pan - sum(fex$intake_proj))` empty places. Carried through
+to the whole roll at each school's own funding rate, that is about
 **`r gbp(abs(risk_total))` a year of income** gone from a system that
 currently receives `r gbp(sum(fex$income))`.
 
@@ -4067,22 +4101,23 @@ ggplot(fex, aes(intake_pct, reserve_pct)) +
 ```
 
 ```{r tbl-finance-exposure}
-#| tbl-cap: "What the projected intakes are worth. The intake columns are modelled, not forecast: they are configuration A of the open scenarios — the city exactly as it stands. The income column applies each school's own income per pupil to the steady-state change in roll, in today's money. It is an order of magnitude, not a budget line."
+#| tbl-cap: "What the projected intakes are worth. The baseline is the offers the council published for 2026 entry. The modelled column is shown only so the gap between the two can be seen — it is the model's own 2026 level, which is not an intake and is badly out for the schools that are not full. The projection applies the model's proportional change to 2035 to the published baseline. The income column then applies each school's own income per pupil to the steady-state change in roll, in today's money: an order of magnitude, not a budget line."
 #| column: page
 
 fex %>%
   arrange(income_pct) %>%
   transmute(School = paste0(name, if_else(faith, " †", "")),
             `Reserve, % of income` = pp(reserve_pct),
-            `Intake 2026` = fmt_n(intake_first),
-            `Intake 2035` = fmt_n(intake_last),
+            `Offers 2026` = fmt_n(offers),
+            `Modelled 2026` = fmt_n(intake_first),
+            `Projected 2035` = fmt_n(intake_proj),
             Change = pp(intake_pct, 0),
             `Roll, steady state` = sub("-", "\u2212",
                                        sprintf("%+.0f", roll_change_ss),
                                        fixed = TRUE),
             `Income a year` = gbp(income_change),
             `— % of income` = pp(income_pct, 0)) %>%
-  knitr::kable(align = "lrrrrrrr")
+  knitr::kable(align = "lrrrrrrrr")
 ```
 
 † Cardinal Newman and King's are faith schools. The model admits to them
@@ -4097,18 +4132,13 @@ matters --- a reserve under
 model expects to fall.** They are
 `r knitr::combine_words(sort(fex$short[fex$exposed]))`.
 
-Three of them are worth naming individually. **Cardinal Newman** is the
-largest school in the city and already
-`r pp(f_of("Cardinal Newman")$reserve_pct)` on its reserve, though its
-intake column is the unreliable one. **Patcham** is at
-`r pp(f_of("Patcham")$reserve_pct)` with a projected fall of
-`r pp(f_of("Patcham")$intake_pct, 0)` --- worth
+**Cardinal Newman** is the largest school in the city and already
+`r pp(f_of("Cardinal Newman")$reserve_pct)` on its reserve --- though it
+is also the school whose projected intake is least worth trusting.
+**Patcham** is at `r pp(f_of("Patcham")$reserve_pct)` with a projected
+fall of `r pp(f_of("Patcham")$intake_pct, 0)`, worth
 `r gbp(f_of("Patcham")$income_change)` a year, or
-`r pp(f_of("Patcham")$income_pct, 0)` of its income. **Brighton
-Aldridge** has spent its reserve down to
-`r gbp(f_of("Brighton Aldridge")$reserve)` and faces the steepest projected fall
-in intake of any school whose modelled intake can be trusted,
-`r pp(f_of("Brighton Aldridge")$intake_pct, 0)`.
+`r pp(f_of("Patcham")$income_pct, 0)` of its income.
 
 Blatchington Mill is the fourth, and it is there on a technicality
 worth stating: its reserve is `r pp(f_of("Blatchington")$reserve_pct)`,
@@ -4119,44 +4149,57 @@ line rather than a judgement.
 
 ```{r longhill-rank}
 #| include: false
-# Superlatives here are computed rather than asserted. A draft of this
-# paragraph called Longhill's the largest projected fall of any school;
-# it is the fourth largest, and the largest only as a share of the
-# school's own income - which is the figure that actually bears on
-# whether it can carry the loss.
+# Superlatives are computed, and three of them are asserted, because two
+# drafts of this paragraph got them wrong. The first called Longhill's
+# the largest projected fall of any school; the second, written on the
+# modelled baseline, called it the largest share of income. On the
+# published-offer baseline it is neither.
 nf <- fex %>% filter(!faith)
+worst_pct <- nf %>% slice_min(income_pct, n = 1)
+lh <- f_of("Longhill")
 stopifnot(
-  # Longhill loses the largest share of its own income of any school in
-  # the city, faith schools included.
-  str_detect(fex %>% slice_min(income_pct, n = 1) %>% pull(name), "Longhill"),
-  # Brighton Aldridge has the steepest fall in intake of the eight whose
-  # modelled intake is worth reading.
-  str_detect(nf %>% slice_min(intake_pct, n = 1) %>% pull(name), "Aldridge"),
-  # And Hove Park, not Cardinal Newman, holds the worst reserve position
-  # once it is put as a share of income - which is the comparison this
-  # section makes throughout.
-  str_detect(fex %>% slice_min(reserve_pct, n = 1) %>% pull(name), "Hove Park"))
+  str_detect(worst_pct$name, "Aldridge"),
+  # Hove Park, not Cardinal Newman, holds the worst reserve position once
+  # it is put as a share of income - the comparison this section makes
+  # throughout.
+  str_detect(fex %>% slice_min(reserve_pct, n = 1) %>% pull(name), "Hove Park"),
+  # And Longhill's remaining exposure is middling, because most of its
+  # fall has already happened. If a future re-run changes that, the
+  # paragraph below stops being true and the render should stop with it.
+  lh$income_pct > worst_pct$income_pct)
 ```
 
-**Longhill stands to lose more of its income than any other school**
-(`r pp(f_of("Longhill")$income_pct, 0)`, or
-`r gbp(f_of("Longhill")$income_change)` a year on a fall of
-`r pp(f_of("Longhill")$intake_pct, 0)` in intake) **and it is not yet in
-deficit.** It is the school with the most reserve left of the shrinking
-ones and the least time to use it, which is the subject of the next
-part of this section and of @sec-longhill.
+**Brighton Aldridge is the most exposed school whose numbers can be
+trusted.** It has spent its reserve to `r gbp(f_of("Brighton Aldridge")$reserve)`,
+its intake is projected to fall `r pp(f_of("Brighton Aldridge")$intake_pct, 0)`,
+and that is worth `r gbp(f_of("Brighton Aldridge")$income_change)` a
+year, or `r pp(f_of("Brighton Aldridge")$income_pct, 0)` of its income.
 
-**Hove Park is the counter-example that stops this being a story about
-falling rolls.** Its modelled intake does not fall at all --- it is at
-its admission number in `r cy_a$entry_year` and still at it in
-`r cy_z$entry_year` --- and it has the worst reserve position in the
-city as a share of income. Its roll has already fallen, by
+**Longhill is not, and that is the correction the baseline forced.** Its
+remaining exposure is `r pp(lh$income_pct, 0)`, worth
+`r gbp(lh$income_change)` a year --- the fourth largest share in the
+city, not the first. The reason is that Longhill has **already** taken
+most of the fall: it admitted `r fmt_n(lh$offers)` children in
+`r sfin$base_year` against an admission number of `r fmt_n(lh$pan)`, and
+a school at `r fmt_pct(100 * lh$offers / lh$pan, 0)` of its admission
+number has less left to lose than one that is full. Its reserve is still
+`r pp(lh$reserve_pct)`, and @sec-longhill-money is about how long that
+lasts.
+
+**Hove Park is the same story further along.** Its intake is projected
+not to fall at all, and it has the worst reserve position in the city as
+a share of income. Its roll has already dropped by
 `r fmt_n(abs(fch$roll_change[str_detect(fch$name, "Hove Park")]))` in
-four years, and its costs have not followed. The damage is done rather
-than coming.
+four years and its costs have not followed.
+
+So the two schools with the least to lose from the projections are two
+of the three already in deficit. **The financial damage at both is done
+rather than coming, and no future intake number fixes it.** What is
+coming lands on Brighton Aldridge, Patcham and Dorothy Stringer --- the
+first two with nothing left to absorb it.
 
 ::: {.callout-warning appearance="simple"}
-## Four things this arithmetic is not
+## Five things this arithmetic is not
 
 **It is not a forecast of any school's budget.** It is a projection of
 pupil numbers multiplied by a current funding rate. Real budgets move
@@ -4164,11 +4207,21 @@ with pay awards, energy, the national funding formula, sixth-form
 funding, high-needs recoupment and one-off capital, none of which is
 here.
 
-**The intakes are modelled.** They come from the open model at
-configuration A --- the city as it stands, with today's admission
-numbers held constant to 2035. That is the point of the exercise, not a
-prediction: it is what happens *if nothing is decided*. The council is
-already reducing admission numbers, which changes every column.
+**The baseline is published, the trajectory is modelled.** The starting
+point is the offers the council made for `r sfin$base_year` entry. The
+path from there is the open model's configuration A --- the city as it
+stands, with today's admission numbers held constant to
+`r max(sfin$proj_years)` --- applied as a proportional change, not as a
+level. That is the point of the exercise rather than a prediction: it is
+what happens *if nothing is decided*. The council is already reducing
+admission numbers, which changes every column.
+
+**A proportional trajectory is an assumption in its own right.** It says
+a school's intake falls in step with the cohort the model sends towards
+it. A school that is already far below its admission number might fall
+faster, because the families still choosing it are the most local ones,
+or slower, because it has already lost everyone who was going to leave.
+Nothing here distinguishes those two.
 
 **The per-pupil rate is each school's own average**, and for the four
 schools with a sixth form it blends 11--16 and 16--18 funding. Their
@@ -6646,3 +6699,152 @@ This document is an attempt to supply as much of that picture as
 published data allows. It stops well short of what the council's own
 records would support --- and the offer to do that work, properly and in
 the open, stands.
+
+# Sources and data {#sec-sources}
+
+Everything in this document is built from published data. Nothing here
+uses pupil-level records: no individual child, postcode-level
+application or named preference appears in any input, and the one place
+where postcode-level counts are used --- the density map in
+@sec-child-density --- is a census household count, not an admissions
+record.
+
+Every chart and table names its immediate source in the caption. This
+section gives the links, says which sections rest on which data, and
+lists what is in the repository's `data/` folder and what made it.
+
+```{r sources-prep}
+#| include: false
+# The section-by-section table is not written by hand. It is produced by
+# reading this document's own source and looking, section by section,
+# for the objects each dataset is loaded into - see R/00_sources.R. A
+# hand-written version is wrong within two edits and nobody notices.
+uses <- section_uses()
+stopifnot(nrow(uses) > 0, n_distinct(uses$number) >= 10)
+
+src_link <- function(k) {
+  s <- SOURCES[match(k, SOURCES$key), ]
+  sprintf("[%s](%s)", s$title, s$url)
+}
+ds_title <- setNames(DATASETS$title, DATASETS$file)
+ds_from  <- setNames(DATASETS$from,  DATASETS$file)
+```
+
+## What each section is built from {#sec-section-sources}
+
+```{r tbl-section-sources}
+#| tbl-cap: "Which published data each numbered section of this document rests on. Derived files are the ones this repository and the open model build; the sources column is what they are built from. Generated from the document's own source rather than maintained by hand."
+#| column: page
+
+uses %>%
+  group_by(number, section) %>%
+  summarise(
+    derived = paste(sort(unname(ds_title[file])), collapse = "; "),
+    sources = paste(purrr::map_chr(sort(unique(unlist(ds_from[file]))),
+                                   src_link), collapse = "; "),
+    .groups = "drop") %>%
+  transmute(Section = paste0(number, ". ", section),
+            `Data used` = derived,
+            `Published sources` = sources) %>%
+  knitr::kable(align = "lll")
+```
+
+## The published sources {#sec-source-list}
+
+Links go to the publisher's landing page for the dataset rather than to
+a particular file. Deep links to statistical releases rot within a year
+or two, and a landing page that has moved a file still gets a reader to
+it. The council's committee papers are cited by title and date for the
+same reason.
+
+```{r tbl-sources}
+#| tbl-cap: "Every published source this document draws on."
+#| column: page
+
+SOURCES %>%
+  arrange(publisher, title) %>%
+  transmute(Source = sprintf("[%s](%s)", title, url),
+            Publisher = publisher,
+            `What it is` = what,
+            Licence = licence) %>%
+  knitr::kable(align = "llll")
+```
+
+## What is in `data/`, and what made it {#sec-data-files}
+
+The repository carries its inputs so that the document renders on any
+machine. Two of those files are published boundary or statistical files
+copied unchanged; the rest are derived, and the column says by what.
+
+```{r tbl-datasets}
+#| tbl-cap: "Every file this repository reads, what it is, and what built it. The open Brightopia bundle is the open-data model published alongside this document; the school attainment tool is the national panel behind How to Pull the Right Lever. The last column counts the numbered sections that use the file directly; a dash means it is an input to one of the others rather than to the document."
+#| column: page
+
+n_sec <- purrr::map_int(DATASETS$file,
+                        ~ n_distinct(uses$number[uses$file == .x]))
+
+# A file the document loads into an object but never uses is either dead
+# code or a drifted register, and both are worth failing on. Two such
+# loads were found this way and removed.
+stopifnot(all(n_sec[DATASETS$file %in% QMD_VARS$file] > 0))
+
+DATASETS %>%
+  mutate(n_sections = n_sec) %>%
+  arrange(built_by, file) %>%
+  transmute(File = paste0("`", file, "`"),
+            `What it is` = title,
+            `Built by` = built_by,
+            `From` = purrr::map_chr(from, ~ paste(SOURCES$title[match(.x, SOURCES$key)],
+                                                  collapse = "; ")),
+            Sections = if_else(n_sections == 0, "—", as.character(n_sections))) %>%
+  knitr::kable(align = "lllr")
+```
+
+`deprivation_open.rds` carries the dash. The document does not read it;
+`R/02_accessibility.R` and `R/03_flow_regions.R` do, and it reaches
+these pages through the accessibility surfaces and the redrawn
+catchments they build.
+
+## Licences, attribution and reuse {#sec-licences}
+
+**Most of this is Open Government Licence v3.** The DfE, DfT, ONS,
+MHCLG and council datasets above are all published under
+[OGL v3](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/),
+which permits reuse with attribution. The attribution is in the table
+above.
+
+**OpenStreetMap is ODbL.** The walking and road network under every
+routed journey time is © OpenStreetMap contributors, available under the
+[Open Database Licence](https://www.openstreetmap.org/copyright).
+
+**The basemaps are CARTO's.** Every map in this document carries the
+CARTO and OpenStreetMap attribution in its corner, which is the
+condition of the free tier, and `R/99_verify_render.R` fails the build
+if a map loses it.
+
+**The analysis is reproducible from these sources.** `R/01_assemble.R`
+pulls every input into `data/`; `R/02_accessibility.R` and
+`R/03_flow_regions.R` build the accessibility surfaces and the
+redrawn catchments; the model outputs come from the open Brightopia
+bundle, which publishes its own code. What cannot be reproduced from
+this repository alone is the routed travel matrix, which needs an OSM
+extract and a GTFS feed and about an hour of compute --- the matrix
+itself is carried in `data/travel/`, so nothing downstream of it
+requires the rebuild.
+
+::: {.callout-note appearance="simple"}
+## What is deliberately not here
+
+**The council's admissions records.** @sec-data-asks lists the six
+fields that would replace a modelled flow with an observed one
+throughout sections 7 and 8. They are not public and this document does
+not use them.
+
+**Anything at individual level.** The finest geography used anywhere is
+the postcode, and only for counts of households from the census. Every
+model input is at LSOA or catchment level.
+
+**Unpublished council material.** Where a council figure is quoted it
+comes from a published report, a published factsheet or a determination
+of the Schools Adjudicator, and the section says which.
+:::
