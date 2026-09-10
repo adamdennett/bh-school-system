@@ -502,7 +502,26 @@ dissolve <- function(assign, groups, label) {
     st_transform(4326)
 }
 
-regions_sf <- purrr::map_dfr(DESIGNS, ~ dissolve(.x$a, .x$g, .x$lab))
+# The CURRENT map is a published boundary file, not an LSOA aggregate,
+# and it must be drawn as published. Dissolving LSOAs to approximate it
+# produced a map that did not match the one section 4 draws: 30 of the
+# 165 LSOAs straddle a current boundary, and giving each one whole to
+# its larger half moves the line by up to an LSOA in either direction.
+#
+# The alternatives have to be built from whole LSOAs - that is the unit
+# a redesign can work in - so they keep the dissolve. Only the design
+# that already exists as geometry uses its own geometry.
+current_sf <- bh_data("catchments_current.geojson") %>%
+  st_transform(4326) %>%
+  mutate(grp = as_model_from_boundary(catchment), lsoas = NA_integer_,
+         design = "Current catchments") %>%
+  select(grp, lsoas, design)
+stopifnot(!any(is.na(current_sf$grp)),
+          setequal(current_sf$grp, names(GROUPS_NOW)))
+
+regions_sf <- bind_rows(
+  current_sf,
+  purrr::map_dfr(DESIGNS[-1], ~ dissolve(.x$a, .x$g, .x$lab)))
 
 # ---- IDACI profiles, the consultation's own method -------------------
 # BH_Schools_Consultation/postcode_school_pop.qmd profiles the current
@@ -535,22 +554,47 @@ profile_design <- function(label) {
 
 idaci_profiles <- purrr::map_dfr(unique(regions_sf$design), profile_design)
 
-# The headline summary: the share of each region's households with
-# dependent children that sit in the four most deprived deciles, and how
-# far apart the least and most deprived regions are on that measure.
-idaci_summary <- idaci_profiles %>%
+# "Deprived" is IDACI decile 1 to 3, which is the definition used
+# throughout this body of work, so these numbers sit next to the
+# segregation figures in the open model rather than beside them.
+idaci_region <- idaci_profiles %>%
   group_by(design, grp) %>%
-  summarise(dep4 = sum(share[idaci_decile <= 4]),
-            hh = sum(hh), .groups = "drop_last") %>%
-  summarise(lo = min(dep4), hi = max(dep4), spread = max(dep4) - min(dep4),
-            .groups = "drop")
+  summarise(dep3 = sum(share[idaci_decile <= 3]),
+            hh = sum(hh), .groups = "drop")
 
-message("\n=== Households with dependent children in the four most deprived deciles ===")
+# Gorard's segregation index, the measure the open model uses for the
+# same question: half the sum of the absolute difference between each
+# catchment's share of the city's deprived households and its share of
+# all households. 0 is a perfectly even spread, 1 is complete
+# separation. It answers "which design spreads disadvantage most
+# evenly" in one number, which max-minus-min cannot: a design can have a
+# narrow range and still put every deprived household in one place.
+gorard <- function(p) {
+  F_j <- p$hh * p$dep3
+  0.5 * sum(abs(F_j / sum(F_j) - p$hh / sum(p$hh)))
+}
+
+idaci_summary <- idaci_region %>%
+  group_by(design) %>%
+  summarise(lo = min(dep3), hi = max(dep3), spread = max(dep3) - min(dep3),
+            gorard = gorard(pick(everything())),
+            .groups = "drop") %>%
+  arrange(gorard)
+
+message("\n=== Households with dependent children in the three most deprived deciles ===")
 print(as.data.frame(idaci_summary %>%
   transmute(Design = design,
             `Least deprived region` = sprintf("%.0f%%", 100 * lo),
             `Most deprived region` = sprintf("%.0f%%", 100 * hi),
-            Spread = sprintf("%.0f pp", 100 * spread))), row.names = FALSE)
+            Spread = sprintf("%.0f pp", 100 * spread),
+            Gorard = sprintf("%.3f", gorard))), row.names = FALSE)
+
+# The full decile table: what share of each region's households with
+# dependent children sits in each decile.
+idaci_table <- idaci_profiles %>%
+  select(design, grp, idaci_decile, share) %>%
+  tidyr::complete(tidyr::nesting(design, grp), idaci_decile = 1:10,
+                  fill = list(share = 0))
 
 # ---- What moves against the current map -----------------------------
 
@@ -584,7 +628,8 @@ print(as.data.frame(changed %>% group_by(design) %>%
 saveRDS(list(
   designs = designs, alloc = alloc, regions_sf = regions_sf,
   changed = changed, idaci_profiles = idaci_profiles,
-  idaci_summary = idaci_summary,
+  idaci_summary = idaci_summary, idaci_region = idaci_region,
+  idaci_table = idaci_table,
   regions = list(single = R_SINGLE, paired = R_PAIRED, elm = R_ELM),
   now_assign = now_assign, pd_assign = pd_assign,
   groups_single = GROUPS_SINGLE, groups_paired = GROUPS_PAIRED,

@@ -162,6 +162,25 @@ as_model_catchment <- function(x) {
   out
 }
 
+#' Convert boundary-file keys back to model-side keys.
+#'
+#' The third direction. There were converters for model -> boundary and
+#' for council label -> model, and reading the boundary file straight
+#' into model code needed this one; reaching for as_model_catchment()
+#' instead fails, because that takes the council's display labels
+#' ("Varndean / Dorothy Stringer") and the boundary file uses its own
+#' ("VarndeanStringer").
+as_model_from_boundary <- function(x) {
+  x <- as.character(x)
+  inv <- setNames(names(CATCH_FROM_MODEL), unname(CATCH_FROM_MODEL))
+  out <- unname(inv[x])
+  bad <- !is.na(x) & is.na(out)
+  if (any(bad))
+    stop("unmapped boundary catchment key(s): ",
+         paste(unique(x[bad]), collapse = ", "))
+  out
+}
+
 #' Convert model-side catchment keys to boundary-file keys.
 #' @param x character vector of model keys. NA is allowed: the two faith
 #'   schools admit city-wide and sit outside the geographic framework.
