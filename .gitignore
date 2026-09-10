@@ -5,6 +5,11 @@
 index.knit.md
 slides.knit.md
 
+# ...but not the ones under docs/. Those hold every static figure in the
+# rendered site, and without them a published page shows 21 broken
+# images while rendering perfectly on the machine that built it.
+!/docs/*_files/
+
 # R session
 .Rproj.user/
 .Rhistory
