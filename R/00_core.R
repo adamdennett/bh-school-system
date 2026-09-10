@@ -213,6 +213,16 @@ logo_icon <- function(file, size = 36) {
                     iconAnchorX = -4, iconAnchorY = size + 4)
 }
 
+#' A school's name short enough to label a point or head a table row
+#'
+#' "Portslade Aldridge Community Academy" is four words too long for a
+#' chart label and the distinguishing part is always the first one or
+#' two. The same trim was written out by hand in half a dozen chunks
+#' before it moved here.
+short_sch <- function(x)
+  stringr::str_remove(
+    x, " (School|High School|Community Academy|Catholic School).*")
+
 #' The eleven schools as an sf, in WGS84, with lon/lat columns and a
 #' catchment colour attached.
 schools_sf <- function(schools = NULL) {

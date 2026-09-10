@@ -4107,6 +4107,185 @@ read the with-demand column as a statement about demand rather than a
 forecast of offers.
 :::
 
+
+## Where the model sends the children {#sec-flow-map}
+
+The tables say how many children each school draws. They do not say
+where from, and for Longhill that is most of the question: a school at
+the eastern edge of the city either recruits from its own corner or it
+does not recruit.
+
+```{r flow-map-data}
+#| include: false
+fm <- bh_data("flow_map.rds")
+
+FM_LABELS <- c(M0 = "Brightopia · Wj = 1",
+               M1 = "With demand · Wj = weighted preferences",
+               M4 = "Full model · capacity, catchment, competition")
+
+# One radio-button group per thing that can be shown. Longhill comes
+# first, under each of the three models, because the change between them
+# is the point; every other school follows under the full model only.
+fm_groups <- fm$net %>%
+  st_drop_geometry() %>%
+  distinct(model, name) %>%
+  mutate(is_lh = name == "Longhill High School",
+         label = if_else(
+           is_lh,
+           paste0("Longhill — ", recode(model, !!!as.list(FM_LABELS))),
+           short_sch(name))) %>%
+  arrange(desc(is_lh), match(model, names(FM_LABELS)), label)
+
+fm_net <- fm$net %>%
+  left_join(fm_groups %>% select(model, name, label), by = c("model", "name"))
+
+# One width scale across every group, so a thick line means the same
+# number of children whichever school is showing.
+FM_MAX <- max(fm_net$flow)
+fm_w   <- function(x) 1.1 + 7.5 * sqrt(x / FM_MAX)
+
+FM_COL <- c(Bus = "#2166ac", Walk = "#d95f02")
+
+fm_sch <- schools_sf() %>% filter(name %in% fm_groups$name)
+```
+
+```{r fig-flow-longhill}
+#| fig-cap: "Longhill's modelled intake, routed over the walking and bus network, under each of the three models. Flows are summed onto shared segments, so a corridor used by several neighbourhoods draws thicker. Blue is a bus leg, orange a walking leg."
+#| fig-height: 4.4
+#| column: page
+
+fl <- fm$net %>%
+  filter(name == "Longhill High School") %>%
+  mutate(model = factor(model, names(FM_LABELS), FM_LABELS))
+fl_bb <- st_bbox(fl)
+
+ggplot() +
+  geom_sf(data = catch, fill = NA, colour = "grey80", linewidth = 0.3) +
+  geom_sf(data = fl %>% arrange(flow),
+          aes(linewidth = flow, colour = leg_mode), alpha = 0.75,
+          lineend = "round") +
+  geom_sf(data = fm_sch, colour = "grey45", size = 1.1) +
+  geom_sf(data = fm_sch %>% filter(name == "Longhill High School"),
+          colour = "black", fill = "white", shape = 21, size = 2.8, stroke = 1) +
+  facet_wrap(~ model, nrow = 1) +
+  scale_linewidth_continuous(range = c(0.15, 2.6), guide = "none") +
+  scale_colour_manual(values = FM_COL, name = NULL) +
+  coord_sf(xlim = c(fl_bb["xmin"], fl_bb["xmax"]),
+           ylim = c(fl_bb["ymin"], fl_bb["ymax"])) +
+  labs(title = "Longhill's modelled catchment contracts as the model gets more realistic",
+       subtitle = "The white point is Longhill; grey points are the other nine schools. Grey outlines are the current catchments.",
+       caption = "Open-data model. Modelled flows, not observed journeys.") +
+  theme_bh(11) +
+  theme(axis.text = element_blank(), axis.ticks = element_blank(),
+        panel.grid = element_blank(), legend.position = "top",
+        strip.text = element_text(face = "bold"))
+```
+
+```{r fig-flow-map}
+#| fig-cap: "The same flows, for every school and interactively. Use the control to switch school, and for Longhill to switch between the three models of section 7.4. Blue is a bus leg, orange a walking leg. These are modelled flows from an open-data model: no pupil record is drawn here."
+
+m <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  add_carto("Positron") %>%
+  addPolygons(data = catch, fill = FALSE, color = "#555555",
+              weight = 1, opacity = 0.5, group = "Catchment boundaries")
+
+for (i in seq_len(nrow(fm_groups))) {
+  g <- fm_groups$label[i]
+  d <- fm_net %>% filter(label == g) %>% arrange(flow)
+  m <- m %>%
+    addPolylines(data = d, group = g,
+                 color = ~ unname(FM_COL[leg_mode]),
+                 weight = ~ fm_w(flow), opacity = 0.75,
+                 label = ~ sprintf("%s leg · %.0f children", leg_mode, flow)) %>%
+    addCircleMarkers(
+      data = fm_sch %>% filter(name == fm_groups$name[i]), group = g,
+      radius = 6, color = "#111111", weight = 2, opacity = 1,
+      fillColor = "#ffffff", fillOpacity = 1, label = ~ name)
+}
+
+# Every group is added at once, so leaflet's automatic bounds cover the
+# whole routed network and open at a Sussex-wide zoom. Frame the city.
+fm_bb <- st_bbox(fm_net %>% filter(name == "Longhill High School"))
+
+m %>%
+  fitBounds(lng1 = unname(fm_bb["xmin"]) - 0.01, lat1 = unname(fm_bb["ymin"]) - 0.005,
+            lng2 = unname(fm_bb["xmax"]) + 0.01, lat2 = unname(fm_bb["ymax"]) + 0.005) %>%
+  addLayersControl(baseGroups = fm_groups$label,
+                   overlayGroups = "Catchment boundaries",
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  hideGroup("Catchment boundaries") %>%
+  addLegend("bottomright", colors = unname(FM_COL), labels = names(FM_COL),
+            title = "Leg", opacity = 0.8)
+```
+
+```{r flow-stats}
+#| include: false
+lh_catch <- fm$by_catch %>% filter(name == "Longhill High School")
+lh_own   <- lh_catch %>% filter(catchment == "Longhill")
+lh_tot   <- lh_catch %>% group_by(model) %>%
+  summarise(total = sum(flow), .groups = "drop")
+lh_j     <- lh_own %>% left_join(lh_tot, by = "model")
+g_of     <- function(m, col) lh_j[[col]][lh_j$model == m]
+```
+
+**Longhill's modelled catchment contracts as the model gets more
+realistic**, and that is the striking thing in this map. Under
+Brightopia, with every school equally attractive, it draws
+`r fmt_n(g_of("M0", "total"))` children and only
+`r fmt_pct(100 * g_of("M0", "share"), 0)` of them come from its own
+catchment --- the model has it reaching deep into Kemptown, Whitehawk
+and beyond. Add what families actually ask for and the total falls to
+`r fmt_n(g_of("M1", "total"))`; add the capacity ceiling and the other
+terms and it settles at `r fmt_n(g_of("M4", "total"))` children,
+**`r fmt_pct(100 * g_of("M4", "share"), 0)`** of them from the Longhill
+catchment.
+
+```{r tbl-flow-origin}
+#| tbl-cap: "Where Longhill's modelled intake comes from, by the home catchment of the neighbourhood it starts in, under each of the three models."
+
+lh_catch %>%
+  mutate(model = recode(model, !!!as.list(FM_LABELS)),
+         flow = round(flow)) %>%
+  select(catchment, model, flow) %>%
+  pivot_wider(names_from = model, values_from = flow, values_fill = 0) %>%
+  arrange(desc(.data[[FM_LABELS[["M4"]]]])) %>%
+  rename(`Home catchment of the neighbourhood` = catchment) %>%
+  knitr::kable(align = "lrrr")
+```
+
+Read west to east, the map is an argument about siting. The trunk into
+Longhill is a single corridor along the coast road and over the downs,
+and it is thick only at the eastern end. Under the full model there is
+almost nothing coming from west of the Steine --- not because those
+children are forbidden to go, but because on a routed journey time they
+have closer schools that are also more wanted.
+
+::: {.callout-note appearance="simple"}
+## How to read the lines, and what they are not
+
+**The lines are real routes.** Each zone-to-school journey is routed
+with `r5r` over the same merged OSM and GTFS network the journey times
+in @sec-benchmarks come from, on the same weekday morning. A walking leg
+follows the street network; a bus leg follows the service's own shape.
+
+**The widths are added along the way.** Flows are summed onto shared
+segments, so a road used by six neighbourhoods carries the sum of all
+six. That is what produces the trunk-and-branch shape, and it is why a
+line's thickness is a statement about a corridor rather than about any
+one neighbourhood.
+
+**The flows are modelled, not observed.** Nobody's journey is drawn
+here. This is where the model sends children, which is precisely the
+thing @sec-brightopia-observed and @sec-model-terms test against the
+offers actually made --- and on that test the full model gets four of
+the five rationed schools right and misses Cardinal Newman and Hove
+Park. The map should be read with those two misses in mind.
+
+**Journeys that need more than 30 minutes of walking are not drawn.**
+The routing caps walking legs, so a handful of zone-school pairs return
+no itinerary and drop out of the picture. They are in the tables.
+:::
+
 ## What happens when you put demand back in {#sec-brightopia-demand}
 
 @fig-brightopia asked what the map alone would do. It is a deliberately
@@ -4347,9 +4526,6 @@ Brightopia. Each model below turns one more of them on.
 
 ```{r mt-helpers}
 #| include: false
-
-short_sch <- function(x)
-  str_remove(x, " (School|High School|Community Academy|Catholic School).*")
 
 pan_lu <- oi$attract %>%
   select(name, pan) %>%
