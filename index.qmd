@@ -5036,31 +5036,66 @@ fr$designs %>%
   knitr::kable(align = "lrrrrr")
 ```
 
-**The proximity design wins most of this, and that was not what the
-exercise expected.** The power diagram more than halves the worst
-capacity gap, from `r sprintf("%+.0f%%", 100 * d_now$worst_gap)` to
-`r sprintf("%+.0f%%", 100 * d_pd$worst_gap)`, improves self-containment
-a little, adds `r sprintf("%.1f", d_pd$mean_journey - d_now$mean_journey)`
-minutes to the average journey, and does it while moving the fewest
-neighbourhoods of any design here.
+```{r tbl-shape-audit}
+#| tbl-cap: "Whether each design is a usable map. A fragment is a piece of a catchment detached from the rest of it. An enclave is a catchment wholly surrounded by one other, which a contiguity check misses because a ring is connected. The last column counts schools that fall outside their own catchment. The current map is scored on its whole-LSOA approximation, which is why it shows faults the published boundaries do not have."
 
-**The flow regions win the statistic they were built to win**, and only
-that one. Keeping the council's pairings gives the best self-containment
-of any design, `r fmt_pct(100 * d_pair$self_containment, 0)` against
-`r fmt_pct(100 * d_now$self_containment, 0)` now --- but at
+fr$designs %>%
+  transmute(Design = design, Fragments = fragments, Enclaves = enclaves,
+            `Schools outside their own catchment` = schools_outside) %>%
+  knitr::kable(align = "lrrr")
+```
+
+**Three of the five designs are clean maps.** The power diagram and both
+paired flow designs have no detached pieces, no islands and every school
+inside its own catchment. Getting there took three rules that a
+capacity-balancing algorithm does not enforce on its own, and each was
+added because the first attempt broke it:
+
+- **A catchment must contain its own school.** Without it the relocation
+  design put the Elm Grove site inside BACA's region and left Longhill
+  with nine neighbourhoods on the far side of the city.
+- **An island counts as a fault.** A region can be in one piece and
+  still enclose another; a contiguity test passes it because a ring is
+  connected. The power diagram arrived with three.
+- **Repair by accessibility, not by flow.** When a piece has to move, it
+  joins whichever neighbouring catchment its children can reach
+  quickest. Repairing by modelled flow instead sent boundaries over
+  hills.
+
+Regions on the coast or at the city edge have one land neighbour and
+are not islands, so the edge of the study area is exempt --- a test that
+did not exempt it flagged Longhill and PACA as enclaves in every design.
+
+**Splitting the paired catchments fails this audit**, which is a cleaner
+answer than the statistics gave. One region per school leaves
+`r d_one$schools_outside` schools outside their own catchment, because
+Dorothy Stringer and Varndean are 470 metres apart and no contiguous
+capacity-balanced boundary can separate them. That is the flows saying
+what the council already knows.
+
+**The proximity design balances capacity best.** The power diagram takes
+the worst capacity gap from
+`r sprintf("%+.0f%%", 100 * d_now$worst_gap)` to
+`r sprintf("%+.0f%%", 100 * d_pd$worst_gap)` --- a quarter of what the
+current map carries --- while moving the fewest neighbourhoods of any
+alternative, and it adds
+`r sprintf("%.1f", d_pd$mean_journey - d_now$mean_journey)` minutes to
+the average journey to a catchment school.
+
+**The flow regions win the statistic they were built to win.** Keeping
+the council's pairings gives the best self-containment of any design,
+`r fmt_pct(100 * d_pair$self_containment, 0)` against
+`r fmt_pct(100 * d_now$self_containment, 0)` now, for
 `r sprintf("%.1f", d_pair$mean_journey - d_now$mean_journey)` extra
-minutes and a worse capacity balance than the power diagram. Boundaries
-drawn round where children *want* to go are not boundaries that get them
-there quickly.
+minutes. But it does not improve on the power diagram anywhere else, and
+the power diagram does not improve on the current map's
+self-containment at all --- `r fmt_pct(100 * d_pd$self_containment, 0)`
+against `r fmt_pct(100 * d_now$self_containment, 0)`.
 
-**Splitting the paired catchments fails.** One region per school gets
-capacity to `r sprintf("%+.0f%%", 100 * d_one$worst_gap)` but leaves
-self-containment exactly where the current map has it, at
-`r fmt_pct(100 * d_one$self_containment, 0)`. That is the flows saying
-what the council already knows: Dorothy Stringer and Varndean are 470
-metres apart, and no boundary between them corresponds to anything
-families do. On the map that design is the one where Dorothy Stringer
-becomes a thin strip along the coast.
+So the two methods answer different questions and neither dominates.
+Proximity-and-capacity produces the better-balanced, more compact map.
+Demand produces the map more children's first choice sits inside.
+
 
 ## The deprivation profile of each design {#sec-fr-idaci}
 
@@ -5083,7 +5118,12 @@ i_pair <- is_ %>% filter(str_detect(design, "pairs kept"))
 i_one  <- is_ %>% filter(str_detect(design, "one per school"))
 i_elm  <- is_ %>% filter(str_detect(design, "Elm Grove"))
 i_best <- fr$idaci_summary %>% slice_min(gorard, n = 1)
-i_worse <- fr$idaci_summary %>% filter(gorard > i_now$gorard)
+# Tolerant comparison: one design lands on the current map's index to
+# three decimal places, and a bare > would report it as worse or better
+# depending on the last bit of a float.
+i_worse <- fr$idaci_summary %>% filter(gorard > i_now$gorard + 5e-4)
+i_same  <- fr$idaci_summary %>%
+  filter(!str_detect(design, "Current"), abs(gorard - i_now$gorard) <= 5e-4)
 ```
 
 ```{r tbl-idaci-deciles}
@@ -5141,14 +5181,14 @@ It gets there by having no catchment above
 `r fmt_pct(100 * i_pd$hi, 0)`, where the current map has one at
 `r fmt_pct(100 * i_now$hi, 0)`.
 
-**Two of the four alternatives are *worse* than the current map**, and
-the reason is worth understanding, because the obvious summary statistic
-hides it. Look at the spread column: the flow-paired design has the
-narrowest range of any design here,
+**`r nrow(i_worse)` of the four alternatives are *worse* than the
+current map, and `r nrow(i_same)` matches it**, which the obvious
+summary statistic hides. Look at the spread column: the flow-paired
+design has the narrowest range of any design here,
 `r sprintf("%.0f", 100 * i_pair$spread)` points against
 `r sprintf("%.0f", 100 * i_now$spread)` for the current map. On that
-measure it looks like the clear winner. On Gorard it is
-`r sprintf("%.3f", i_pair$gorard)`, second worst.
+measure it is the clear winner. On Gorard it is
+`r sprintf("%.3f", i_pair$gorard)` --- the same as the map it replaces.
 
 The two disagree because **a narrow range says nothing about how many
 households sit at each end**. The current map's most deprived catchment
@@ -5167,10 +5207,11 @@ was less segregated than the current map. That was computed as the
 range between the least and most deprived catchment, and on that
 statistic it was true.
 
-It does not survive being measured properly.
-`r nrow(i_worse)` of the four alternatives spread disadvantage *less*
-evenly than the map in force once catchment size is taken into account.
-The claim has been withdrawn and the ranking above is by Gorard.
+It does not survive being measured properly. Once catchment size is
+taken into account, `r nrow(i_worse)` of the four alternatives spread
+disadvantage *less* evenly than the map in force and
+`r nrow(i_same)` matches it. The claim has been withdrawn and the
+ranking above is by Gorard.
 
 What survives is narrower and still worth having: **one design, the
 power diagram, is clearly better than the current map on this measure**,
@@ -5199,31 +5240,65 @@ a_pair <- fr$alloc %>% filter(str_detect(design, "pairs kept"))
 a_elm  <- fr$alloc %>% filter(str_detect(design, "Elm Grove"))
 a_pd   <- fr$alloc %>% filter(str_detect(design, "Power"))
 elm_moved <- fr$changed %>% filter(str_detect(design, "Elm Grove"))
+ec <- fr$east_check
+ec_near <- names(sort(table(ec$nearest), decreasing = TRUE))[1]
+ec_to   <- names(sort(table(ec$assigned), decreasing = TRUE))[1]
+ec_t1 <- weighted.mean(ec$t_near, ec$Oi); ec_t2 <- weighted.mean(ec$t_assigned, ec$Oi)
 ```
 
-Relocating the school and redrawing round it gives the **best capacity
-balance of any design here**,
-`r sprintf("%+.0f%%", 100 * d_elm$worst_gap)`, and lifts
-self-containment to `r fmt_pct(100 * d_elm$self_containment, 0)`. It
-also has the **longest journeys** of any design,
-`r sprintf("%.1f", d_elm$mean_journey)` minutes against
+It gives the **best capacity balance of the flow designs**,
+`r sprintf("%+.0f%%", 100 * d_elm$worst_gap)`, and it places
+`r fmt_pct(100 * a_elm$local_share, 0)` of children in their own
+catchment, the highest of any design. It also has the **longest
+journeys**, `r sprintf("%.1f", d_elm$mean_journey)` minutes against
 `r sprintf("%.1f", d_now$mean_journey)` now, and it moves
 `r fmt_pct(100 * sum(elm_moved$Oi[elm_moved$moved]) / sum(elm_moved$Oi), 0)`
 of the cohort into a different catchment --- much the largest upheaval
 on offer.
 
-And on deprivation it is the **weakest design here**, with a Gorard
-index of `r sprintf("%.3f", i_elm$gorard)` against
+::: {.callout-important appearance="simple"}
+## The east of the city is the problem, and the map shows it
+
+The Stringer/Varndean catchment in this design reaches from Varndean to
+Saltdean. That is an odd-looking boundary and the temptation is to treat
+it as a defect of the algorithm. It is not: it is the algorithm
+reporting something real.
+
+For **all `r nrow(ec)`** of the easternmost neighbourhoods, the
+relocated Longhill is still the **most accessible** school ---
+`r sprintf("%.0f", ec_t1)` minutes on average, because the coast road
+reaches Elm Grove before it reaches Varndean. They are assigned to
+`r fr_lab(ec_to)` instead, at `r sprintf("%.0f", ec_t2)` minutes: a
+penalty of about **`r sprintf("%.0f", ec_t2 - ec_t1)` minutes each way**.
+
+They are assigned there because there is nowhere else. At an admission
+number of `r fr$elm_pan` the relocated Longhill is already full on its
+own doorstep, and BACA is exactly at its capacity. The two schools the
+east can reach have no room, so the east attaches to one it cannot.
+
+**That is a finding about the configuration, not about the boundary.**
+Moving Longhill west and shrinking it at the same time leaves the
+eastern edge of the city without a school within reach. The map can
+only record that; it cannot fix it. A relocation at a larger admission
+number, or a relocation without one, would draw a different map --- and
+this is the question a redesign should be asked before a boundary is.
+:::
+
+And on deprivation it is among the **weakest designs here**, with a
+Gorard index of `r sprintf("%.3f", i_elm$gorard)` against
 `r sprintf("%.3f", i_now$gorard)` for the map in force and
 `r sprintf("%.3f", i_pd$gorard)` for the power diagram. Moving the
 school west moves its catchment west, into the part of the city the
-current map already separates out, and the new boundary reproduces much
-of that separation while making the catchment that carries it larger.
+current map already separates out, and the boundary that results
+reproduces much of that separation while making the catchment carrying
+it larger.
 
 So the relocation that @sec-longhill finds best for Longhill is the
-redesign that spreads disadvantage least evenly. That is not an argument
-against moving the school. It is an argument for not letting the
-catchment map follow it without being drawn deliberately.
+redesign that spreads disadvantage least evenly and strands the east.
+That is not an argument against moving the school. It is an argument
+against letting the catchment map follow it without being drawn
+deliberately, and for asking what happens to Ovingdean, Rottingdean and
+Saltdean before rather than after.
 
 ## What the over-subscription rule does {#sec-fr-allocation}
 
