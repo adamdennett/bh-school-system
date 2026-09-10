@@ -2411,6 +2411,123 @@ its first preferences with Dorothy Stringer, and Cardinal Newman because
 it admits city-wide on faith criteria, so what it is asked for and what
 it allocates diverge from what it is sized for.
 
+::: {.callout-note collapse="true"}
+## What the decay does, and which years it is measured over
+
+Two choices sit inside $W_j$ that are easy to skate over. Neither is
+obviously right, and both change what individual schools look like.
+
+```{r pref-sensitivity}
+#| include: false
+
+pfs <- fp$factsheets %>% filter(name != "Total")
+ymax <- max(pfs$year); ymin <- min(pfs$year)
+pans <- oi$attract %>% select(name, pan)
+DECAY_A <- acc$pref$decay
+
+w_spec <- function(from, a) {
+  pfs %>% filter(year >= from) %>%
+    group_by(name) %>%
+    summarise(s = mean(pref1 + a * pref2 + a^2 * pref3), .groups = "drop") %>%
+    right_join(pans, by = "name") %>%
+    mutate(s = if_else(is.na(s), pan * mean(s / pan, na.rm = TRUE), s),
+           W = s / mean(s)) %>%
+    select(name, W)
+}
+
+alphas <- c(0, 0.25, 0.5, 0.75, 1)
+w_alpha <- purrr::reduce(
+  lapply(alphas, function(a)
+    w_spec(ymax - 4, a) %>% rename(!!sprintf("%.2f", a) := W)),
+  full_join, by = "name")
+
+w_win <- purrr::reduce(list(
+  w_spec(ymax, DECAY_A) %>% rename(`Latest year only` = W),
+  w_spec(ymax - 4, DECAY_A) %>% rename(`Last 5 years (used)` = W),
+  w_spec(ymin, DECAY_A) %>% rename(`Whole series` = W)),
+  full_join, by = "name")
+
+# Year-to-year instability, which is the argument against a single year.
+w_cv <- pfs %>%
+  filter(year >= ymax - 4) %>%
+  mutate(s = pref1 + DECAY_A * pref2 + DECAY_A^2 * pref3) %>%
+  group_by(year) %>% mutate(W = s / mean(s)) %>% ungroup() %>%
+  group_by(name) %>%
+  summarise(cv = sd(W) / mean(W), .groups = "drop") %>%
+  arrange(desc(cv))
+
+win_rho <- cor(w_win$`Latest year only`, w_win$`Whole series`, method = "spearman")
+lh_win <- w_win %>% filter(str_detect(name, "Longhill"))
+hp_alp <- w_alpha %>% filter(str_detect(name, "Hove Park"))
+```
+
+**The decay, $\alpha$.** A first preference counts 1, a second
+$\alpha$, a third $\alpha^2$. At the value used,
+$\alpha = `r DECAY_A`$, a second choice is worth half a first and a
+third a quarter. The geometric form is a modelling convenience rather
+than a measured fact --- it says the drop from first to second is the
+same proportion as the drop from second to third, which nothing in the
+data establishes.
+
+$\alpha = 0$ reduces to counting first preferences only; $\alpha = 1$
+counts all three equally.
+
+```{r tbl-alpha}
+#| tbl-cap: "Attractiveness weight under different decay values, five-year window. The paired-catchment schools move most, because their second preferences are the ones the catchment structure generates."
+w_alpha %>%
+  arrange(desc(`0.50`)) %>%
+  mutate(across(where(is.numeric), ~ sprintf("%.2f", .x))) %>%
+  rename(School = name) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+**Hove Park** ranges from `r sprintf("%.2f", hp_alp[["0.00"]])` at
+$\alpha = 0$ to `r sprintf("%.2f", hp_alp[["1.00"]])` at $\alpha = 1$ ---
+close to a doubling, and the clearest illustration of what the choice
+does. Schools whose demand arrives as second preferences gain as
+$\alpha$ rises; schools whose demand is overwhelmingly first-choice, like
+Cardinal Newman, lose. The *ordering* is fairly stable throughout
+(Spearman `r sprintf("%.2f", cor(w_alpha[["0.00"]], w_alpha[["1.00"]], method = "spearman"))`
+between the extremes); the magnitudes are not.
+
+**The window.** The maps and models below use a **five-year average, the
+`r ymax - 4`--`r ymax` admissions rounds**. That is a compromise, and it
+is worth seeing what the alternatives would give.
+
+```{r tbl-window}
+#| tbl-cap: "The same weight measured over three different windows. Averaging over the whole series flatters the schools whose demand has fallen, because it includes the years before it fell."
+w_win %>%
+  arrange(desc(`Last 5 years (used)`)) %>%
+  mutate(across(where(is.numeric), ~ sprintf("%.2f", .x))) %>%
+  rename(School = name) %>%
+  knitr::kable(align = "lrrr")
+```
+
+The differences are not small. **Longhill scores
+`r sprintf("%.2f", lh_win[["Latest year only"]])` on the most recent
+year and `r sprintf("%.2f", lh_win[["Whole series"]])` across the whole
+series** --- and the two windows rank the schools differently
+(Spearman `r sprintf("%.2f", win_rho)`).
+
+That gap is not noise. It is section 5.3 showing up in a different
+place: demand has moved so much over the published series that a
+sixteen-year average describes a city that no longer exists, and
+systematically flatters the schools that have declined.
+
+So why not use the latest year alone? Because section 2.6's point about
+small numbers applies here too. Across the five years used, the
+year-to-year coefficient of variation in $W$ is
+`r fmt_pct(100 * w_cv$cv[1], 0)` for
+`r w_cv$name[1]` and `r fmt_pct(100 * w_cv$cv[2], 0)` for
+`r w_cv$name[2]` --- the two smallest and least subscribed schools. A
+single year would make exactly the schools this document is about the
+least reliably measured.
+
+Five years is short enough to describe the current system and long
+enough to damp that. It is a judgement, not a derivation, and a reader
+who preferred three or seven would not be wrong.
+:::
+
 ::: {.callout-note appearance="simple"}
 ## And the surface barely notices
 
@@ -3271,6 +3388,171 @@ admissions problem, and the authority is not a neutral party in it,
 because the authority publishes the guide.
 
 ::: {.callout-note appearance="simple"}
+
+### Does the answer depend on which preference you count? {#sec-choice-ranks}
+
+The chart above counts first preferences. Section 4.5 argued that first
+preferences alone distort the picture, because the paired catchments
+force families to rank two local schools against each other. So it is
+worth asking whether the finding survives counting the other ranks.
+
+```{r rank-choice-data}
+#| include: false
+
+# Preference counts at each rank, five-year mean, joined to attainment
+# and value added. The factsheets call it "Hove Park School" and the
+# performance data "Hove Park School and Sixth Form Centre", so the join
+# goes through the URN in oi$attract rather than the name.
+rank_prefs <- fp$factsheets %>%
+  filter(name != "Total", year >= max(year) - 4) %>%
+  group_by(name) %>%
+  summarise(p1 = mean(pref1), p2 = mean(pref2), p3 = mean(pref3),
+            .groups = "drop") %>%
+  inner_join(oi$attract %>% select(urn, name), by = "name")
+
+stopifnot(nrow(rank_prefs) == 10)
+
+rank_dat <- os$choice %>%
+  select(urn, school, pan, att8, va) %>%
+  inner_join(rank_prefs %>% select(-name), by = "urn") %>%
+  mutate(`First preferences`  = p1 / pan,
+         `Second preferences` = p2 / pan,
+         `Third preferences`  = p3 / pan,
+         `Weighted (ranks 1-3)` = (p1 + DECAY_A * p2 + DECAY_A^2 * p3) / pan)
+
+stopifnot(nrow(rank_dat) == 10)
+
+MEASURES <- c("First preferences", "Second preferences",
+              "Third preferences", "Weighted (ranks 1-3)")
+
+rank_long <- rank_dat %>%
+  select(school, att8, va, all_of(MEASURES)) %>%
+  pivot_longer(all_of(MEASURES), names_to = "measure", values_to = "per_place") %>%
+  pivot_longer(c(att8, va), names_to = "predictor", values_to = "x") %>%
+  mutate(measure = factor(measure, MEASURES),
+         predictor = factor(predictor, c("att8", "va"),
+                            c("Attainment 8 (headline)",
+                              "Value added (Lever report)")))
+
+# R-squared for every measure-by-predictor pair, on ten schools.
+rank_fit <- rank_long %>%
+  group_by(measure, predictor) %>%
+  summarise(r2 = summary(lm(per_place ~ x))$r.squared,
+            slope = coef(lm(per_place ~ x))[2], .groups = "drop")
+```
+
+```{r fig-choice-ranks}
+#| fig-cap: "Preferences per place at each rank, against headline attainment and against value added. Each point is a school; the dashed line is the fit and the figure in each panel is its R-squared."
+#| fig-height: 8
+
+rank_long %>%
+  left_join(rank_fit, by = c("measure", "predictor")) %>%
+  ggplot(aes(x, per_place)) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+              colour = "grey35", linewidth = 0.7, linetype = "22") +
+  geom_point(aes(colour = predictor), size = 2.4, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("R² = %.2f", r2)),
+            x = -Inf, y = Inf, hjust = -0.15, vjust = 1.4, size = 3.2,
+            check_overlap = TRUE) +
+  facet_grid(measure ~ predictor, scales = "free", switch = "y") +
+  scale_colour_manual(values = c("Attainment 8 (headline)" = "#b2182b",
+                                 "Value added (Lever report)" = "#2166ac")) +
+  labs(x = NULL, y = "Preferences per place",
+       title = "Families track the headline score at every rank",
+       subtitle = "Ten schools, five-year means. Left column: headline attainment. Right: value added.",
+       caption = "Sources: BHCC factsheets; DfE performance tables; How to Pull the Right Lever.") +
+  theme_bh(11) +
+  theme(strip.text.y.left = element_text(angle = 0, hjust = 0, face = "bold"),
+        strip.placement = "outside")
+```
+
+```{r tbl-choice-ranks}
+#| tbl-cap: "How much of each preference measure the two attainment measures explain. Ten schools, so these are descriptive rather than inferential."
+
+rank_fit %>%
+  mutate(r2 = sprintf("%.2f", r2)) %>%
+  pivot_wider(id_cols = measure, names_from = predictor, values_from = r2) %>%
+  rename(`Preference measure` = measure) %>%
+  knitr::kable(align = "lrr")
+```
+
+```{r rank-stats}
+#| include: false
+att_lab <- "Attainment 8 (headline)"; va_lab <- "Value added (Lever report)"
+g <- function(m, p) rank_fit$r2[rank_fit$measure == m & rank_fit$predictor == p]
+r_p1 <- g("First preferences", att_lab)
+r_p2 <- g("Second preferences", att_lab)
+r_p3 <- g("Third preferences", att_lab)
+r_pw <- g("Weighted (ranks 1-3)", att_lab)
+v_p1 <- g("First preferences", va_lab)
+v_pw <- g("Weighted (ranks 1-3)", va_lab)
+```
+
+The answer is that it survives, it strengthens, and there is one
+exception worth dwelling on.
+
+**It strengthens.** The weighted measure gives the *strongest*
+association of all with headline attainment, R²
+`r sprintf("%.2f", r_pw)` against `r sprintf("%.2f", r_p1)` for first
+preferences alone. Counting the other ranks does not dilute the finding;
+it sharpens it. So the association in the chart above is not an artefact
+of looking only at firsts --- if anything, firsts understate it.
+
+**Attainment's grip weakens down the ranks.** It explains
+`r sprintf("%.2f", r_p1)` of first preferences,
+`r sprintf("%.2f", r_p2)` of seconds and `r sprintf("%.2f", r_p3)` of
+thirds. That is what you would expect if the headline score is what
+families reach for when choosing freely, while lower preferences are
+increasingly shaped by catchment structure and proximity.
+
+**And then the exception.** At second preferences, and *only* there,
+value added explains almost as much as attainment does ---
+`r sprintf("%.2f", g("Second preferences", va_lab))` against
+`r sprintf("%.2f", r_p2)`. On first preferences value added manages
+`r sprintf("%.2f", v_p1)`; on thirds,
+`r sprintf("%.2f", g("Third preferences", va_lab))`, which is nothing at
+all.
+
+```{r loo-check}
+#| include: false
+# With ten points a single school can manufacture an R-squared, so the
+# second-preference result is checked by refitting without each school
+# in turn.
+loo_r2 <- vapply(seq_len(nrow(rank_dat)), function(i)
+  summary(lm(rank_dat$`Second preferences`[-i] ~ rank_dat$va[-i]))$r.squared,
+  numeric(1))
+```
+
+That is robust to dropping any one school --- refitting ten times
+without each in turn gives R² between
+`r sprintf("%.2f", min(loo_r2))` and `r sprintf("%.2f", max(loo_r2))`,
+so it is not one point doing the work. What it means is a different
+question, and an honest answer is that this cannot settle it. A second
+preference is chosen with the first already committed, often between two
+schools in the same paired catchment that a family knows something
+about beyond the league table. Whether that is families accessing better
+information at the margin, or something about how paired catchments
+generate second preferences in the first place, ten schools cannot say.
+
+::: {.callout-warning appearance="simple"}
+## Ten points
+
+Every panel here is fitted on ten schools. That is enough to show an
+association and nowhere near enough to separate attainment from the
+things correlated with it --- intake, location, reputation, or the
+Ofsted grade families may actually be reading. Nothing here identifies
+what causes what.
+
+The point is narrower: **the relationship with the headline score is not
+an artefact of which preference rank you count.** That is worth
+establishing, because it is the obvious objection to the single chart
+above, and it is the objection the council could most easily raise.
+
+The second-preference result should be read as a question rather than a
+finding. It is the kind of thing the council's own preference records
+would settle in an afternoon, and section 9 asks for them.
+:::
+
 ## What pupil-level data would add here
 
 This is a school-level association across ten schools --- ten points.
