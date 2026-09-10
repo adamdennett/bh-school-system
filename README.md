@@ -35,7 +35,20 @@ repository. It needs the upstream projects present on the same machine:
 source("R/01_assemble.R")      # once, to populate data/
 source("R/02_accessibility.R") # once, after assembly
 quarto::quarto_render()        # or: quarto render
+source("R/99_verify_render.R") # check the output before publishing
 ```
+
+`99_verify_render.R` exists because the basemap key reaches the page
+through a shim that shadows `leaflet::addProviderTiles()`, and shadowing
+fails **quietly**: if the shim does not take effect the real function
+runs, the tiles come back watermarked, and nothing in the render output
+says so. It has happened twice, both times spotted only by looking at a
+map. The check reads the rendered HTML and fails if any CARTO layer is
+unkeyed, if `leaflet-providers` has been loaded (the signature of the
+shim being bypassed), or if either required attribution is missing.
+
+Render with `quarto render` rather than through a running `quarto
+preview` server. A preview re-render was the one that dropped the shim.
 
 Once `data/` is populated the repository is self-contained and renders
 anywhere.
