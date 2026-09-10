@@ -451,14 +451,58 @@ regionalise <- function(w, groups, tol = 0.05, max_moves = 400, seed = NULL) {
     if (!done) break
   }
 
-  # A final repair, because balancing can still leave a stray island,
-  # then a check that it did not undo the capacity work.
+  # ---- 4. Smooth the ragged edges ------------------------------------
+  # A neighbourhood can pass the island test and still be a sliver: one
+  # neighbour of seven in its own catchment and the rest in someone
+  # else's. Two of these faced each other across Elm Grove - a BACA
+  # tongue reaching down to St Luke's, and a Stringer/Varndean one
+  # reaching up past it - each nearly surrounded by the other.
+  #
+  # Any neighbourhood with at most one neighbour of its own joins
+  # whichever adjacent catchment it can reach quickest, provided that
+  # keeps both catchments in one piece and island-free. This is the
+  # standard tidying pass of a regionalisation and it costs a little
+  # capacity balance, which is reported rather than hidden.
+  own_nbrs <- function(a, l) {
+    n <- a$grp[match(NB[[l]], a$lsoa)]
+    sum(n == a$grp[a$lsoa == l], na.rm = TRUE)
+  }
+  # The pass is capacity-aware. Smoothing purely on accessibility tidied
+  # the map and undid the balancing with it - the relocation design went
+  # from 73% over to 116% - so a sliver only moves into a catchment that
+  # has room, or out of one that is over its target.
+  smoothed <- 0
+  for (p in seq_len(10)) {
+    cur <- size(assign)
+    moved <- 0
+    for (l in setdiff(assign$lsoa, names(PINNED))) {
+      if (own_nbrs(assign, l) > 1) next
+      here <- assign$grp[assign$lsoa == l]
+      cand <- setdiff(unique(assign$grp[match(NB[[l]], assign$lsoa)]), c(NA, here))
+      if (!length(cand)) next
+      best <- cand[which.min(sapply(cand, acc_to, ls = l))]
+      if (acc_to(l, best) >= acc_to(l, here)) next
+      room_there <- cur[[best]] <= target[[best]] * (1 + tol)
+      spare_here <- cur[[here]] >= target[[here]] * (1 - tol)
+      if (!room_there && !spare_here) next
+      trial <- set_grp(assign, l, best)
+      if (clean(trial, c(here, best))) {
+        d <- w$demand$demand[w$demand$lsoa == l]
+        cur[[here]] <- cur[[here]] - d; cur[[best]] <- cur[[best]] + d
+        assign <- trial; moved <- moved + 1; smoothed <- smoothed + 1
+      }
+    }
+    if (!moved) break
+  }
+
+  # A final repair, because balancing and smoothing can still leave a
+  # stray island, then a check that it did not undo the capacity work.
   assign <- repair(assign)
 
   cur <- size(assign)
   list(assign = assign %>% select(lsoa, region, grp), dominant = dominant,
        groups = groups, target = target, moves = m, world = w$label,
-       pinned = PINNED,
+       pinned = PINNED, smoothed = smoothed,
        final = tibble(grp = names(target), demand = unname(cur[names(target)]),
                       target = unname(target), places = unname(places)) %>%
          mutate(gap = demand / target - 1))
@@ -531,8 +575,8 @@ R_PAIRED <- regionalise(W_NOW, GROUPS_PAIRED)
 R_ELM    <- regionalise(W_ELM, GROUPS_PAIRED)
 R_ELM210 <- regionalise(W_ELM210, GROUPS_PAIRED)
 for (r in list(R_SINGLE, R_PAIRED, R_ELM, R_ELM210))
-  message(sprintf("    %-28s %d moves, worst gap %+.0f%%",
-                  r$world, r$moves, 100 * max(abs(r$final$gap))))
+  message(sprintf("    %-24s %3d moves, %2d slivers smoothed, worst gap %+.0f%%",
+                  r$world, r$moves, r$smoothed, 100 * max(abs(r$final$gap))))
 
 # ---- The catchments now, and the power-diagram design ----------------
 # The power diagram in the open bundle is the other method already in
@@ -604,8 +648,19 @@ audit <- function(a, groups, label, w) {
       if (length(nbr) == 1 && !any(k %in% outer_edge)) encl <- encl + 1
     }
   }
+  # Ragged edges: neighbourhoods with at most one neighbour of their own
+  # catchment. Not islands - they pass the enclave test - but they read
+  # as slivers on a map and they are what a reader notices. The current
+  # map has a BACA tongue reaching down past St Luke's pool and two
+  # Stringer/Varndean ones reaching up past Elm Grove, facing each other.
+  ragged <- sum(vapply(a$lsoa, function(l) {
+    n <- a$grp[match(NB[[l]], a$lsoa)]
+    sum(n == a$grp[a$lsoa == l], na.rm = TRUE) <= 1
+  }, logical(1)))
+
   got <- a$grp[match(home$lsoa, a$lsoa)]
   tibble(design = label, fragments = frag, enclaves = encl,
+         ragged = ragged,
          schools_outside = sum(got != home$want, na.rm = TRUE))
 }
 
@@ -1003,7 +1058,8 @@ saveRDS(list(
   east_check = east_check,
   idaci_summary = idaci_summary, idaci_region = idaci_region,
   idaci_table = idaci_table,
-  regions = list(single = R_SINGLE, paired = R_PAIRED, elm = R_ELM),
+  regions = list(single = R_SINGLE, paired = R_PAIRED, elm = R_ELM,
+                 elm210 = R_ELM210),
   now_assign = now_assign, pd_assign = pd_assign,
   groups_single = GROUPS_SINGLE, groups_paired = GROUPS_PAIRED,
   groups_now = GROUPS_NOW, lsoa_children = lsoa_children,

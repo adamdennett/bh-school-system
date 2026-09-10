@@ -4929,6 +4929,12 @@ d_one  <- fr_get("one per school")
 d_pair <- fr_get("pairs kept")
 d_elm  <- fr_get("Elm Grove, PAN 150")
 d_e210 <- fr_get("Elm Grove, PAN 210")
+
+# Region codes are the model's vocabulary; CATCH_LABELS is keyed on the
+# boundary file's, and the one-per-school design keys on school names.
+fr_lab <- function(x) ifelse(x %in% names(CATCH_FROM_MODEL),
+                             unname(CATCH_LABELS[CATCH_FROM_MODEL[x]]),
+                             short_sch(x))
 ```
 
 ::: {.callout-note appearance="simple"}
@@ -5038,12 +5044,13 @@ fr$designs %>%
 ```
 
 ```{r tbl-shape-audit}
-#| tbl-cap: "Whether each design is a usable map. A fragment is a piece of a catchment detached from the rest of it. An enclave is a catchment wholly surrounded by one other, which a contiguity check misses because a ring is connected. The last column counts schools that fall outside their own catchment. The current map is scored on its whole-LSOA approximation, which is why it shows faults the published boundaries do not have."
+#| tbl-cap: "Whether each design is a usable map. A fragment is a piece of a catchment detached from the rest of it. An enclave is a catchment wholly surrounded by one other, which a contiguity check misses because a ring is connected. A ragged neighbourhood has at most one neighbour in its own catchment — not an island, but a sliver. The last column counts schools that fall outside their own catchment. The current map is scored on its whole-LSOA approximation."
 
 fr$designs %>%
   transmute(Design = design, Fragments = fragments, Enclaves = enclaves,
+            `Ragged neighbourhoods` = ragged,
             `Schools outside their own catchment` = schools_outside) %>%
-  knitr::kable(align = "lrrr")
+  knitr::kable(align = "lrrrr")
 ```
 
 **Three of the five designs are clean maps.** The power diagram and both
@@ -5066,6 +5073,38 @@ added because the first attempt broke it:
 Regions on the coast or at the city edge have one land neighbour and
 are not islands, so the edge of the study area is exempt --- a test that
 did not exempt it flagged Longhill and PACA as enclaves in every design.
+
+```{r ragged-swap}
+#| include: false
+rg <- fr$designs %>% select(design, ragged)
+rg_now  <- rg$ragged[str_detect(rg$design, "Current")]
+rg_pair <- rg$ragged[str_detect(rg$design, "pairs kept")]
+rg_pd   <- rg$ragged[str_detect(rg$design, "Power")]
+sw_of <- function(a, l) {
+  if (!"grp" %in% names(a))
+    a$grp <- unname(setNames(rep(names(fr$groups_paired),
+                                 lengths(fr$groups_paired)),
+                             unlist(fr$groups_paired))[a$region])
+  fr_lab(a$grp[a$lsoa == l])
+}
+```
+
+**The ragged column is the one a reader notices**, and it is where the
+current map is furthest from the alternatives:
+`r rg_now` neighbourhoods against `r rg_pd` for the power diagram and
+`r rg_pair` for the flow regions. Two of them face each other across Elm
+Grove. A tongue of BACA reaches down past St Luke's pool, almost
+surrounded by Stringer/Varndean; two Stringer/Varndean neighbourhoods
+reach up just north of it, almost surrounded by BACA.
+
+**Both redesigns swap them, without being asked to.** Under the current
+map the neighbourhood by the pool is
+`r sw_of(fr$now_assign, "E01016970")` and the two north of Elm Grove are
+`r sw_of(fr$now_assign, "E01016889")`. Under the power diagram and the
+flow regions alike they are the other way round ---
+`r sw_of(fr$pd_assign, "E01016970")` and
+`r sw_of(fr$pd_assign, "E01016889")` --- which is what accessibility
+says they should be, and it removes both slivers at once.
 
 **Splitting the paired catchments fails this audit**, which is a cleaner
 answer than the statistics gave. One region per school leaves
@@ -5109,9 +5148,6 @@ about deprivation.
 
 ```{r idaci-prep}
 #| include: false
-fr_lab <- function(x) ifelse(x %in% names(CATCH_FROM_MODEL),
-                             unname(CATCH_LABELS[CATCH_FROM_MODEL[x]]),
-                             short_sch(x))
 is_ <- fr$idaci_summary %>% mutate(design = factor(design, fr_designs))
 i_now  <- is_ %>% filter(str_detect(design, "Current"))
 i_pd   <- is_ %>% filter(str_detect(design, "Power"))
