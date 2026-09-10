@@ -4906,6 +4906,247 @@ on it. A calibrated model built on the council's own allocation records
 would replace every band in this document with an estimate.
 :::
 
+
+# Catchments drawn from the flows {#sec-flow-regions}
+
+The catchments Brighton uses were drawn round schools. @sec-flow-map
+drew where the model actually sends children. This section asks the
+obvious next question: **if you drew the boundaries round the flows
+instead, what would they look like?**
+
+```{r fr-load}
+#| include: false
+fr <- bh_data("flow_regions.rds")
+fr_now  <- fr$designs %>% filter(design == "Current catchments")
+fr_one  <- fr$designs %>% filter(str_detect(design, "one per school"))
+fr_pair <- fr$designs %>% filter(str_detect(design, "pairs kept"))
+fr_moved <- fr$changed %>% filter(moved)
+```
+
+::: {.callout-note appearance="simple"}
+## The method, and the one choice inside it that matters
+
+This is a standard functional regionalisation, of the kind used to build
+travel-to-work areas, run on the modelled flows rather than on commuting
+data.
+
+1. **Dominant flow.** Every LSOA joins the school it sends most children
+   to --- the Nystuen–Dacey construction, the oldest method there is.
+2. **Contiguity repair.** A catchment has to be one piece. Fragments
+   that do not touch their region's main body move to the adjacent
+   region they send most flow to.
+3. **Capacity balance.** Regions then trade LSOAs until each holds
+   roughly as many children as its schools have places, always moving
+   the boundary LSOA that costs the least flow, and never breaking
+   contiguity to do it.
+
+**The choice that matters is which flows go in.** The obvious input is
+the full model of @sec-model-terms, and it would be the wrong one: it
+contains a catchment term, so its flows already know the current
+boundaries and regionalising them would partly rediscover the map this
+is meant to be an alternative to. The input is the **capacity-ceiling
+model without any catchment term** --- the closest published data comes
+to *where would children go if the rule did not exist but the places
+still ran out*.
+
+The two faith schools are left out of the geography, as they are now.
+They admit across the city, and giving them a catchment would be a
+change of policy rather than a change of map.
+:::
+
+```{r fig-flow-regions}
+#| fig-cap: "Catchments drawn from the modelled flows, against the ones in force. Switch between them with the control. Points are schools; the two faith schools, which have no catchment under any of these designs, are hollow."
+#| column: page
+
+fr_pal <- colorFactor("Set2", domain = sort(unique(fr$regions_sf$grp)))
+fr_sch <- schools_sf() %>% filter(name != "Peacehaven Community School")
+fr_designs <- unique(fr$regions_sf$design)
+
+mr <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>% add_carto("Positron")
+
+for (d in fr_designs) {
+  poly <- fr$regions_sf %>% filter(design == d)
+  mr <- mr %>%
+    addPolygons(data = poly, group = d,
+                fillColor = ~ fr_pal(grp), fillOpacity = 0.45,
+                color = "#333333", weight = 1.2, opacity = 0.8,
+                label = ~ sprintf("%s · %d LSOAs", grp, lsoas)) %>%
+    addCircleMarkers(data = fr_sch %>% filter(!name %in% fr$faith), group = d,
+                     radius = 5, color = "#111111", weight = 2, opacity = 1,
+                     fillColor = "#ffffff", fillOpacity = 1, label = ~ name) %>%
+    addCircleMarkers(data = fr_sch %>% filter(name %in% fr$faith), group = d,
+                     radius = 5, color = "#111111", weight = 2, opacity = 1,
+                     fillOpacity = 0, label = ~ paste0(name, " (no catchment)"))
+}
+
+mr %>%
+  addLayersControl(baseGroups = fr_designs,
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  addLegend("bottomright", pal = fr_pal,
+            values = sort(unique(fr$regions_sf$grp)), title = "Region",
+            opacity = 0.8)
+```
+
+## How the designs compare {#sec-fr-compare}
+
+```{r tbl-flow-regions}
+#| tbl-cap: "The three designs on four measures. Self-containment is the travel-to-work-area statistic: the share of a region's children whose modelled first choice is inside it. The capacity gap is the worst region's demand against its fair share of the places, where demand counts only the children the geography could actually place --- the faith schools take about a fifth of the cohort across no catchment at all."
+
+fr$designs %>%
+  transmute(Design = design,
+            Regions = regions,
+            `Self-containment` = fmt_pct(100 * self_containment, 0),
+            `Mean journey to a region school` = sprintf("%.1f min", mean_journey),
+            `Worst capacity gap` = sprintf("%+.0f%%", 100 * worst_gap),
+            `IDACI, least to most deprived region` =
+              sprintf("%.3f – %.3f", idaci_lo, idaci_hi)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+**Keeping the pairs is the design that works.** It raises
+self-containment from `r fmt_pct(100 * fr_now$self_containment, 0)` to
+`r fmt_pct(100 * fr_pair$self_containment, 0)`, more than halves the
+worst capacity gap, from `r sprintf("%+.0f%%", 100 * fr_now$worst_gap)`
+to `r sprintf("%+.0f%%", 100 * fr_pair$worst_gap)`, and narrows the
+spread of deprivation between the least and most deprived region.
+
+**Splitting the paired catchments does not.** Giving every school its
+own region gets capacity to
+`r sprintf("%+.0f%%", 100 * fr_one$worst_gap)` but leaves
+self-containment exactly where the current map has it, at
+`r fmt_pct(100 * fr_one$self_containment, 0)`. That is the flows
+answering a question the council has asked before: Dorothy Stringer and
+Varndean are 470 metres apart, and no boundary between them corresponds
+to anything families do.
+
+**The cost is journey time**, and it should not be waved away. The
+flow-based map adds
+`r sprintf("%.1f", fr_pair$mean_journey - fr_now$mean_journey)` minutes
+to the average journey to a catchment school. That is what happens when
+boundaries follow demand rather than proximity: a design drawn round
+where children want to go is not the design that gets them there
+quickest.
+
+## What actually moves {#sec-fr-moves}
+
+```{r tbl-flow-moves}
+#| tbl-cap: "Neighbourhoods that change catchment under the flow-based design, by where they are now and where they would go."
+
+fr$changed %>%
+  filter(moved) %>%
+  count(now, new, wt = Oi, name = "children") %>%
+  arrange(desc(children)) %>%
+  # The region codes are the model's vocabulary; CATCH_LABELS is keyed
+  # on the boundary file's. Going straight from one to the other left
+  # half the table showing raw codes - the exact failure the guarded
+  # converter in 00_core.R exists to prevent.
+  transmute(`Now in`     = unname(CATCH_LABELS[as_boundary_catchment(now)]),
+            `Would join` = unname(CATCH_LABELS[as_boundary_catchment(new)]),
+            Children = fmt_n(children)) %>%
+  knitr::kable(align = "llr")
+```
+
+This is a smaller change than it sounds. `r nrow(fr_moved)` of
+`r nrow(fr$changed)` neighbourhoods move, holding
+`r fmt_n(sum(fr_moved$Oi))` children ---
+`r fmt_pct(100 * sum(fr_moved$Oi) / sum(fr$changed$Oi), 0)` of the
+cohort. Four in five children stay where they are.
+
+```{r fr-move-stats}
+#| include: false
+lh_out <- fr_moved %>% filter(now == "Longhill") %>% summarise(n = sum(Oi)) %>% pull(n)
+lh_in  <- fr_moved %>% filter(new == "Longhill") %>% summarise(n = sum(Oi)) %>% pull(n)
+lh_net <- lh_in - lh_out
+```
+
+**And it goes the wrong way for Longhill.** The flow-based design takes
+`r fmt_n(lh_out)` children out of the Longhill catchment and puts
+`r fmt_n(lh_in)` in, a net loss of `r fmt_n(abs(lh_net))`. That is not a
+quirk of the algorithm --- it is the algorithm working. Those children
+are modelled as going west whatever the boundary says, and a functional
+region is a description of that, not a remedy for it. **Drawing
+catchments round the flows cannot rescue a school the flows are leaving.**
+
+## What the over-subscription rule does {#sec-fr-allocation}
+
+A catchment map is half a policy. The other half is what happens when a
+school is over-subscribed, and that is where the cross-catchment
+movement Brighton actually sees comes from.
+
+The rule modelled here is the one England uses, in the simplified form
+published data supports: every child has a preference order taken from
+the model's own utility; an over-subscribed school admits **in-catchment
+children first, and within each priority group the nearest first**;
+children who miss out cascade to their next preference. Schools hold
+offers provisionally and can bump a held child when a higher-priority
+applicant arrives, which is how the coordinated scheme behaves.
+
+```{r tbl-flow-alloc}
+#| tbl-cap: "Where children end up under each catchment design, with an in-catchment-then-distance over-subscription rule. Crossing a boundary includes the two faith schools, which have no catchment at all and take about a fifth of the cohort."
+
+fr$alloc %>%
+  transmute(Design = design,
+            `Got their first preference` = fmt_pct(100 * first_pref, 0),
+            `Placed in their own catchment` = fmt_pct(100 * local_share, 0),
+            `Crossed a boundary` = fmt_pct(100 * cross_share, 0),
+            `— of which to a faith school` = fmt_pct(100 * faith_share, 0),
+            `Mean journey` = sprintf("%.1f min", mean_journey)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+```{r fr-alloc-stats}
+#| include: false
+a_now  <- fr$alloc %>% filter(design == "Current catchments")
+a_pair <- fr$alloc %>% filter(str_detect(design, "pairs kept"))
+```
+
+**Most children draw locally and a real minority cross**, which is what
+a catchment system with choice in it should produce. Under the
+flow-based design `r fmt_pct(100 * a_pair$local_share, 0)` of children
+are placed in their own catchment against
+`r fmt_pct(100 * a_now$local_share, 0)` now. Of the
+`r fmt_pct(100 * a_pair$cross_share, 0)` who cross,
+`r sprintf("%.0f", 100 * a_pair$faith_share)` percentage points go to the
+two faith schools, which have no catchment to cross --- leaving about
+`r fmt_pct(100 * (a_pair$cross_share - a_pair$faith_share), 0)` genuinely
+moving between geographic catchments.
+
+First-preference success barely moves:
+`r fmt_pct(100 * a_pair$first_pref, 0)` against
+`r fmt_pct(100 * a_now$first_pref, 0)` now. **A better-drawn map does not
+get more children the school they want.** It gets more of them the
+school nearest to them, which is a different good and worth less than
+the first.
+
+::: {.callout-warning appearance="simple"}
+## What this is and is not
+
+**It is a demonstration that the geography could be better, not a
+proposal.** The regions are built from modelled flows, and the model is
+uncalibrated. A real redesign would use the council's own preference and
+allocation records, which would replace every modelled flow here with an
+observed one.
+
+**Nothing here is in the algorithm that should be.** Sibling links keep
+families together and are a large share of real admissions. Transport
+cost falls on the council and on households. Existing pupils cannot be
+moved. Feeder-primary patterns matter to families in ways a flow matrix
+does not see. Any of these could overturn a boundary this exercise
+draws.
+
+**The comparison is fair, though.** The current catchments are scored
+with the same statistics on the same flows, so the differences in
+@tbl-flow-regions are like for like even where the levels are uncertain.
+
+**And the headline is a negative one.** The best flow-based design moves
+a fifth of the cohort, improves self-containment by
+`r sprintf("%.0f", 100 * (fr_pair$self_containment - fr_now$self_containment))`
+points and capacity balance by more than half --- and does almost
+nothing for how many children get their first choice, or for Longhill.
+Redrawing the map is worth doing on its own terms. It is not an answer
+to the problem the rest of this document is about.
+:::
+
 # Longhill {#sec-longhill}
 
 Longhill High School sits at Ovingdean, at the eastern edge of both its

@@ -17,6 +17,7 @@ on top of it.
 | `R/00_core.R` | Paths, palettes, school lookups, map helpers |
 | `R/01_assemble.R` | Pulls every input into `data/`. Run once |
 | `R/02_accessibility.R` | New analysis: LSOA accessibility, two measures |
+| `R/03_flow_regions.R` | Catchments regionalised from the modelled flows |
 | `data/` | Self-contained inputs |
 | `docs/` | Rendered site, served by GitHub Pages |
 
@@ -34,6 +35,7 @@ repository. It needs the upstream projects present on the same machine:
 ```r
 source("R/01_assemble.R")      # once, to populate data/
 source("R/02_accessibility.R") # once, after assembly
+source("R/03_flow_regions.R")  # once, after 02
 quarto::quarto_render()        # or: quarto render
 source("R/99_verify_render.R") # check the output before publishing
 ```
