@@ -3944,6 +3944,15 @@ The chart above is a model of a city that does not exist. It is worth
 putting next to the one that does: the offers Brighton & Hove actually
 made in the `r brt$observed_year` round, school by school.
 
+Brightopia proper, with attractiveness switched off and no ceiling
+(@sec-model-forms sets out the full form and what the later models add):
+
+$$
+T_{ij} \;=\; A_i\, O_i\; c_{ij}^{-\beta},
+\qquad A_i = \Big[\textstyle\sum_j c_{ij}^{-\beta}\Big]^{-1},
+\qquad W_j = 1,\;\; \beta = `r sprintf("%.1f", brt$beta_ref)`
+$$
+
 ```{r tbl-brightopia-observed}
 #| tbl-cap: "Brightopia ($W_j = 1$) against the offers actually made. Every school is equally attractive in the model, so a difference here is everything except geography: reputation, results, faith character, sixth form, siblings, and the catchment rule. Brightopia applies no admission-number ceiling, so a modelled figure above the PAN is demand the real round would have turned away."
 
@@ -4139,6 +4148,14 @@ ggplot(bd, aes(y = short)) +
         legend.position = "top")
 ```
 
+The same equation with a real attractiveness term and still no ceiling:
+
+$$
+T_{ij} \;=\; A_i\, O_i\; W_j^{\alpha}\; c_{ij}^{-\beta},
+\qquad \alpha = 1,\;\; \beta = `r sprintf("%.1f", brt$beta_ref)`,
+\qquad W_j = \text{weighted preferences per place}
+$$
+
 ```{r tbl-demand-observed}
 #| tbl-cap: "The same comparison as the Brightopia table above, but with $W_j$ set to weighted preferences rather than held at 1. Still no admission-number ceiling, so a figure above the PAN is demand that the real round would have turned away."
 
@@ -4305,6 +4322,213 @@ unchanged.
 
 So the honest answer to "would a competing-destinations term fix the
 paired catchments" is **no**. What fixes them is the capacity ceiling.
+
+
+### The five models, written out {#sec-model-forms}
+
+Every model in the ladder is the same equation with terms switched on.
+In full:
+
+$$
+T_{ij} \;=\; A_i\, O_i\; W_j^{\alpha}\; C_j^{\delta}\; e^{\gamma \kappa_{ij}}\; c_{ij}^{-\beta},
+\qquad
+A_i \;=\; \Big[\textstyle\sum_j W_j^{\alpha}\, C_j^{\delta}\, e^{\gamma \kappa_{ij}}\, c_{ij}^{-\beta}\Big]^{-1}
+$$
+
+$T_{ij}$ is the flow of children from neighbourhood $i$ to school $j$;
+$O_i$ the cohort-aged children living in $i$; $c_{ij}$ the routed
+walk-and-bus journey time; $\kappa_{ij}$ is 1 if $i$ lies in $j$'s
+catchment and 0 otherwise; and $A_i$ is the balancing factor that sends
+every child somewhere. Throughout, $\alpha = 1$ and
+$\beta = `r sprintf("%.1f", mt$beta)`$.
+
+Setting $W_j = 1$, $\delta = 0$ and $\gamma = 0$ collapses it to
+Brightopia. Each model below turns one more of them on.
+
+```{r mt-helpers}
+#| include: false
+
+short_sch <- function(x)
+  str_remove(x, " (School|High School|Community Academy|Catholic School).*")
+
+pan_lu <- oi$attract %>%
+  select(name, pan) %>%
+  left_join(oi$schools %>% select(name, pan2026), by = "name")
+
+# One school-level table per model, with the change in residual against
+# the model on the rung below so the effect of the term just added is
+# visible rather than having to be differenced by eye.
+mt_table <- function(id, prev = NULL) {
+  d <- mt$runs[[id]] %>%
+    left_join(pan_lu %>% select(name, pan2026), by = "name") %>%
+    mutate(rationing = observed >= pan2026)
+  if (!is.null(prev))
+    d <- d %>% left_join(mt$runs[[prev]] %>% select(name, prev_resid = resid),
+                         by = "name")
+  d <- d %>% arrange(resid)
+  out <- tibble(School = short_sch(d$name),
+                PAN = d$pan2026,
+                `Offers made` = fmt_n(d$observed),
+                Modelled = fmt_n(d$modelled),
+                Residual = sprintf("%+.0f", d$resid))
+  if (!is.null(prev))
+    out[[paste0("Change from ", prev)]] <-
+      sprintf("%+.0f", abs(d$resid) - abs(d$prev_resid))
+  out[["Rationing?"]] <- if_else(d$rationing, "yes", "")
+  out
+}
+
+mt_line <- function(id) {
+  r <- mt$ladder %>% filter(model == id)
+  sprintf("R² %.2f, RMSE %.0f, and %.0f children average error across the five schools that were not rationing places.",
+          r$r2, r$rmse, r$mae_free)
+}
+
+# Which schools the ceiling actually binds on, against which schools
+# rationed places in the real round. These are not the same set, and the
+# difference is the interesting part: a school the model pushes to its
+# admission number that did not fill is a school the model wants to send
+# children to and the city did not.
+mt_bind <- function(id) {
+  mt$runs[[id]] %>%
+    left_join(pan_lu %>% select(name, pan2026), by = "name") %>%
+    mutate(binds = modelled >= pan2026 - 0.5,
+           rationed = observed >= pan2026)
+}
+bind_words <- function(x) knitr::combine_words(short_sch(x))
+```
+
+### M2 --- adding the capacity ceiling {#sec-m2}
+
+Flows are computed as in M1, then scaled so that no school exceeds its
+admission number while every neighbourhood still sends all its children
+somewhere:
+
+$$
+T^{*}_{ij} \;=\; a_i\, b_j\, T_{ij},
+\qquad
+\sum_j T^{*}_{ij} = O_i,
+\qquad
+\sum_i T^{*}_{ij} \;\le\; \overline{T}_j,
+\qquad b_j \le 1
+$$
+
+$\overline{T}_j$ is school $j$'s published admission number for 2026.
+The $b_j \le 1$ matters: undersubscribed schools are never inflated to
+fill themselves, only oversubscribed ones are cut back.
+
+```{r tbl-m2}
+#| tbl-cap: "M2. Weighted preferences with a capacity ceiling, against the offers actually made. The change column is the size of the residual against M1: negative means the ceiling moved that school closer."
+mt_table("M2", "M1") %>% knitr::kable(align = "lrrrrrc")
+```
+
+```{r m2-bind}
+#| include: false
+b2 <- mt_bind("M2")
+b2_hit  <- b2 %>% filter(binds)
+b2_odd  <- b2 %>% filter(binds, !rationed)
+b2_move <- mt$runs[["M2"]] %>%
+  left_join(mt$runs[["M1"]] %>% select(name, r1 = resid), by = "name") %>%
+  mutate(closer = abs(resid) < abs(r1))
+```
+
+`r mt_line("M2")` Almost every school moves closer ---
+`r sum(b2_move$closer)` of `r nrow(b2_move)` --- and the biggest single
+correction is Hove Park, which the ceiling cuts by
+`r fmt_n(abs(b2_move$resid[str_detect(b2_move$name, "Hove Park")] - b2_move$r1[str_detect(b2_move$name, "Hove Park")]))`
+children.
+
+**But the ceiling does not bind where the real round did.** It binds on
+`r nrow(b2_hit)` schools --- `r bind_words(b2_hit$name)` --- while the
+schools that actually rationed places were
+`r bind_words(b2$name[b2$rationed])`. The overlap is imperfect in both
+directions, and the interesting half is
+`r bind_words(b2_odd$name)`: the model pushes
+`r if (nrow(b2_odd) == 1) "it" else "them"` to the admission number and
+`r if (nrow(b2_odd) == 1) "it did not fill" else if (nrow(b2_odd) == 2) "neither filled" else "none of them filled"`.
+That is the same puzzle as @sec-brightopia-observed ---
+`r if (nrow(b2_odd) == 1) "a school" else "schools"` the model wants to
+send children to, and the city did not.
+
+### M3 --- adding the catchment term {#sec-m3}
+
+$\gamma$ enters the exponent, so living inside a school's catchment
+multiplies its pull by $e^{\gamma}$:
+
+$$
+T_{ij} \;=\; A_i\, O_i\; W_j^{\alpha}\; e^{\gamma \kappa_{ij}}\; c_{ij}^{-\beta}
+\quad\text{then capped as in M2,}\qquad
+\gamma = `r sprintf("%.1f", mt$gamma_hat)`
+$$
+
+At $\gamma$ = `r sprintf("%.1f", mt$gamma_hat)` a catchment school is
+`r sprintf("%.0f%%", 100 * (exp(mt$gamma_hat) - 1))` more attractive than
+the same school out of catchment, other things equal.
+
+```{r tbl-m3}
+#| tbl-cap: "M3. The same, with a catchment term. The change column is against M2."
+mt_table("M3", "M2") %>% knitr::kable(align = "lrrrrrc")
+```
+
+`r mt_line("M3")` The term moves almost nothing, and what it moves it
+moves in both directions. This is the rung that fails.
+
+### M4 --- adding competing destinations {#sec-m4}
+
+$C_j$ is Fotheringham's competing-destinations term, the accessibility
+of each school to the *other* schools:
+
+$$
+C_j \;=\; \sum_{k \neq j} W_k\, d_{jk}^{-\sigma},
+\qquad \sigma = `r sprintf("%.1f", mt$sigma)`
+$$
+
+$d_{jk}$ is the straight-line distance in kilometres between two
+schools, not a journey time --- nobody travels from one school to
+another, and what is being measured is only how clustered they are. It
+enters as $C_j^{\delta}$:
+
+$$
+T_{ij} \;=\; A_i\, O_i\; W_j^{\alpha}\; C_j^{\delta}\; e^{\gamma \kappa_{ij}}\; c_{ij}^{-\beta}
+\quad\text{then capped,}\qquad
+\delta = `r sprintf("%+.1f", mt$delta_hat)`
+$$
+
+```{r tbl-m4}
+#| tbl-cap: "M4. The full form. The change column is against M3."
+mt_table("M4", "M3") %>% knitr::kable(align = "lrrrrrc")
+```
+
+```{r m4-bind}
+#| include: false
+b4 <- mt_bind("M4")
+b4_hit  <- b4 %>% filter(binds)
+b4_both <- b4 %>% filter(binds, rationed)
+b4_miss <- b4 %>% filter(rationed, !binds)
+b4_odd  <- b4 %>% filter(binds, !rationed)
+```
+
+`r mt_line("M4")` The gains are concentrated in the paired catchments,
+which is where the term has most to work with --- but they come from a
+$\delta$ of `r sprintf("%+.1f", mt$delta_hat)`, and a positive $\delta$
+says clustering *helps*. Read as a competing-destinations result it has
+the sign backwards; read as a fit, it is a small improvement bought with
+a parameter estimated from ten numbers.
+
+**The most useful thing in this table is which schools the model now
+rations.** The ceiling binds on `r nrow(b4_hit)` schools, and the real
+round rationed `r sum(b4$rationed)`. `r nrow(b4_both)` of them are the
+same: `r bind_words(b4_both$name)`. The model swaps
+`r bind_words(b4_miss$name)`, which filled and which it leaves
+`r fmt_n(abs(b4_miss$resid))` short, for
+`r bind_words(b4_odd$name)`, which did not fill and which it fills.
+
+Getting `r nrow(b4_both)` of `r sum(b4$rationed)` right from published
+data and no admissions records is more than the fit statistics convey.
+Both errors are also explicable. Cardinal Newman is a faith school and
+this model has no faith restriction; the variant that adds one is
+discussed below. Hove Park is the school whose demand is second
+preferences that never convert (@sec-brightopia-observed).
 
 ```{r tbl-pair-split}
 #| tbl-cap: "Each paired catchment splits between its two schools. The share is the one going to the second-named school. A model can get a catchment's total right and still send the children to the wrong school within it."
