@@ -141,6 +141,26 @@ ch_open_year <- fp$factsheets %>%
 stopifnot(length(ch_open_year) == 1)
 
 ch_open_r2 <- function(s) os$choice_tbl$r2[os$choice_tbl$spec == s]
+
+# The open model now fits this same regression on this same weighted
+# measure, and publishes it. The two used to disagree, because the same
+# relationship was being computed twice; this asserts that they no
+# longer do, so a future change to either side fails the render instead
+# of quietly producing two different numbers for one thing.
+stopifnot(
+  abs(ch_r2(CH_DEFAULT, "att8") -
+        ch_open_r2("Attainment 8, weighted preferences")) < 5e-3,
+  abs(ch_r2(CH_DEFAULT, "va") -
+        ch_open_r2("Value-added, weighted preferences")) < 5e-3,
+  abs(ch_combined_r2 -
+        ch_open_r2("Attainment 8 + value-added, weighted preferences")) < 5e-3)
+
+# The negative value-added coefficient the open model reports on the
+# single round, kept so section 5.4 can say what it was.
+ch_one_round_va <- {
+  m <- os$choice_models[["Attainment 8 + value-added"]]
+  coef(m)[["va"]]
+}
 ```
 
 ```{r exec-figures}
@@ -3605,33 +3625,23 @@ this conflation. This is a communications problem before it is an
 admissions problem, and the authority is not a neutral party in it,
 because the authority publishes the guide.
 
+These are the same figures the open Brightopia model publishes, on the
+same specification and the same five-round window; the render fails if
+the two ever drift apart.
+
 ::: {.callout-note appearance="simple"}
-## Why these numbers differ from the open model's
+## One round is not enough to carry a sign
 
-The open Brightopia model publishes this same regression and reports
-`r sprintf("%.2f", ch_open_r2("Attainment 8"))` for headline attainment
-against `r sprintf("%.2f", ch_open_r2("Value-added"))` for value added.
-The chart above is the same specification --- log preferences per place,
-the score entered linearly --- on a different slice of the same data.
+The model used to fit this regression to the single `r ch_open_year`
+admissions round, and on that round value added takes a **negative**
+coefficient once attainment is already in the model --- which reads as
+families actively avoiding schools that add value.
 
-Two things change. The open model counts **first preferences in the
-single `r ch_open_year` round**; this chart counts a **five-year mean,
-`r ch_lo` to `r ch_hi`**, the same window section 4.5 uses to weight
-attractiveness. And the open model reports first preferences only, where
-this chart defaults to the weighted measure. Set the buttons to *First*
-and the five-year figures are
-`r sprintf("%.2f", ch_r2("First preferences", "att8"))` and
-`r sprintf("%.2f", ch_r2("First preferences", "va"))` --- close to the
-open model's, with what remains being one round against five.
-
-**One thing of substance changes with the window, and it cuts against
-this document.** Fitted to `r ch_open_year` alone, value added takes a
-*negative* coefficient once attainment is already in the model, which
-reads as families actively avoiding schools that add value. Across five
-years it does not: the coefficient is
-`r sprintf("%+.3f", ch_combined_va)` --- small, positive, and no basis
-for that reading. A single round is too few schools and too few years to
-carry a sign, and nothing here should be built on one.
+Across the five rounds it does not: the coefficient is
+`r sprintf("%+.3f", ch_combined_va)`, small and positive. The negative
+sign was one year, ten schools, and no basis for that reading. It is
+recorded here because it was briefly in an earlier draft, and because
+the same trap is available to anyone reading a single year's factsheet.
 :::
 
 ::: {.callout-note appearance="simple"}
@@ -3818,6 +3828,17 @@ point. It answers the question "where would children go if only
 geography and school size mattered?" --- and the gap between that answer
 and reality is a measure of what the admissions system is doing.
 
+It is run twice, and the difference between the two runs does a lot of
+work below. **@fig-brightopia holds $W_j$ identical for every school**,
+which is the distance-only case: same size, same quality, same
+buildings, no religious character, and the only thing separating the
+schools is where they stand. **@fig-brightopia-demand lets $W_j$ vary**,
+setting it to the rank-weighted preference rate from @sec-attractiveness
+--- what families actually ask for, counting all three ranks. The first
+is a statement about the geography of the city. The second is about the
+geography and the demand together, and the gap between them is the whole
+of what attractiveness contributes.
+
 ```{r fig-brightopia}
 #| fig-cap: "Modelled intake against published admission number. A school above the line is one that geography alone would fill; below it, one that geography alone would not."
 #| fig-height: 5.5
@@ -3886,6 +3907,113 @@ between what location predicts and what families do is the clearest
 evidence in this document that choice is operating on something other
 than distance.
 
+
+## What happens when you put demand back in {#sec-brightopia-demand}
+
+@fig-brightopia asked what the map alone would do. It is a deliberately
+severe assumption, and it is the assumption that makes Longhill's
+position look most survivable: with every school equally wanted, the
+only thing that can hurt a school is being far away.
+
+The same model, same geography, same routed times, same production
+constraint, but with $W_j$ set to what families actually ask for:
+
+```{r fig-brightopia-demand}
+#| fig-cap: "Modelled intake with every school equally attractive, against modelled intake using the rank-weighted preference rate. Both runs are at the same distance decay, so the difference between the two points is attractiveness and nothing else. Neither run applies an admission-number ceiling, so these are natural demand rather than offers."
+#| fig-height: 5.6
+
+bd <- brt$demand_compare %>%
+  mutate(short = str_remove(name, " (School|High School|Community Academy|Catholic School).*"),
+         gains = shift > 0) %>%
+  arrange(shift) %>%
+  mutate(short = factor(short, short))
+
+ggplot(bd, aes(y = short)) +
+  geom_segment(aes(x = geog_only, xend = with_demand, yend = short,
+                   colour = gains), linewidth = 1.1,
+               arrow = arrow(length = unit(0.16, "cm"), type = "closed")) +
+  geom_point(aes(x = geog_only), colour = "grey35", size = 2.6) +
+  geom_point(aes(x = pan2026), shape = 124, size = 5, colour = "#444444") +
+  scale_colour_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b"),
+                      labels = c(`TRUE` = "Gains once demand is added",
+                                 `FALSE` = "Loses once demand is added"),
+                      name = NULL) +
+  labs(x = "Modelled intake", y = NULL,
+       title = "What the map would do, and what families do to it",
+       subtitle = sprintf(
+         "Grey dot: every school equally attractive. Arrow: W set to weighted preferences. Tick: 2026 admission number.\nBoth runs at β = %.1f.",
+         brt$beta_ref),
+       caption = "Brightopia, open-data specification. No capacity ceiling in either run.") +
+  theme_bh() +
+  theme(panel.grid.major.y = element_blank(),
+        legend.position = "top")
+```
+
+```{r demand-stats}
+#| include: false
+bd_lh  <- bd %>% filter(str_detect(name, "Longhill"))
+bd_hp  <- bd %>% filter(str_detect(name, "Hove Park"))
+bd_up  <- bd %>% slice_max(shift, n = 2)
+bd_dn  <- bd %>% slice_min(shift, n = 2)
+fill_g <- sum(bd$geog_only  >= bd$pan2026)
+fill_d <- sum(bd$with_demand >= bd$pan2026)
+```
+
+**This is the least comfortable figure in the document, and it is about
+Longhill.** On geography alone the school draws
+`r fmt_n(bd_lh$geog_only)` children --- close to the
+`r fmt_n(bd_lh$pan2026)` places now in force, which is what
+@sec-brightopia reported. Once $W_j$ carries what families ask for, it
+draws **`r fmt_n(bd_lh$with_demand)`**, a fall of
+`r fmt_pct(abs(bd_lh$shift_pct), 0)`. That is the largest fall of any
+school in the city, and it means the reduction to
+`r fmt_n(bd_lh$pan2026)` closed the gap to *geography* but not the gap
+to *demand*.
+
+The same is true at BACA, the other end of the same story: from
+`r fmt_n(bd_dn$geog_only[2])` on geography to
+`r fmt_n(bd_dn$with_demand[2])` with demand.
+
+**In the other direction**, `r bd_up$short[1]` and `r bd_up$short[2]`
+gain `r fmt_n(bd_up$shift[1])` and `r fmt_n(bd_up$shift[2])` children
+respectively --- both already well above their admission numbers on
+geography alone, and further above once preference is counted. Neither
+can actually take them: the ceiling is the admission number, and the
+children have to go somewhere.
+
+Counting how many schools geography alone would fill to their 2026
+admission number gives `r fill_g` of `r nrow(bd)`. Counting how many
+would fill once demand is added gives `r fill_d`. The city's problem is
+not that it is short of children in aggregate --- it is that they are
+not distributed the way the buildings are.
+
+::: {.callout-important appearance="simple"}
+## What this does and does not license
+
+**It does not say Longhill would recruit `r fmt_n(bd_lh$with_demand)`
+children.** The model has no catchment term and no admission ceiling.
+In reality the catchment rule holds children in the east who would
+otherwise go west, which is exactly what the rule is for, and section 8
+runs the configurations with catchments and ceilings in place.
+
+**It does say the two problems are separable, and only one of them
+moves.** Relocation and admission-number changes act on the geography
+term. Nothing in this document acts on $W_j$, because $W_j$ is what
+families think of the school --- and section 5 shows what families
+think is tracking a headline score that is mostly a description of
+intake. A school can be moved to where the children are and still not be
+chosen by them.
+
+**And it depends on the preference measure.** Counting first preferences
+alone would put Longhill's attractiveness at
+`r sprintf("%.2f", oi$attract$W_prefs[oi$attract$name == "Longhill High School"])`;
+counting all three ranks with the geometric discount puts it at
+`r sprintf("%.2f", oi$attract$W_wprefs[oi$attract$name == "Longhill High School"])`
+--- so the weighted measure makes Longhill's position look *worse*, not
+better. That is worth stating plainly, because the weighted measure
+was adopted in @sec-attractiveness for reasons that had nothing to do
+with Longhill, and it did not turn out to favour the argument.
+:::
 ::: {.callout-warning appearance="simple"}
 ## This is an open-data model, and it is not calibrated
 
@@ -3921,21 +4049,28 @@ school that is viable at the end of the projection period rather than
 merely smaller.
 
 ```{r fig-longhill-configs}
-#| fig-cap: "Modelled Longhill intake under seven configurations, across the projection period. Bands show the range across the swept parameter space."
+#| fig-cap: "How full Longhill would be under seven configurations, across the projection period. Bands show the range across the swept parameter space; 100% is a school exactly at its admission number for that configuration, and the admission number differs between them."
 #| fig-height: 6
 
+# os$lh_band holds FILL RATES, not intakes: the modelled intake divided
+# by whatever admission number that configuration sets. So configuration
+# B fills at 100% on 150 places while A is short of 210, and the two
+# numbers are not comparable as recruitment. Natural recruitment, which
+# is comparable, is os$natural and is quoted alongside below.
 lb <- os$lh_band %>%
   mutate(config = factor(config, levels = os$configs))
 
-ggplot(lb, aes(entry_year, med)) +
-  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "#2166ac", alpha = 0.2) +
+ggplot(lb, aes(entry_year, pmin(med, 1))) +
+  geom_hline(yintercept = 1, linetype = "31", colour = "grey45") +
+  geom_ribbon(aes(ymin = pmin(lo, 1), ymax = pmin(hi, 1)),
+              fill = "#2166ac", alpha = 0.2) +
   geom_line(colour = "#2166ac", linewidth = 1) +
   geom_point(colour = "#2166ac", size = 1.8) +
   facet_wrap(~ config, ncol = 2, labeller = label_wrap_gen(38)) +
-  scale_y_continuous(limits = c(0, NA)) +
-  labs(x = "Year of Year 7 entry", y = "Modelled intake",
+  scale_y_continuous(limits = c(0, 1.02), labels = scales::label_percent()) +
+  labs(x = "Year of Year 7 entry", y = "Fill rate against that option's PAN",
        title = "Seven futures for Longhill",
-       subtitle = "Median and full range across the swept parameter space",
+       subtitle = "Median and full range across the swept parameter space.\nThe dashed line is a school exactly full — on an admission number that differs between options.",
        caption = "Brightopia, open-data specification.") +
   theme_bh(11) +
   theme(strip.text = element_text(size = 8.5))
@@ -3943,15 +4078,46 @@ ggplot(lb, aes(entry_year, med)) +
 
 ```{r longhill-config-stats}
 #| include: false
-cfg_2030 <- lb %>% filter(entry_year == 2030) %>% arrange(desc(med))
-best <- cfg_2030 %>% slice_max(med, n = 1)
+# Fill rate and natural recruitment together. Fill alone rewards
+# shrinking - a school is trivially full if its PAN is low enough - so
+# the number of children it actually draws has to sit next to it.
+cfg_2030 <- lb %>%
+  filter(entry_year == 2030) %>%
+  left_join(os$natural %>% filter(entry_year == 2030) %>%
+              select(config, natural), by = "config") %>%
+  arrange(desc(med), desc(natural))
+
 base <- cfg_2030 %>% filter(str_detect(as.character(config), "^A\\."))
+full <- cfg_2030 %>% filter(med >= 0.999)
+# Among the options that fill, the ones that do it on the most children.
+# Several can tie: E and G put Longhill on the same site behind the same
+# catchments and differ only in the admission number, so they draw the
+# same children. Naming one of them would be an arbitrary choice
+# presented as a finding, so all of them are named.
+best <- full %>% filter(natural >= max(natural) - 0.5)
+stopifnot(nrow(base) == 1, nrow(best) >= 1)
+best_lab <- paste(as.character(best$config), collapse = "** and **")
 ```
 
 By 2030 the configurations separate clearly. The status quo
-(`r as.character(base$config)`) gives a median modelled intake of
-**`r fmt_n(base$med)`**; the strongest option
-(`r as.character(best$config)`) gives **`r fmt_n(best$med)`**.
+(`r as.character(base$config)`) fills to a median of
+**`r fmt_pct(100 * base$med, 0)`**, and draws about
+**`r fmt_n(base$natural)`** children.
+
+`r nrow(full)` of the seven options fill completely at the median. That
+sounds decisive and is not, because there are two ways to fill a school
+and only one of them is worth having: lower the admission number until
+the school is full, or raise the number of children it draws. Fill rate
+alone cannot tell them apart --- a school is trivially full at a PAN of
+one --- which is why natural recruitment sits beside it here.
+
+On that test the strongest `r if (nrow(best) > 1) "are" else "is"`
+**`r best_lab`**,
+`r if (nrow(best) > 1) "which fill *and* draw" else "which fills *and* draws"`
+**`r fmt_n(max(best$natural))`** children:
+`r fmt_n(max(best$natural) - base$natural)` more than the status quo,
+from the same cohort.
+`r if (nrow(best) > 1) "They tie because they put the school on the same site behind the same catchments, and differ only in the admission number --- which is the lever this section has already argued is largely spent." else ""`
 
 The important point is not which single option wins. It is that **no
 single instrument is sufficient, and the instruments compose.** Moving
