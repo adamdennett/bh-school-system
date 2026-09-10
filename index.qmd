@@ -3804,6 +3804,31 @@ than a decision that can be deferred.
 
 ## Why model at all {#sec-why-model}
 
+::: {.callout-note appearance="simple"}
+## "Brightopia" means one specific assumption: $W_j = 1$
+
+The name is used throughout this section and it is worth pinning down,
+because the model is run under two different assumptions and they answer
+different questions.
+
+**Brightopia proper sets $W_j$ to the same value for every school.**
+Same size, same quality, same buildings, same staff, same lunches, no
+religious character. Children are identical too. The only thing that
+separates the schools is where they stand. Whenever this document says
+*Brightopia*, *the distance-only model*, or *geography alone*, that is
+the assumption in force, and every such figure is labelled $W_j = 1$.
+
+**The runs with $W_j$ varying are not Brightopia** and are labelled
+separately, as *with demand* or by the specification they use. They are
+the same equation with a real attractiveness term.
+
+The distinction matters because Brightopia's strength is exactly its
+severity: it cannot be dismissed as an artefact of attainment proxies,
+Ofsted grades or preference data, because it uses none of them. That is
+also its limit --- it cannot say how many children a school would draw,
+because it has assumed the question away.
+:::
+
 Every argument in the sections above is about one part of the system:
 where the children are, how far the schools are, what families prefer.
 A model is what lets you ask what happens when you change one part and
@@ -3840,7 +3865,7 @@ geography and the demand together, and the gap between them is the whole
 of what attractiveness contributes.
 
 ```{r fig-brightopia}
-#| fig-cap: "Modelled intake against published admission number. A school above the line is one that geography alone would fill; below it, one that geography alone would not."
+#| fig-cap: "Brightopia proper, with every school equally attractive: modelled intake against published admission number. A school above the line is one that geography alone would fill; below it, one that geography alone would not."
 #| fig-height: 5.5
 
 # The distance-only run at the bundle's central decay, not at the 1.5 the
@@ -3861,8 +3886,8 @@ ggplot(bt, aes(pan2026, modelled)) +
                                  `FALSE` = "Geography would not"), name = NULL) +
   scale_x_continuous(limits = c(0, NA)) + scale_y_continuous(limits = c(0, NA)) +
   labs(x = "Published admission number, 2026", y = "Modelled intake",
-       title = "What the map alone would do",
-       subtitle = sprintf("Every school equally attractive. Distance decay β = %.1f. The dashed line is a school exactly full.",
+       title = expression("What the map alone would do:  "*W[j]*" = 1"),
+       subtitle = sprintf("Brightopia proper — every school equally attractive. Distance decay β = %.1f.\nThe dashed line is a school exactly full.",
                           brt$beta_ref),
        caption = "Brightopia, open-data specification.") +
   theme_bh()
@@ -3920,7 +3945,7 @@ putting next to the one that does: the offers Brighton & Hove actually
 made in the `r brt$observed_year` round, school by school.
 
 ```{r tbl-brightopia-observed}
-#| tbl-cap: "The distance-only model against the offers actually made. Every school is equally attractive in the model, so a difference here is everything except geography: reputation, results, faith character, sixth form, siblings, and the catchment rule. Brightopia applies no admission-number ceiling, so a modelled figure above the PAN is demand the real round would have turned away."
+#| tbl-cap: "Brightopia ($W_j = 1$) against the offers actually made. Every school is equally attractive in the model, so a difference here is everything except geography: reputation, results, faith character, sixth form, siblings, and the catchment rule. Brightopia applies no admission-number ceiling, so a modelled figure above the PAN is demand the real round would have turned away."
 
 brt$observed_compare %>%
   arrange(diff_17) %>%
@@ -4108,10 +4133,25 @@ ggplot(bd, aes(y = short)) +
        subtitle = sprintf(
          "Grey dot: every school equally attractive. Arrow: W set to weighted preferences. Tick: 2026 admission number.\nBoth runs at β = %.1f.",
          brt$beta_ref),
-       caption = "Brightopia, open-data specification. No capacity ceiling in either run.") +
+       caption = "Open-data specification. No capacity ceiling in either run.") +
   theme_bh() +
   theme(panel.grid.major.y = element_blank(),
         legend.position = "top")
+```
+
+```{r tbl-demand-observed}
+#| tbl-cap: "The same comparison as the Brightopia table above, but with $W_j$ set to weighted preferences rather than held at 1. Still no admission-number ceiling, so a figure above the PAN is demand that the real round would have turned away."
+
+brt$observed_compare %>%
+  arrange(diff_w) %>%
+  transmute(School = str_remove(name, " (School|High School|Community Academy|Catholic School).*"),
+            `PAN` = pan2026,
+            `Offers made` = fmt_n(observed),
+            `Brightopia, Wj = 1` = fmt_n(modelled_17),
+            `With demand` = fmt_n(modelled_w),
+            `Difference` = sprintf("%+.0f", diff_w),
+            `Rationing?` = if_else(at_ceiling, "yes", "")) %>%
+  knitr::kable(align = "lrrrrrc")
 ```
 
 ```{r demand-stats}
@@ -4179,6 +4219,161 @@ better. That is worth stating plainly, because the weighted measure
 was adopted in @sec-attractiveness for reasons that had nothing to do
 with Longhill, and it did not turn out to favour the argument.
 :::
+
+## What the model actually needs {#sec-model-terms}
+
+Both runs above miss, and they miss in a particular way: inside each
+paired catchment they send children to the wrong one of the two schools.
+Blatchington Mill is under-predicted and Hove Park over-predicted;
+Dorothy Stringer is under-predicted and Varndean over-predicted once
+$W_j$ is real. That is a specific failure with specific candidate
+causes, so they are added one at a time.
+
+```{r mt-load}
+#| include: false
+mt <- bh_data("model_terms.rds")
+lad <- mt$ladder
+mt_get <- function(id, col) lad[[col]][lad$model == id]
+```
+
+Three candidates, in the order they are tested.
+
+**A capacity ceiling.** Schools cannot admit beyond their admission
+number. Brightopia has no ceiling at all, so it is free to send 255
+children to a school with 180 places.
+
+**A catchment term.** Living in a school's catchment makes a place far
+more likely. Entered as $\gamma$ in the exponent, so being in catchment
+multiplies a school's pull by $e^{\gamma}$.
+
+**A competing-destinations term.** Fotheringham's argument that a
+gravity model is misspecified when destinations cluster: families pick
+an area and then a school within it. Entered as $C_j^{\delta}$, where
+$C_j = \sum_{k \neq j} W_k d_{jk}^{-\sigma}$ is how much company a
+school has. **A negative $\delta$ is the competing-destinations
+prediction** --- rivals nearby take share.
+
+```{r tbl-model-terms}
+#| tbl-cap: "Fit against the offers actually made, adding one term at a time. The last column is the one to read: it scores only the five schools that were not rationing places, because from the capacity row onwards the model is told the admission numbers, and five of the ten observed figures are those admission numbers."
+
+lad %>%
+  transmute(Model = model, `Term added` = label,
+            `R²` = sprintf("%.2f", r2),
+            RMSE = fmt_n(rmse),
+            `MAE` = fmt_n(mae),
+            `MAE, unrationed only` = fmt_n(mae_free)) %>%
+  knitr::kable(align = "llrrrr")
+```
+
+**The capacity ceiling does almost all of the work.** It takes the fit
+from R² `r sprintf("%.2f", mt_get("M1","r2"))` to
+`r sprintf("%.2f", mt_get("M2","r2"))`, and on the schools that were not
+rationing places it takes the average error from
+`r fmt_n(mt_get("M1","mae_free"))` children to
+`r fmt_n(mt_get("M2","mae_free"))`.
+
+That headline R² is flattered and should be discounted: five of the ten
+observed figures *are* the admission numbers, and from that row on the
+model is given them. But the improvement survives the discount --- on
+the five schools free to be wrong, the error still falls by a third.
+**Brightopia's largest single omission is not a behavioural term. It is
+that offers are rationed and the model was not told.**
+
+**The catchment term adds essentially nothing.** Fitted at
+$\gamma$ = `r sprintf("%.1f", mt$gamma_hat)`, it moves R² from
+`r sprintf("%.2f", mt_get("M2","r2"))` to
+`r sprintf("%.2f", mt_get("M3","r2"))` and makes the unrationed error
+slightly **worse**, `r fmt_n(mt_get("M2","mae_free"))` to
+`r fmt_n(mt_get("M3","mae_free"))`. Once children are held to real
+capacities in a city nine miles across, the catchment rule has little
+left to do that proximity was not already doing.
+
+**The competing-destinations term helps a little, with the wrong sign.**
+
+```{r mt-delta}
+#| include: false
+d0 <- mt$delta_fit$rmse[mt$delta_fit$value == 0]
+```
+
+Fitted at $\delta$ = **`r sprintf("%+.1f", mt$delta_hat)`**, it improves
+both scores. But a positive $\delta$ is not competition --- it says a
+school does **better** for having rivals close by, which is
+agglomeration, the opposite of what the term was added to test. Without
+the capacity ceiling the term does nothing at all: fitted on its own it
+lands at `r sprintf("%+.1f", mt$delta_nocap_hat)` and the RMSE is
+unchanged.
+
+So the honest answer to "would a competing-destinations term fix the
+paired catchments" is **no**. What fixes them is the capacity ceiling.
+
+```{r tbl-pair-split}
+#| tbl-cap: "Each paired catchment splits between its two schools. The share is the one going to the second-named school. A model can get a catchment's total right and still send the children to the wrong school within it."
+
+mt$pair_split %>%
+  transmute(Pair = pair, Model = model,
+            `Modelled total` = fmt_n(mod_total),
+            `Offers made` = fmt_n(obs_total),
+            `Modelled share` = fmt_pct(100 * mod_share, 0),
+            `Observed share` = fmt_pct(100 * obs_share, 0)) %>%
+  arrange(Pair, Model) %>%
+  knitr::kable(align = "llrrrr")
+```
+
+```{r pair-stats}
+#| include: false
+ps <- mt$pair_split
+sv <- ps %>% filter(str_detect(pair, "Stringer"))
+hb <- ps %>% filter(str_detect(pair, "Hove Park"))
+```
+
+**Stringer and Varndean are fixed.** The distance-only model splits that
+catchment `r fmt_pct(100 * sv$mod_share[sv$model == "M0"], 0)` to
+Varndean against an observed
+`r fmt_pct(100 * sv$obs_share[1], 0)`; weighted preferences make it
+worse at `r fmt_pct(100 * sv$mod_share[sv$model == "M1"], 0)`; the
+capacity ceiling brings it to
+`r fmt_pct(100 * sv$mod_share[sv$model == "M2"], 0)` and the full model
+lands on `r fmt_pct(100 * sv$mod_share[sv$model == "M4"], 0)`. Stringer
+and Varndean are 470 metres apart and both fill, so what decides the
+split between them is which one runs out of places first --- a
+constraint, not a preference.
+
+**Hove Park and Blatchington Mill are improved and not fixed.** The
+observed split sends `r fmt_pct(100 * hb$obs_share[1], 0)` to Hove Park.
+Brightopia says `r fmt_pct(100 * hb$mod_share[hb$model == "M0"], 0)`,
+and the full model still says
+`r fmt_pct(100 * hb$mod_share[hb$model == "M4"], 0)`. Hove Park remains
+the one school the model cannot place: it is pinned at its admission
+number of `r fmt_n(hp_o$pan2026)` when only `r fmt_n(hp_o$observed)`
+were offered.
+
+::: {.callout-warning appearance="simple"}
+## What this is not
+
+**These are not estimates.** $\gamma$ and $\delta$ are fitted to ten
+destination totals. That is enough to say whether a term moves the model
+towards the offers and nowhere near enough to say what its value is; the
+identification problem the open model sets out has not gone away. A
+$\delta$ of `r sprintf("%+.1f", mt$delta_hat)` fitted on ten numbers
+after a capacity constraint has already absorbed most of the variance
+should be read as "this term has little left to do", not as a
+measurement of agglomeration.
+
+**Adding terms until the fit improves is not validation.** Each rung
+here has more freedom than the last, so some improvement is guaranteed.
+The reason the capacity result is worth stating is that it is not a
+fitted parameter at all --- the admission numbers are published, and
+putting them in is a correction rather than a tuning.
+
+**The faith split makes things worse here, and that is informative.**
+Holding half the city ineligible for Cardinal Newman and King's, as
+@sec-choice's identification work does, drops R² to
+`r sprintf("%.2f", mt$faith_score$r2)`: it leaves Cardinal Newman unable
+to fill, and Cardinal Newman filled. A refinement that helps against the
+published second-preference profile hurts against total offers. Both
+targets are real, and no single specification here is best at both.
+:::
+
 ::: {.callout-warning appearance="simple"}
 ## This is an open-data model, and it is not calibrated
 
