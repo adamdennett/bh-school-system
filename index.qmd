@@ -3822,6 +3822,76 @@ gbp  <- function(x, d = 1) {
 pp <- function(x, d = 1)
   sub("-", "\u2212", sprintf("%+.*f%%", d, 100 * x), fixed = TRUE)
 ```
+```{r funding-prep}
+#| include: false
+# The schools block allocation for 2025-26, from DfE's school funding
+# statistics. This is a different thing from the income and expenditure
+# returns above and it answers a different question. The returns say
+# what a school RECEIVED and SPENT and what it has left; this says what
+# the funding formula ALLOCATES to it, for the coming year, and breaks
+# that into the formula's own components.
+#
+# Two reasons it is worth having alongside.
+#
+# It is the same year for every school, so nothing here depends on the
+# academy and maintained reporting cycles lining up.
+#
+# And it separates the money that follows pupils from the money that
+# does not. The lump sum is a flat cash amount per school; rates, PFI,
+# split-site and sparsity are properties of the site. Everything else -
+# basic entitlement, deprivation, EAL, mobility, prior attainment - is
+# per-pupil. That split is exactly what section 6.3 needs: a school that
+# loses a child does not lose its average funding per child, it loses
+# the pupil-led part, and the fixed part then has to be carried by
+# fewer of them.
+#
+# It also covers 5-16 only. Sixth forms are funded separately by the
+# ESFA and are not in here, which is why Cardinal Newman appears at
+# 1,851 pupils and not the 2,625 on its census roll - and which removes
+# the mixed-rate caveat the pound figures used to carry.
+
+FUND_FIXED <- c("lump_sum_total_funding", "sparsity_total_funding",
+                "split_site_total_funding",
+                "national_non_domestic_rates_funding",
+                "pfi_total_funding", "exceptional_factors_total_funding")
+
+fund <- readr::read_csv(
+    file.path(DATA, "school-funding-statistics_2025-26", "data",
+              "20260129_School_level_data_csv.csv"),
+    show_col_types = FALSE, guess_max = 5000) %>%
+  filter(la_name == "Brighton and Hove", education_phase == "Secondary") %>%
+  mutate(across(c(all_of(FUND_FIXED), total_schools_block_allocation_post_mfg,
+                  total_number_of_pupils, allocation_per_pupil, total_funding),
+                ~ suppressWarnings(as.numeric(.x)))) %>%
+  transmute(urn = as.character(school_urn),
+            fund_year = "2025-26",
+            fund_pupils = total_number_of_pupils,
+            block = total_schools_block_allocation_post_mfg,
+            lump = lump_sum_total_funding,
+            fixed = rowSums(across(all_of(FUND_FIXED)), na.rm = TRUE),
+            alloc_pp = allocation_per_pupil) %>%
+  mutate(pupil_led = block - fixed,
+         marginal_pp = pupil_led / fund_pupils,
+         fixed_pp = fixed / fund_pupils,
+         lump_pp = lump / fund_pupils)
+
+# Every school in the finance table must be in the funding file too, or
+# the marginal rate below silently falls back to nothing.
+stopifnot(all(fex$urn %in% fund$urn),
+          length(unique(fund$lump)) == 1)
+
+# The exposure figures are rebuilt on the marginal rate. They used to
+# use each school's own average income per pupil, which counts the lump
+# sum and the sixth form as though a departing Year 7 took a share of
+# both with them. It does not.
+fex <- fex %>%
+  select(-income_change, -income_pct) %>%
+  left_join(fund %>% select(urn, marginal_pp, fixed_pp, lump_pp, fund_pupils,
+                            alloc_pp),
+            by = "urn") %>%
+  mutate(income_change = roll_change_ss * marginal_pp,
+         income_pct    = income_change / income)
+```
 
 ## Nine of the ten schools are spending their reserves {#sec-city-finance}
 
@@ -3879,6 +3949,39 @@ fex %>%
   knitr::kable(align = "llrrrrrrrr")
 ```
 
+*Source: DfE school income and expenditure --- Consistent Financial
+Reporting (CFR) returns for maintained schools and Academies Accounts
+Returns (AAR) for academies, both published per school on the*
+*[schools financial benchmarking service](https://financial-benchmarking-and-insights-tool.education.gov.uk/).*
+
+::: {.callout-note appearance="simple"}
+## Why the year is not the same for every school
+
+Every school files a return every year. The years differ here for two
+reasons, neither of them a gap in what schools publish.
+
+**They have different year ends.** A maintained school reports on the
+CFR return to **31 March**. An academy reports on the AAR to **31
+August**, because that is its financial year. A 2024-25 figure therefore
+means something slightly different on the two rows, and there is no way
+to make them the same without throwing away half the data.
+
+**The academy returns are published later in the cycle.** The national
+finance panel behind this section was assembled on
+`r format(sfin$run_at, "%d %B %Y")` and contains CFR returns up to
+`r yr_cfr` but no AAR returns for that year at all --- not for Brighton
+and not for anywhere, nationally. So the
+`r sum(fex$source == "AAR")` academies here
+(`r knitr::combine_words(sort(fex$short[fex$source == "AAR"]))`) show
+`r yr_aar`. If a newer release is out by the time you read this,
+re-running `R/01_assemble.R` picks it up and the table closes.
+
+The consequence for reading the table is small but real: the academies'
+figures are a year staler, and a year in which several of these schools
+moved. It is one reason the funding allocations below, which are the
+same year for everybody, are worth having alongside.
+:::
+
 **Two schools are in serious deficit.** Hove Park's revenue reserve is
 `r gbp(f_of("Hove Park")$reserve)`, or
 `r pp(f_of("Hove Park")$reserve_pct)` of its annual income, and it spent
@@ -3909,8 +4012,7 @@ than its neighbours' has no room to absorb anything, and staffing is the
 cost that takes years and redundancies to move.
 
 ```{r fig-school-reserves}
-#| fig-cap: "Revenue reserve as a share of annual income, for every state secondary school in the city. Panels are ordered by the latest figure, worst first. Shading marks the years a school was carrying a deficit. The academies' series ends a year earlier because their accounts are published on a different cycle."
-#| fig-height: 6.4
+#| fig-cap: "Revenue reserve as a share of annual income, for every state secondary school in the city. Panels are ordered by the latest figure, worst first. Shading marks the years a school was carrying a deficit; hover a point for the cash figure. The academies' series ends a year earlier because their accounts are published on a different cycle — see the note below the table above."
 #| column: page
 
 # Deficit is a status, not a category or a magnitude, so it takes a
@@ -3922,26 +4024,46 @@ ord <- fex %>% arrange(reserve_pct) %>% pull(name)
 rp <- fpan %>%
   mutate(school = factor(short_sch(name), short_sch(ord)),
          yr = year,
-         neg = pmin(reserve_pct, 0))
+         neg = pmin(reserve_pct, 0),
+         hov = sprintf("%s, %s<br>Reserve %s (%s of income)<br>In-year %s<br>Roll %s",
+                       short_sch(name), year_label, gbp(reserve),
+                       pp(reserve_pct), gbp(balance), fmt_n(roll)))
 
-ggplot(rp, aes(yr, reserve_pct)) +
+p <- ggplot(rp, aes(yr, reserve_pct, group = school, text = hov)) +
   geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
   geom_ribbon(aes(ymin = neg, ymax = 0), fill = DEFICIT_COL, alpha = 0.28) +
   geom_line(linewidth = 0.8, colour = "grey20") +
-  geom_point(size = 1.5, colour = "grey20") +
+  geom_point(size = 1.6, colour = "grey20") +
   facet_wrap(~ school, ncol = 5) +
   scale_x_continuous(breaks = sort(unique(rp$yr)),
                      labels = function(x) paste0(substr(x, 3, 4), "/",
                                                  substr(x + 1, 3, 4))) +
   scale_y_continuous(labels = scales::label_percent()) +
-  labs(x = NULL, y = "Revenue reserve as a share of annual income",
-       title = "Every school but one has been spending its reserve",
-       subtitle = str_wrap(paste("Shaded years are years the school was carrying a deficit.", "The line is the accumulated surplus, not the in-year balance."), 100),
-       caption = "Source: DfE school income and expenditure (CFR and academy accounts returns).") +
+  labs(x = NULL, y = "Revenue reserve as a share of annual income") +
   theme_bh(10) +
   theme(axis.text.x = element_text(size = 7),
         panel.spacing.x = unit(9, "pt"))
+
+# Drawn live rather than as a PNG, so the panels stay sharp at any zoom
+# and each point can carry the cash figure behind the percentage.
+plotly::ggplotly(p, tooltip = "text", height = 560) %>%
+  plotly::layout(
+    margin = list(t = 60),
+    title = list(
+      text = paste0("Every school but one has been spending its reserve",
+                    "<br><span style='font-size:12px;color:#555'>",
+                    "Shaded years are years the school was carrying a deficit. ",
+                    "The line is the accumulated surplus, not the in-year balance.",
+                    "</span>"),
+      x = 0, xanchor = "left", font = list(size = 15)),
+    hoverlabel = list(align = "left")) %>%
+  plotly::config(displayModeBar = FALSE)
 ```
+
+*Source: DfE school income and expenditure --- Consistent Financial
+Reporting returns for maintained schools and Academies Accounts Returns
+for academies, both published on the*
+*[schools financial benchmarking service](https://financial-benchmarking-and-insights-tool.education.gov.uk/).*
 
 ## Small schools receive more per pupil and are still likelier to be in deficit {#sec-size-finance}
 
@@ -3981,6 +4103,59 @@ than the largest band. They are nonetheless the likeliest to be in
 deficit: `r fmt_pct(sf_$pct_deficit[1], 0)` of schools under 500 pupils,
 against `r fmt_pct(min(sf_$pct_deficit), 0)` at the most favourable size.
 Extra funding per head does not compensate for the loss of scale.
+
+### The same argument, for Brighton's own schools {#sec-lump-sum}
+
+The national picture is a correlation across thousands of schools. The
+funding formula says why, and it says it in cash, for these ten schools,
+in a single year.
+
+```{r tbl-lump}
+#| tbl-cap: "The 2025-26 schools block allocation, split into the money that follows pupils and the money that does not. The lump sum is a flat cash amount paid to every secondary school whatever its size; rates, PFI and split-site payments belong to the site rather than the roll. Covers ages 5 to 16, so sixth forms are not in it. Ranked smallest school first."
+#| column: page
+
+fund %>%
+  left_join(fex %>% select(urn, name), by = "urn") %>%
+  arrange(fund_pupils) %>%
+  transmute(School = name,
+            `Pupils, 5–16` = fmt_n(fund_pupils),
+            `Block allocation` = gbp(block),
+            # Two columns with the same name is one column: dplyr keeps
+            # the second and drops the first, silently. This table had
+            # two called "— per pupil" until the render was read.
+            `Follows pupils` = gbp(pupil_led),
+            `Pupil-led, per pupil` = paste0("£", fmt_n(marginal_pp)),
+            `Does not follow pupils` = gbp(fixed),
+            `Fixed, per pupil` = paste0("£", fmt_n(fixed_pp)),
+            `of which lump sum` = paste0("£", fmt_n(lump_pp))) %>%
+  knitr::kable(align = "lrrrrrrr")
+```
+
+*Source: DfE
+[school funding statistics](https://explore-education-statistics.service.gov.uk/find-statistics/school-funding-statistics),
+school-level allocations for 2025-26.*
+
+**Every secondary school in England gets the same lump sum**, and this
+year it is `r paste0("£", fmt_n(unique(fund$lump)))`. Spread over
+`r fmt_n(max(fund$fund_pupils))` pupils at
+`r fund %>% slice_max(fund_pupils, n = 1) %>% left_join(fex %>% select(urn, short), by = "urn") %>% pull(short)`
+that is `r paste0("£", fmt_n(fund$lump_pp[which.max(fund$fund_pupils)]))` a
+head. Spread over `r fmt_n(min(fund$fund_pupils))` at
+`r fund %>% slice_min(fund_pupils, n = 1) %>% left_join(fex %>% select(urn, short), by = "urn") %>% pull(short)`
+it is `r paste0("£", fmt_n(fund$lump_pp[which.min(fund$fund_pupils)]))`.
+The smaller school is better funded per pupil, which is the formula
+working as designed --- and it still has to run a full curriculum, a
+leadership team and a building on
+`r gbp(min(fund$block))` against `r gbp(max(fund$block))`.
+
+**This is also the number that matters for what a lost child costs.**
+It is not a school's average funding per pupil, which is what an income
+statement shows. A departing Year 7 takes the pupil-led money with them
+--- between `r paste0("£", fmt_n(min(fund$marginal_pp)))` and
+`r paste0("£", fmt_n(max(fund$marginal_pp)))` a year across these ten
+schools --- and leaves every pound of the lump sum, the rates and the
+PFI behind, to be carried by the children who remain. @sec-finance-exposure
+uses the pupil-led rate for exactly that reason.
 
 ## What the projections do to this {#sec-finance-exposure}
 
@@ -4233,6 +4408,260 @@ next to `r yr_aar` ones. Nothing has been adjusted to hide the gap; the
 year is in the table.
 :::
 
+## Which schools are most at risk, and when {#sec-finance-risk}
+
+@sec-finance-exposure gives each school's exposure as a single figure
+for 2035. It does not say when the money runs out, and that is the
+question a council has to answer first. This section projects the roll
+year by year and asks what it does to each school's annual position.
+
+```{r risk-prep}
+#| include: false
+# THE ROLL, YEAR BY YEAR. Five year groups, so the roll in any year is
+# the sum of the last five intakes. The intakes to 2026 are the offers
+# the council published; from there the model's proportional trajectory
+# carries them on, interpolated to single years.
+#
+# As in the exposure table, the model supplies the CHANGE and the
+# published figures supply the LEVEL: the projected roll is the funded
+# 5-16 count for 2026 plus the modelled change from 2026. Without that
+# rebasing Longhill and Brighton Aldridge start 150 pupils light,
+# because five years of Year 7 offers do not account for the children
+# who arrive in-year.
+RISK_YEARS <- 2026:2035
+urn_of <- setNames(as.character(oi$schools$urn), oi$schools$name)
+
+r_obs <- fp$factsheets %>%
+  transmute(urn = unname(urn_of[name]), year, intake = off_total) %>%
+  filter(!is.na(urn), year >= min(RISK_YEARS) - 4)
+
+r_traj <- os$central %>%
+  filter(substr(config, 1, 2) == "A.") %>%
+  transmute(urn = unname(urn_of[name]), entry_year, intake) %>%
+  filter(!is.na(urn)) %>%
+  group_by(urn) %>%
+  summarise(ratio = list(approx(entry_year,
+                                intake / intake[which.min(entry_year)],
+                                xout = RISK_YEARS, rule = 2)$y),
+            .groups = "drop") %>%
+  mutate(year = list(RISK_YEARS)) %>% tidyr::unnest(c(ratio, year))
+
+r_series <- bind_rows(
+  r_obs %>% filter(year < min(RISK_YEARS)),
+  r_traj %>%
+    inner_join(r_obs %>% filter(year == min(RISK_YEARS)) %>%
+                 select(urn, base = intake), by = "urn") %>%
+    transmute(urn, year, intake = ratio * base))
+
+r_roll <- purrr::map_dfr(RISK_YEARS, function(y)
+  r_series %>% filter(year > y - 5, year <= y) %>%
+    group_by(urn) %>% summarise(mroll = sum(intake), .groups = "drop") %>%
+    mutate(year = y)) %>%
+  group_by(urn) %>%
+  mutate(d_roll = mroll - mroll[year == min(RISK_YEARS)]) %>%
+  ungroup() %>%
+  inner_join(fund %>% select(urn, fund_pupils, marginal_pp), by = "urn") %>%
+  mutate(roll = fund_pupils + d_roll)
+
+stopifnot(nrow(r_roll) == length(RISK_YEARS) * nrow(fex),
+          !any(is.na(r_roll$roll)))
+
+# THE MONEY. A school that loses pupils loses the pupil-led funding they
+# carried. It can shed some cost in response - teaching staff, mostly -
+# but not all of it, and not at once. SHED is the share of the lost
+# funding it manages to take out of its cost base; what is left is the
+# annual hole the roll has opened.
+SHED <- c(`Sheds 90% of the cost` = 0.90,
+          `Sheds 75% of the cost` = 0.75,
+          `Sheds 50% of the cost` = 0.50)
+SHED_MID <- "Sheds 75% of the cost"
+
+risk <- purrr::map_dfr(names(SHED), function(s)
+  r_roll %>%
+    inner_join(fex %>% select(urn, name, short, faith, reserve, balance_pct,
+                              income),
+               by = "urn") %>%
+    mutate(scenario = s,
+           lost_funding = -d_roll * marginal_pp,
+           pressure = lost_funding * (1 - SHED[[s]]),
+           balance_now = balance_pct * income,
+           gap = balance_now - pressure,
+           gap_pct = gap / income))
+
+risk_mid <- risk %>% filter(scenario == SHED_MID)
+risk_end <- risk %>% filter(year == max(RISK_YEARS)) %>%
+  mutate(years_left = if_else(reserve > 0 & gap < 0, reserve / -gap, NA_real_))
+rk <- function(p, s = SHED_MID)
+  risk_end %>% filter(scenario == s, str_detect(name, p))
+r_neg <- risk_end %>% filter(scenario == SHED_MID, gap < 0)
+```
+
+**The arithmetic, in four lines.** A school's roll falls by some number
+of pupils. Each of them was carrying the pupil-led funding in
+@sec-lump-sum, so the school's income falls by that number times that
+rate. It responds by taking cost out --- mostly teaching staff --- but
+it cannot take out all of it, because the leadership team, the building
+and the curriculum offer do not shrink in step. Whatever it cannot take
+out is added to the deficit it is already running.
+
+The one judgement in that is **how much cost a school can shed**, so it
+is shown at three values rather than one.
+
+```{r fig-risk-gap}
+#| fig-cap: "The annual gap between what each school receives and what it spends, projected to 2035 on the middle assumption that a school takes out three quarters of the cost when it loses the funding. The gap starts at each school's most recent in-year balance and deteriorates as the roll falls. Schools that end below zero are coloured; hover for the figures behind any point."
+#| column: page
+
+rgap <- risk_mid %>%
+  mutate(ends_down = short %in% r_neg$short,
+         hov = sprintf("%s, %d<br>Roll %s (%+.0f on 2026)<br>Funding lost %s<br>Annual gap %s (%s of income)",
+                       short, year, fmt_n(roll), d_roll,
+                       gbp(lost_funding), gbp(gap), pp(gap_pct)))
+
+pal <- setNames(c("#d03b3b", "#eb6834", "#c2701c", "#6b4fbb", "#2a78d6", "#1baf7a")[
+                  seq_len(nrow(r_neg))],
+                r_neg$short[order(r_neg$gap)])
+
+p <- plotly::plot_ly(height = 520)
+for (s in unique(rgap$short[!rgap$ends_down]))
+  p <- p %>% plotly::add_lines(
+    data = rgap %>% filter(short == s), x = ~year, y = ~gap, name = s,
+    line = list(color = "#c8c8c8", width = 1.6), showlegend = FALSE,
+    hovertext = ~hov, hoverinfo = "text")
+for (s in names(pal))
+  p <- p %>% plotly::add_lines(
+    data = rgap %>% filter(short == s), x = ~year, y = ~gap, name = s,
+    line = list(color = unname(pal[s]), width = 2.6),
+    hovertext = ~hov, hoverinfo = "text")
+
+p %>%
+  plotly::layout(
+    shapes = list(list(type = "line", x0 = min(RISK_YEARS), x1 = max(RISK_YEARS),
+                       y0 = 0, y1 = 0, line = list(color = "#555", width = 1))),
+    xaxis = list(title = "", dtick = 2, zeroline = FALSE),
+    yaxis = list(title = "Annual surplus or deficit", tickprefix = "£",
+                 tickformat = ".2s", zeroline = FALSE),
+    legend = list(orientation = "h", x = 0, y = -0.12, font = list(size = 11)),
+    margin = list(t = 90, r = 20),
+    # Counted, not asserted: a draft of this title said three schools
+    # were already below the line when five of them were.
+    title = list(
+      text = paste0(
+        knitr::combine_words(c(
+          sprintf("%d schools end below the line", nrow(r_neg)),
+          sprintf("%d are already there", sum(rgap$gap[rgap$year == min(RISK_YEARS)] < 0)))),
+        "<br><span style='font-size:12px;color:#555'>",
+        "Grey lines are the schools that stay in surplus. ",
+        "Middle assumption: a school takes out three quarters of the ",
+        "cost when the funding goes.</span>"),
+      x = 0, xanchor = "left", font = list(size = 15)),
+    hoverlabel = list(align = "left")) %>%
+  plotly::config(displayModeBar = FALSE)
+```
+
+*Sources: DfE school income and expenditure; DfE school funding
+statistics 2025-26; BHCC allocation factsheets; modelled intakes,
+configuration A of the open scenarios.*
+
+```{r tbl-risk}
+#| tbl-cap: "Where each school ends up by 2035, and how long its reserve lasts. The gap is the projected annual surplus or deficit at that point, on the middle assumption. Years of reserve divides today's reserve by that gap; a school already overdrawn has none to divide. Ranked by the 2035 gap as a share of income."
+#| column: page
+
+risk_end %>%
+  filter(scenario == SHED_MID) %>%
+  arrange(gap_pct) %>%
+  transmute(School = paste0(name, if_else(faith, " †", "")),
+            `Roll 2026` = fmt_n(fund_pupils),
+            `Roll 2035` = fmt_n(roll),
+            `Change` = pp(d_roll / fund_pupils, 0),
+            `Funding lost` = gbp(lost_funding),
+            `Gap in 2035` = gbp(gap),
+            `— % of income` = pp(gap_pct),
+            `Reserve now` = gbp(reserve),
+            `Years of reserve` = case_when(
+              reserve <= 0 ~ "already overdrawn",
+              is.na(years_left) ~ "still in surplus",
+              TRUE ~ sprintf("%.1f", years_left))) %>%
+  knitr::kable(align = "lrrrrrrrr")
+```
+
+**`r sum(risk_mid$gap[risk_mid$year == min(RISK_YEARS)] < 0)` of the ten
+were already spending more than they received in their latest return**,
+and the falling roll makes it worse for every one of them. Two are in a
+different category from the rest: Cardinal Newman and Hove Park are
+carrying accumulated deficits of
+`r gbp(abs(f_of("Cardinal Newman")$reserve))` and
+`r gbp(abs(f_of("Hove Park")$reserve))` --- both, on the measure
+[Schools Week uses for the schools in the deepest trouble nationally](https://schoolsweek.co.uk/revealed-the-council-schools-with-million-pound-budget-deficits/),
+million-pound deficits already. Neither is a small school and neither
+got there by being unpopular: Cardinal Newman is the largest school in
+the city and its roll has been rising.
+
+**Longhill is the school the projection changes most.** Its in-year
+position today is only `r gbp(f_of("Longhill")$balance_pct * f_of("Longhill")$income)`,
+which does not look like a crisis. But its roll falls by
+`r fmt_pct(-100 * rk("Longhill")$d_roll / rk("Longhill")$fund_pupils, 0)`
+by `r max(RISK_YEARS)` --- the steepest fall of any school whose
+projection can be trusted --- and that takes
+`r gbp(rk("Longhill")$lost_funding)` of funding with it. On the middle
+assumption its annual gap reaches `r gbp(rk("Longhill")$gap)`, which its
+`r gbp(f_of("Longhill")$reserve)` reserve covers for
+`r sprintf("%.1f", rk("Longhill")$years_left)` years.
+
+**Four schools absorb it.** `r knitr::combine_words(sort(risk_end$short[risk_end$scenario == SHED_MID & risk_end$gap >= 0]))`
+are running surpluses large enough that the roll loss does not put them
+under, even by `r max(RISK_YEARS)`. Two of them --- Brighton Aldridge
+and Patcham --- are doing that from reserves at or below zero, so they
+are repairing rather than comfortable.
+
+```{r tbl-risk-band}
+#| tbl-cap: "How much the answer depends on the one assumption. Each cell is the projected annual gap in 2035 as a share of the school's income. Ranked by the middle column."
+
+risk_end %>%
+  mutate(scenario = factor(scenario, names(SHED))) %>%
+  select(name, faith, scenario, gap_pct) %>%
+  tidyr::pivot_wider(names_from = scenario, values_from = gap_pct) %>%
+  arrange(.data[[SHED_MID]]) %>%
+  transmute(School = paste0(name, if_else(faith, " †", "")),
+            across(all_of(names(SHED)), ~ pp(.x, 1))) %>%
+  knitr::kable(align = "lrrr")
+```
+
+**The assumption is load-bearing and the ranking is not.** Whether a
+school sheds half or nine tenths of the cost moves every number, and at
+the pessimistic end `r sum(risk_end$scenario == names(SHED)[3] & risk_end$gap < 0)`
+of the ten are below the line rather than
+`r sum(risk_end$scenario == names(SHED)[1] & risk_end$gap < 0)`. What
+does not move is the order: the schools at the top of this table are at
+the top of it under every assumption.
+
+::: {.callout-warning appearance="simple"}
+## What this projection is and is not
+
+**It is a measure of pressure, not a forecast of any school's accounts.**
+Nothing here is allowed to happen. A maintained school whose reserve
+goes negative enters a licensed deficit and agrees a recovery plan with
+the council; an academy trust in that position answers to the ESFA. The
+figures say how large a hole has to be closed and roughly when, not what
+the balance sheet will read.
+
+**It holds everything else still.** Today's admission numbers, today's
+funding rates in real terms, today's in-year balance as the starting
+point, and no pay award, energy shock, capital receipt or restructuring.
+Each of those is larger than some of the differences in the table.
+
+**The two faith schools are marked, and their rolls are the least
+reliable figures here.** The model admits to Cardinal Newman and King's
+on distance alone. Cardinal Newman's projected fall of
+`r pp(rk("Cardinal Newman")$d_roll / rk("Cardinal Newman")$fund_pupils, 0)`
+drives the largest gap in the table and should be read as an
+illustration of what that fall would cost, not as a claim that it will
+happen. Its *current* deficit is not modelled at all --- it is what the
+school reported.
+
+**The starting balance is a single year.** A school having one bad year
+looks permanently worse here than one with a steady small deficit, and
+@fig-school-reserves is the better guide to which is which.
+:::
 ## Longhill's position {#sec-longhill-money}
 
 ```{r tbl-longhill-finance}
@@ -5038,22 +5467,141 @@ bind_words <- function(x) knitr::combine_words(short_sch(x))
 
 ### M2 --- adding the capacity ceiling {#sec-m2}
 
-Flows are computed as in M1, then scaled so that no school exceeds its
-admission number while every neighbourhood still sends all its children
-somewhere:
+M1 lets every school take as many children as its attractiveness and its
+distance earn it. Real schools stop at their admission number. M2 adds
+that, and it is worth being precise about how, because the mechanism is
+not a cap applied after the fact --- it changes where the children who
+cannot get in end up.
+
+Flows are computed as in M1, then two balancing factors are found:
 
 $$
-T^{*}_{ij} \;=\; a_i\, b_j\, T_{ij},
-\qquad
-\sum_j T^{*}_{ij} = O_i,
-\qquad
-\sum_i T^{*}_{ij} \;\le\; \overline{T}_j,
-\qquad b_j \le 1
+T^{*}_{ij} \;=\; a_i\, b_j\, T_{ij}
 $$
 
-$\overline{T}_j$ is school $j$'s published admission number for 2026.
-The $b_j \le 1$ matters: undersubscribed schools are never inflated to
-fill themselves, only oversubscribed ones are cut back.
+- $a_i$ is the **origin factor**, one per neighbourhood. It is the
+  number that makes neighbourhood $i$ send exactly its own children and
+  no more: $\sum_j T^{*}_{ij} = O_i$. In M1 it is just the normaliser
+  that turns relative attractions into shares; here it has to keep doing
+  that while schools are being cut back underneath it.
+- $b_j$ is the **destination factor**, one per school, and it is
+  constrained to $b_j \le 1$. It can shrink a school's intake. It can
+  never inflate one.
+
+$\overline{T}_j$ is school $j$'s published admission number for 2026,
+and the pair of factors is required to satisfy
+
+$$
+\sum_j T^{*}_{ij} = O_i \quad \text{(every child placed)},
+\qquad
+\sum_i T^{*}_{ij} \;\le\; \overline{T}_j \quad \text{(no school over its number)}
+$$
+
+## The ceiling only exists where it binds {#sec-m2-slack}
+
+The $b_j \le 1$ restriction is what makes this **a destination
+constraint that switches on and off** rather than one that is always
+active. For every school exactly one of two things is true:
+
+$$
+b_j = 1 \quad\text{(the school is left alone)}
+\qquad\text{or}\qquad
+\sum_i T^{*}_{ij} = \overline{T}_j \quad\text{(the school is exactly full)}
+$$
+
+An undersubscribed school is never scaled up to fill itself --- that is
+the difference between this and a doubly-constrained model, where both
+margins are forced to match and every school would be pushed to its
+admission number whether anyone wanted it or not. Here the model is
+production-constrained everywhere, and destination-constrained only at
+the schools that would otherwise overflow.
+
+## How the two factors are found {#sec-m2-ipf}
+
+There is no closed form, because each factor depends on the other:
+cutting an oversubscribed school frees children who must go somewhere,
+which changes what every other school receives. They are found by
+iterative proportional fitting, which is two steps repeated until
+nothing moves:
+
+1. **Scale each row.** Multiply every flow out of neighbourhood $i$ by
+   whatever makes its row sum to $O_i$ again.
+2. **Scale each column,** by $\min(\overline{T}_j / \sum_i T_{ij},\, 1)$.
+   A school over its number is cut back to it; a school under its number
+   is multiplied by 1 and left exactly as it was.
+
+Repeat. The published $a_i$ and $b_j$ are the accumulated products of
+those per-step factors. The loop stops when every school is at or under
+its admission number and every neighbourhood is placing all its
+children.
+
+**Step 1 is what makes this a rationing rule rather than a cull.** A
+child cut from an oversubscribed school in step 2 is not lost from the
+model: the next row-scaling redistributes that neighbourhood's whole
+demand across the schools it can still reach, in proportion to how
+attractive and how close they are. The displacement cascades, which is
+why the ceiling moves schools that are nowhere near full.
+
+```{r m2-toy}
+#| tbl-cap: "One neighbourhood, three schools, to show the arithmetic. School A is the most attractive but has 40 places. The children it cannot take do not disappear: they are shared between B and C in the ratio those two already had, 3 to 1."
+
+toy <- tibble(School = c("A", "B", "C"),
+              `M1 flow` = c(60, 30, 10),
+              Places = c(40, 200, 200))
+toy <- toy %>%
+  mutate(`Capped` = pmin(`M1 flow`, Places),
+         free = sum(`M1 flow`) - sum(`Capped`),
+         slack = if_else(`M1 flow` < Places, `M1 flow`, 0),
+         `M2 flow` = `Capped` + free * slack / sum(slack)) %>%
+  select(School, `M1 flow`, Places, `M2 flow`)
+stopifnot(abs(sum(toy$`M2 flow`) - 100) < 1e-9)
+toy %>%
+  mutate(across(-School, ~ sprintf("%.0f", .x))) %>%
+  knitr::kable(align = "lrrr")
+```
+
+With one neighbourhood it settles in a single pass. With 179 of them
+competing for the same ten schools it takes several, because every
+redistribution can push another school over its number.
+
+## What it is not
+
+**It is not the admissions algorithm.** There is no priority order in
+it: no catchment, no sibling, no distance tie-break. A school over its
+number is scaled back *proportionally*, so every neighbourhood sending
+to it loses the same fraction of its children, whether it is next door
+or across the city. The real rule takes in-catchment children first and
+then the nearest --- @sec-fr-allocation models that separately, on top
+of a catchment map. M2 is a capacity ceiling, not an allocation.
+
+**It does not know which schools actually rationed places.** It applies
+the published admission number to every school equally. Whether that
+number binds in the model is an output, and comparing it against the
+schools that really did ration is one of the things this section is for.
+
+```{r m2-check}
+#| include: false
+# The constraints are verified on the published flows rather than
+# trusted: an IPF that ran out of iterations would return quietly.
+m2f <- mt$od_flows %>% filter(model == "M2")
+m2_orig <- m2f %>% group_by(zone) %>%
+  summarise(sent = sum(flow), Oi = first(Oi), .groups = "drop")
+m2_pan <- setNames(oi$schools$pan2026, oi$schools$name)
+m2_dest <- m2f %>% group_by(name) %>%
+  summarise(got = sum(flow), .groups = "drop") %>%
+  mutate(cap = unname(m2_pan[name]), fill = got / cap)
+m2_full <- m2_dest %>% filter(cap - got < 0.1)
+stopifnot(max(m2_dest$got - m2_dest$cap) < 1e-6,
+          max(abs(m2_orig$sent - m2_orig$Oi)) < 1)
+```
+
+Both constraints hold on the published flows: no school is over its
+admission number by more than a rounding error, every neighbourhood
+places all its children, and the ceiling is active at
+**`r nrow(m2_full)` of the `r nrow(m2_dest)` schools**. At the other
+`r nrow(m2_dest) - nrow(m2_full)` it is inert --- `b_j` is exactly 1 and
+those schools are left wherever M1 put them, the emptiest at
+`r fmt_pct(100 * min(m2_dest$fill), 0)` of its admission number.
 
 ```{r tbl-m2}
 #| tbl-cap: "M2. Weighted preferences with a capacity ceiling, against the offers actually made. The change column is the size of the residual against M1: negative means the ceiling moved that school closer."
@@ -5642,8 +6190,7 @@ DESIGN_COL <- setNames(
 ```
 
 ```{r fig-idaci-bands}
-#| fig-cap: "How each catchment's households with dependent children divide between the most deprived three deciles nationally, the middle four, and the least deprived three. Every bar is one catchment; bars are grouped by design and ordered within it by how deprived the catchment is."
-#| fig-height: 9
+#| fig-cap: "How each catchment's households with dependent children divide between the most deprived three deciles nationally, the middle four, and the least deprived three. Every bar is one catchment, grouped by design and ordered within it by how deprived the catchment is. The figure at the right of each bar is its share in the three most deprived deciles; hover a segment for the household count behind it."
 #| column: page
 
 bd <- fr$idaci_bands %>%
@@ -5657,39 +6204,74 @@ bd <- fr$idaci_bands %>%
 
 # The row key has to be unique across designs, because a catchment
 # appears in several of them; the label shown is just the catchment.
-row_lv <- unique(paste(bd$design, bd$region, sep = "|"))
-bd <- bd %>% mutate(row = factor(paste(design, region, sep = "|"), row_lv))
-row_lab <- setNames(sub("^.*\\|", "", row_lv), row_lv)
+bd <- bd %>% mutate(row = paste(design, region, sep = "|"))
+row_lv <- unique(bd$row)
 
-# The share in the most deprived band is printed OUTSIDE the bar. Inside
-# it sat on the darkest fill and could not be read.
-lab <- bd %>% filter(band == fr$idaci_band_levels[1])
+# A blank row between designs, carrying the design's name. It does the
+# job the facet strips used to do, without needing facets - which is
+# what makes this one set of axes and so a single live plot.
+spacers <- tibble(design = fr_designs, row = paste0("~~", fr_designs))
+ordered <- unlist(lapply(fr_designs, function(d)
+  c(spacers$row[spacers$design == d], row_lv[startsWith(row_lv, paste0(d, "|"))])))
 
-ggplot(bd, aes(share, row, fill = band)) +
-  geom_col(width = 0.72, colour = "white", linewidth = 0.6,
-           position = position_stack(reverse = TRUE)) +
-  geom_text(data = lab, aes(x = 1.03, y = row,
-                            label = sprintf("%.0f%%", 100 * share)),
-            hjust = 0, size = 2.9, colour = "grey25", inherit.aes = FALSE) +
-  facet_grid(design ~ ., scales = "free_y", space = "free_y",
-             labeller = label_wrap_gen(18), switch = "y") +
-  scale_y_discrete(labels = row_lab) +
-  scale_x_continuous(labels = scales::label_percent(),
-                     breaks = seq(0, 1, 0.25), limits = c(0, 1.13),
-                     expand = expansion(mult = c(0, 0))) +
-  scale_fill_manual(values = BAND_COL, name = NULL) +
-  labs(x = "Households with dependent children", y = NULL,
-       title = "What kind of neighbourhood each catchment holds",
-       subtitle = str_wrap(paste("Each bar is one catchment, ordered within its design by how deprived it is.",
-                                 "The figure at the right is the share in the three most deprived deciles in England."), 96),
-       caption = "Sources: ONS postcode household counts; IMD 2019 IDACI.") +
-  theme_bh(10) +
-  theme(legend.position = "top",
-        panel.grid.major.y = element_blank(),
-        strip.placement = "outside",
-        strip.text.y.left = element_text(angle = 0, hjust = 1, face = "bold",
-                                         size = 8))
+# plotly stacks categorical y axes from the bottom, so the order is
+# reversed to read top-down.
+lev <- rev(ordered)
+lab <- setNames(sub("^.*\\|", "", ordered), ordered)
+lab[startsWith(ordered, "~~")] <- ""
+
+bd <- bd %>% mutate(row = factor(row, lev))
+
+p <- plotly::plot_ly(height = 26 * length(ordered) + 170)
+for (b in fr$idaci_band_levels) {
+  s <- bd %>% filter(band == b)
+  p <- p %>% plotly::add_trace(
+    data = s, x = ~share, y = ~row, type = "bar", orientation = "h",
+    name = b, marker = list(color = unname(BAND_COL[b]),
+                            line = list(color = "white", width = 1)),
+    hovertemplate = paste0(
+      "<b>%{customdata[0]}</b><br>%{customdata[1]}<br>",
+      b, ": %{x:.0%} (%{customdata[2]} households)<extra></extra>"),
+    customdata = ~cbind(region, as.character(design), fmt_n(hh)))
+}
+
+dep_lab <- bd %>% filter(band == fr$idaci_band_levels[1])
+
+p %>%
+  plotly::layout(
+    barmode = "stack", bargap = 0.28,
+    xaxis = list(title = "Households with dependent children",
+                 tickformat = ".0%", range = c(0, 1.16),
+                 dtick = 0.25, zeroline = FALSE),
+    yaxis = list(title = "", categoryorder = "array", categoryarray = lev,
+                 tickvals = ordered, ticktext = unname(lab),
+                 tickfont = list(size = 11)),
+    legend = list(orientation = "h", x = 0, y = 1.04, font = list(size = 11)),
+    margin = list(l = 170, t = 90),
+    title = list(
+      text = paste0("What kind of neighbourhood each catchment holds",
+                    "<br><span style='font-size:12px;color:#555'>",
+                    "Each bar is one catchment, ordered within its design by ",
+                    "how deprived it is.</span>"),
+      x = 0, xanchor = "left", font = list(size = 15)),
+    annotations = c(
+      # The share in the most deprived band, printed clear of the bar.
+      # Inside it sat on the darkest fill and could not be read.
+      lapply(seq_len(nrow(dep_lab)), function(i) list(
+        x = 1.02, y = as.character(dep_lab$row[i]), xref = "x", yref = "y",
+        text = sprintf("%.0f%%", 100 * dep_lab$share[i]),
+        showarrow = FALSE, xanchor = "left",
+        font = list(size = 11, color = "#3d3d3d"))),
+      # The design names, in place of facet strips.
+      lapply(seq_len(nrow(spacers)), function(i) list(
+        x = 0, y = spacers$row[i], xref = "x", yref = "y",
+        text = paste0("<b>", str_wrap(spacers$design[i], 40), "</b>"),
+        showarrow = FALSE, xanchor = "left", yanchor = "middle",
+        font = list(size = 11, color = "#1a1a1a")))))  %>%
+  plotly::config(displayModeBar = FALSE)
 ```
+
+*Sources: ONS postcode household counts; IMD 2019 IDACI.*
 
 **BACA's catchment is the outlier under every design**, and under the
 current map it is extreme: `r fmt_pct(100 * i_now$hi, 0)` of its

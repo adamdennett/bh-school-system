@@ -24,3 +24,4 @@ slides.knit.md
 *.carto_tmp
 
 **/*.quarto_ipynb
+data/school-funding-statistics_2025-26.zip

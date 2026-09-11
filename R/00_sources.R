@@ -40,6 +40,7 @@ SOURCES <- tibble::tribble(
   "bhcc_plan",   "School place planning reports and forecasts", "Brighton & Hove City Council",      "Catchment forecasts and admission-number proposals, in committee papers and consultation documents.", "https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions",                    "OGL v3",
   "bhcc_catch",  "Secondary catchment boundaries",            "Brighton & Hove City Council",        "The catchment map in force from September 2026 entry, and the map it replaced.",               "https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions",                        "OGL v3",
   "lever",       "How to Pull the Right Lever",               "Dennett and colleagues, UCL CASA",    "The multilevel model of school-level attainment whose specification and decomposition section 2 follows.", "https://adamdennett.github.io/school_attainment_tool/index.html", "author’s own work",
+  "fundstats",   "School funding statistics",                 "Department for Education",            "School-level funding allocations for 2025-26, split into the formula's own components.",      "https://explore-education-statistics.service.gov.uk/find-statistics/school-funding-statistics",  "OGL v3",
   "esri",        "World Light Gray Canvas",                   "Esri",                                "The base cartography under every map in this document. Keyless, unlike the CARTO tiles it replaced.", "https://www.arcgis.com/home/item.html?id=979c6cc89af9449cbeb5342a439c6a76",                  "Esri terms, attribution required")
 
 stopifnot(!any(duplicated(SOURCES$key)), !any(is.na(SOURCES$url)))
@@ -67,6 +68,8 @@ DATASETS <- tibble::tribble(
   "school_effect_decomp.rds",     "Variance decomposition",                c("perf", "lever"),                                       "school attainment tool",
   "school_leverage.rds",          "How much a school can reach",           c("perf", "lever"),                                       "school attainment tool",
   "postcode_children.csv",        "Households with children, by postcode", c("census", "onspd", "imd"),                              "this repository, R/01_assemble.R",
+  "school-funding-statistics_2025-26/data/20260129_School_level_data_csv.csv",
+                                  "Funding allocations, 2025-26",          c("fundstats"),                                           "published dataset",
   "council_forecast_oct24.csv",   "The council's October 2024 forecast",   c("bhcc_plan"),                                           "transcribed from the published appendix",
   "catchments_current.geojson",   "Catchments in force",                   c("bhcc_catch"),                                          "published boundary file",
   "lsoa.geojson",                 "LSOA boundaries",                       c("onspd"),                                               "published boundary file",
@@ -104,6 +107,7 @@ QMD_VARS <- tibble::tribble(
   "rg",     "route_geometries.rds",       FALSE,
   "council24", "council_forecast_oct24.csv", TRUE,
   "pcd",    "postcode_children.csv",      TRUE,
+  "fund",   "school-funding-statistics_2025-26/data/20260129_School_level_data_csv.csv", FALSE,
   "catch",  "catchments_current.geojson", TRUE,
   "lsoa",   "lsoa.geojson",               TRUE)
 
