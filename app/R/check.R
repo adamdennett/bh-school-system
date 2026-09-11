@@ -69,6 +69,29 @@ if (!is.finite(m$gorard) || m$gorard < 0 || m$gorard > 1)
 if (!is.finite(m$mean_min) || m$mean_min <= 0)
   fail <- c(fail, "mean journey is not a positive number")
 
+# ---- Displacement adds up -------------------------------------------
+# Every child living in a catchment ends up in exactly one of the three
+# buckets, so the shares must sum to one for every catchment, and the
+# children living in them must sum to the cohort.
+cd <- m$catchment
+sums <- cd$by_catch %>% group_by(home) %>% summarise(s = sum(share), .groups = "drop")
+note(sprintf("catchments: %s displaced (%.0f%%), worst %s at %.0f%%; shares sum to %.3f-%.3f",
+             fmt_n(cd$displaced), 100 * cd$displaced_share, cd$worst,
+             100 * cd$worst_share, min(sums$s), max(sums$s)))
+if (max(abs(sums$s - 1)) > 1e-6)
+  fail <- c(fail, "a catchment's three destination shares do not sum to one")
+if (abs(sum(cd$outside$living) - m$intake) > 1)
+  fail <- c(fail, "the children living in the catchments do not sum to the cohort")
+
+# Turning the catchment up must keep more children local, or the term is
+# not doing what the app says it does.
+tight <- outcomes(inp, run_sim(inp, site = "now", design = "Current catchments",
+                               year = 2026, gamma = 3))
+note(sprintf("catchment strength 3: displaced falls to %.0f%%",
+             100 * tight$catchment$displaced_share))
+if (tight$catchment$displaced_share >= cd$displaced_share)
+  fail <- c(fail, "a stronger catchment does not keep more children local")
+
 # ---- Each preset runs -------------------------------------------------
 for (p in names(inp$presets)) {
   s <- inp$presets[[p]]

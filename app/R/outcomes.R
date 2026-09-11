@@ -90,6 +90,54 @@ outcomes <- function(inp, r, shed = 0.75) {
     intake_hi = suppressWarnings(max(mix$dep_share[in_city], na.rm = TRUE)),
     mix = mix)
 
+  # ---- Who gets a place in their own catchment ------------------------
+  # A catchment is a promise about where your child can go. This counts
+  # how many children living in each catchment the model cannot place in
+  # one of its schools, which is the policy question a boundary review
+  # actually has to answer.
+  #
+  # The two faith schools have no catchment at all and admit across the
+  # city, so children going to them are "outside" by construction rather
+  # than by displacement. They are counted separately, because lumping
+  # them in would make every catchment look far leakier than it is.
+  dsg <- inp$designs[[r$design]]
+  faith_names <- inp$schools$name[inp$schools$faith]
+
+  f2 <- r$flows %>%
+    dplyr::mutate(home = unname(dsg$zone[zone]),
+                  dest_grp = unname(dsg$school[name]),
+                  where = dplyr::case_when(
+                    name %in% faith_names ~ "A faith school",
+                    !is.na(dest_grp) & dest_grp == home ~ "Their own catchment",
+                    TRUE ~ "Another catchment"))
+
+  catch_lab <- vapply(split(inp$schools$short[inp$schools$city],
+                            dsg$school[inp$schools$name[inp$schools$city]]),
+                      function(x) paste(sort(x), collapse = " / "), character(1))
+
+  by_catch <- f2 %>%
+    dplyr::group_by(home, where) %>%
+    dplyr::summarise(n = sum(flow), .groups = "drop") %>%
+    tidyr::complete(home, where = c("Their own catchment", "Another catchment",
+                                    "A faith school"),
+                    fill = list(n = 0)) %>%
+    dplyr::group_by(home) %>%
+    dplyr::mutate(living = sum(n), share = n / living) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(label = dplyr::coalesce(unname(catch_lab[home]), home))
+
+  outside <- by_catch %>%
+    dplyr::filter(where == "Another catchment") %>%
+    dplyr::select(home, label, living, displaced = n, displaced_share = share)
+
+  catchment <- list(
+    by_catch = by_catch, outside = outside,
+    displaced = sum(outside$displaced),
+    displaced_share = sum(outside$displaced) / sum(f2$flow),
+    worst = outside$label[which.max(outside$displaced_share)],
+    worst_share = max(outside$displaced_share),
+    faith_share = sum(f2$flow[f2$where == "A faith school"]) / sum(f2$flow))
+
   # ---- Money ---------------------------------------------------------
   # A school's roll is five year groups. The app moves one of them, so
   # the steady-state roll is five times the intake - which is the roll
@@ -123,7 +171,7 @@ outcomes <- function(inp, r, shed = 0.75) {
     # act on first, so it gets counted separately.
     critical = sum(fin$reserve <= 0 & fin$gap < 0))
 
-  c(places, travel, fairness, money,
+  c(places, travel, fairness, money, list(catchment = catchment),
     list(year = r$year, design = r$design, site = r$site))
 }
 

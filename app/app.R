@@ -116,6 +116,10 @@ ui <- page_sidebar(
                     plotOutput("p_abs_live", height = 292)))),
     nav_panel("Places", plotOutput("p_places", height = 430),
               tableOutput("t_places")),
+    nav_panel("Catchments",
+              plotOutput("p_catch", height = 430),
+              tableOutput("t_catch"),
+              div(class = "note", htmlOutput("catch_note"))),
     nav_panel("Money", plotOutput("p_money", height = 430),
               tableOutput("t_money")),
     nav_panel("Fairness", plotOutput("p_fair", height = 430),
@@ -380,6 +384,84 @@ server <- function(input, output, session) {
                   years_left > 20 ~ "20+",
                   TRUE ~ sprintf("%.1f", years_left)))
   }, striped = TRUE, width = "100%")
+
+  # ---- Who gets a place in their own catchment -------------------------
+  # Blue and orange rather than green and red: the map already uses green
+  # and red for whether a school fills, and these bars are a different
+  # question. Grey for the faith schools, which are outside every
+  # catchment by design rather than by displacement.
+  CATCH_COL <- c(`Their own catchment` = "#2a78d6",
+                 `Another catchment`   = "#eb6834",
+                 `A faith school`      = "#9aa5b1")
+
+  output$p_catch <- renderPlot({
+    b <- met()$catchment$by_catch %>%
+      mutate(where = factor(where, names(CATCH_COL)))
+    ord <- b %>% filter(where == "Another catchment") %>% arrange(share)
+    b <- b %>% mutate(label = factor(label, ord$label))
+    lab <- ord %>% mutate(label = factor(label, ord$label))
+
+    ggplot(b, aes(share, label, fill = where)) +
+      # Without reverse = TRUE the bar stacks in reverse factor order,
+      # so the legend reads own/another/faith and the bar reads
+      # faith/another/own. Same trap as the deprivation bands in the
+      # document.
+      geom_col(width = 0.74, colour = "white", linewidth = 0.6,
+               position = position_stack(reverse = TRUE)) +
+      geom_text(data = lab, aes(x = 1.02, y = label,
+                                label = sprintf("%.0f%%", 100 * share)),
+                inherit.aes = FALSE, hjust = 0, size = 3.1,
+                colour = "#b8501f", fontface = "bold") +
+      scale_fill_manual(values = CATCH_COL, name = NULL) +
+      scale_x_continuous(labels = scales::label_percent(),
+                         limits = c(0, 1.1), breaks = seq(0, 1, 0.25),
+                         expand = expansion(mult = 0)) +
+      labs(x = "Children living in the catchment", y = NULL,
+           title = "Who has to leave their catchment to find a place",
+           subtitle = paste(strwrap(paste(
+             "The figure on the right is the share sent to another catchment's school.",
+             "Faith schools have no catchment and are shown separately."),
+             width = 84), collapse = "\n")) +
+      theme_minimal(12) +
+      theme(legend.position = "top",
+            panel.grid.major.y = element_blank(),
+            plot.title = element_text(face = "bold"),
+            plot.subtitle = element_text(colour = "grey35", size = 10))
+  })
+
+  output$t_catch <- renderTable({
+    m <- met()$catchment
+    m$by_catch %>%
+      select(label, where, n) %>%
+      tidyr::pivot_wider(names_from = where, values_from = n) %>%
+      inner_join(m$outside %>% select(label, living, displaced_share),
+                 by = "label") %>%
+      arrange(desc(displaced_share)) %>%
+      transmute(Catchment = label,
+                `Children living there` = fmt_n(living),
+                `Own catchment` = fmt_n(`Their own catchment`),
+                `Another catchment` = fmt_n(`Another catchment`),
+                `Faith school` = fmt_n(`A faith school`),
+                `Sent elsewhere` = sprintf("%.0f%%", 100 * displaced_share))
+  }, striped = TRUE, width = "100%")
+
+  output$catch_note <- renderUI({
+    m <- met()$catchment
+    HTML(sprintf(paste0(
+      "<p><b>%s children — %.0f%% of the cohort — are placed at a school in ",
+      "another catchment</b>, on top of the %.0f%% who go to one of the two ",
+      "faith schools, which have no catchment at all. The catchment that ",
+      "keeps fewest of its own children is %s, at %.0f%%.</p>",
+      "<p>A catchment is a promise about where a child can go, and this is ",
+      "the share of that promise the geography cannot keep. It is worth ",
+      "watching two things against it. Splitting the paired catchments ",
+      "makes it much worse, because a child in Varndean's catchment who goes ",
+      "to Dorothy Stringer next door now counts as displaced. And turning up ",
+      "how much the catchment counts collapses it — which is what a binding ",
+      "catchment means.</p>"),
+      fmt_n(m$displaced), 100 * m$displaced_share, 100 * m$faith_share,
+      m$worst, 100 * m$worst_share))
+  })
 
   # ---- Fairness --------------------------------------------------------
   output$p_fair <- renderPlot({
