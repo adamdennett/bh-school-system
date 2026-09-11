@@ -91,7 +91,8 @@ ui <- page_sidebar(
     div(strong("Per school"), span(class = "note", " — attractiveness ×, and admission number")),
     div(style = "margin-top:8px", lapply(seq_len(nrow(CITY)),
                                          function(i) school_row(CITY[i, ]))),
-    div(style = "margin-top:18px",
+    div(style = "margin-top:16px", uiOutput("pan_total")),
+    div(style = "margin-top:12px",
         actionButton("reset", "Reset to the preset", class = "btn-sm btn-outline-secondary")),
     hr(),
     selectInput("solve_for", "How attractive would a school have to be to fill?",
@@ -102,6 +103,9 @@ ui <- page_sidebar(
     fill = FALSE, col_widths = c(2, 2, 2, 2, 2, 2),
     uiOutput("kpi_fill"), uiOutput("kpi_short"), uiOutput("kpi_money"),
     uiOutput("kpi_seg"), uiOutput("kpi_travel"), uiOutput("kpi_gap")),
+
+  card(full_screen = FALSE,
+       card_body(padding = 6, plotOutput("p_cohort", height = 190))),
 
   navset_card_tab(
     nav_panel("Map",
@@ -254,6 +258,89 @@ server <- function(input, output, session) {
     else
       sprintf("This map regroups %d of the %d neighbourhood-catchment zones against the one in force, and at this catchment strength it moves %s children between schools.",
               regrouped, length(base), fmt_n(moved))
+  })
+
+  # ---- What the sliders add up to --------------------------------------
+  # The admission numbers above are set school by school, and nobody
+  # adding ten of them in their head notices that the total has drifted
+  # to a fifth more places than there are children. This says so, in the
+  # year the rest of the app is set to.
+  output$pan_total <- renderUI({
+    req(input$year)
+    places <- sum(pan_now())
+    kids <- inp$demand$cohort[match(input$year, inp$demand$year)]
+    pct <- 100 * places / kids
+    spare <- places - kids
+    col <- if (pct <= 105) OK else if (pct <= 115) WARN else BAD
+    fill <- max(2, min(100, 100 / max(pct, 1) * 100))
+
+    div(class = "kpi",
+        div(class = "v", style = paste0("color:", col),
+            sprintf("%.0f%%", pct)),
+        div(class = "l", "Places, against the children"),
+        div(style = "height:9px;border-radius:4px;background:#e8e8e8;margin:5px 0 4px;position:relative;overflow:hidden",
+            div(style = paste0("position:absolute;left:0;top:0;bottom:0;width:",
+                               sprintf("%.1f", fill), "%;background:", col))),
+        div(class = "d",
+            sprintf("%s places for %s children in %d — %s %s",
+                    fmt_n(places), fmt_n(kids), input$year,
+                    fmt_n(abs(spare)),
+                    if (spare >= 0) "spare" else "short")))
+  })
+
+  # ---- The children, and the places set against them -------------------
+  # Figure 11 of the report, with the admission numbers the sliders are
+  # currently set to drawn across it. The gap between the line and the
+  # bar is the surplus, and it is the thing the whole app is about.
+  output$p_cohort <- renderPlot({
+    ob <- inp$cohort$observed
+    places <- sum(pan_now())
+    yr <- input$year
+    kids <- inp$demand$cohort[match(yr, inp$demand$year)]
+
+    # The forward line is the app's OWN demand series, not the
+    # reception-cohort projection behind figure 11 of the report. They
+    # are both cohort projections and they differ by up to 165 children
+    # in 2033; drawing one as the line and putting the marker on the
+    # other would have shown a dot floating off its own trend. The model
+    # scales demand by this series, so this is the one that has to be
+    # drawn.
+    fw <- inp$demand %>%
+      transmute(year, kids = cohort, seg = if_else(extrapolated,
+                                                   "extrapolated", "projected"))
+    solid <- fw %>% filter(seg == "projected")
+    dash <- fw %>% filter(year >= max(solid$year))
+
+    ggplot() +
+      geom_line(data = dash, aes(year, kids), colour = "#b2182b",
+                linewidth = 1, linetype = "12") +
+      geom_line(data = solid, aes(year, kids), colour = "#b2182b",
+                linewidth = 1, linetype = "22") +
+      geom_line(data = ob, aes(year, y7), colour = "grey25", linewidth = 1) +
+      geom_hline(yintercept = places, colour = "#2a78d6", linewidth = 1) +
+      annotate("segment", x = yr, xend = yr, y = kids, yend = places,
+               colour = "#2a78d6", linewidth = 0.5, linetype = "31") +
+      annotate("point", x = yr, y = kids, colour = "#b2182b", size = 2.6) +
+      annotate("text", x = min(ob$year), y = places,
+               label = sprintf("%s places, as you have set them", fmt_n(places)),
+               colour = "#2a78d6", hjust = 0, vjust = -0.6, size = 3.2,
+               fontface = "bold") +
+      annotate("text", x = yr, y = kids,
+               label = sprintf("%s children in %d", fmt_n(kids), yr),
+               colour = "#b2182b", hjust = if (yr > 2030) 1.08 else -0.08,
+               vjust = 1.4, size = 3.2) +
+      scale_y_continuous(labels = scales::label_comma(),
+                         limits = c(0, NA), expand = expansion(mult = c(0, 0.12))) +
+      scale_x_continuous(breaks = seq(2010, 2035, 5)) +
+      labs(x = NULL, y = NULL,
+           title = "Year 7 children, and the places set against them",
+           subtitle = sprintf("Grey is what happened. Red is projected from children already in school, and extrapolated after %d.",
+                              max(inp$demand$year[!inp$demand$extrapolated]))) +
+      theme_minimal(11) +
+      theme(panel.grid.minor = element_blank(),
+            plot.title = element_text(face = "bold", size = 12),
+            plot.subtitle = element_text(colour = "grey35", size = 9),
+            plot.margin = margin(2, 8, 2, 2))
   })
 
   # ---- Map ------------------------------------------------------------

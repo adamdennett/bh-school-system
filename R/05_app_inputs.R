@@ -285,6 +285,17 @@ demand <- readr::read_csv(file.path(DATA, "open_demand_projection.csv"),
             extrapolated)
 
 stopifnot(nrow(demand) >= 10, abs(demand$index[1] - 1) < 1e-9)
+
+# The observed Year 7 series and the projection behind figure 11, so the
+# app can put the places a user has set against the children there will
+# be to fill them.
+rc <- bh_data("reception_cohort.rds")
+cohort <- list(observed = rc$secondary_city %>% select(year, y7 = y7_offers),
+               projected = rc$projection %>% select(year = entry_year, central, lo, hi))
+stopifnot(nrow(cohort$observed) > 5, nrow(cohort$projected) > 3)
+message(sprintf("  Year 7 offers observed %d to %d, projected to %d",
+                min(cohort$observed$year), max(cohort$observed$year),
+                max(cohort$projected$year)))
 message(sprintf("  demand %d to %d, index falls to %.2f",
                 min(demand$year), max(demand$year), min(demand$index)))
 
@@ -414,7 +425,7 @@ presets <- list(
 saveRDS(list(
   schools = schools, zones = zones, cost = cost, designs = DESIGNS,
   attain = attain,
-  params = params, demand = demand, finance = finance,
+  params = params, demand = demand, cohort = cohort, finance = finance,
   seed_intakes = seed_intakes, idaci = idaci,
   lsoa_sf = lsoa_sf, design_sf = design_sf, presets = presets,
   city = CITY, out_of_city = OUT_OF_CITY,
