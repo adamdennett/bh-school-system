@@ -122,6 +122,12 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   A <- tapply(util, d$zone, sum)
   d$flow <- util * (z$Oi[match(d$zone, z$zone)] / A[d$zone])
 
+  # Keep what the model wanted before the ceiling bit. The difference
+  # between this and the capped flow is the whole of the rationing, and
+  # without it "outside their catchment" cannot be split into children
+  # who chose to leave and children who were pushed out.
+  d$wanted <- d$flow
+
   if (capped)
     d$flow <- as.numeric(ipf_cap(d$flow, d$zone, d$name,
                                  setNames(z$Oi, z$zone), cap))

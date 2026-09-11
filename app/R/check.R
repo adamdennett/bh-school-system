@@ -75,22 +75,36 @@ if (!is.finite(m$mean_min) || m$mean_min <= 0)
 # children living in them must sum to the cohort.
 cd <- m$catchment
 sums <- cd$by_catch %>% group_by(home) %>% summarise(s = sum(share), .groups = "drop")
-note(sprintf("catchments: %s displaced (%.0f%%), worst %s at %.0f%%; shares sum to %.3f-%.3f",
-             fmt_n(cd$displaced), 100 * cd$displaced_share, cd$worst,
-             100 * cd$worst_share, min(sums$s), max(sums$s)))
+note(sprintf("catchments: outside %.0f%% = chose %.0f%% + rationed %.0f%%; shares sum to %.3f-%.3f",
+             100 * cd$displaced_share, 100 * cd$chose_share,
+             100 * cd$rationed_share, min(sums$s), max(sums$s)))
 if (max(abs(sums$s - 1)) > 1e-6)
-  fail <- c(fail, "a catchment's three destination shares do not sum to one")
+  fail <- c(fail, "a catchment's three shares do not sum to one")
 if (abs(sum(cd$outside$living) - m$intake) > 1)
   fail <- c(fail, "the children living in the catchments do not sum to the cohort")
+if (abs(cd$chose_share + cd$rationed_share - cd$displaced_share) > 1e-9)
+  fail <- c(fail, "choosing and rationing do not add up to being outside")
 
-# Turning the catchment up must keep more children local, or the term is
-# not doing what the app says it does.
+# A catchment whose schools have room cannot ration anybody. Longhill's
+# do, by a wide margin, so its rationing must be zero - and that is the
+# distinction the chart exists to draw.
+lh_rat <- cd$outside$rationed[grepl("Longhill", cd$outside$label)]
+note(sprintf("Longhill catchment: %.0f%% outside, %.1f rationed",
+             100 * cd$outside$outside_share[grepl("Longhill", cd$outside$label)],
+             lh_rat))
+if (length(lh_rat) != 1 || lh_rat > 1)
+  fail <- c(fail, "children are being rationed out of a catchment with spare places")
+
+# Turning the catchment up keeps more children local overall, and turns
+# what is left from choosing into rationing.
 tight <- outcomes(inp, run_sim(inp, site = "now", design = "Current catchments",
-                               year = 2026, gamma = 3))
-note(sprintf("catchment strength 3: displaced falls to %.0f%%",
-             100 * tight$catchment$displaced_share))
-if (tight$catchment$displaced_share >= cd$displaced_share)
+                               year = 2026, gamma = 3))$catchment
+note(sprintf("catchment strength 3: outside %.0f%%, of which rationed %.0f%%",
+             100 * tight$displaced_share, 100 * tight$rationed_share))
+if (tight$displaced_share >= cd$displaced_share)
   fail <- c(fail, "a stronger catchment does not keep more children local")
+if (tight$rationed_share <= cd$rationed_share)
+  fail <- c(fail, "a stronger catchment does not push more children into rationing")
 
 # ---- Each preset runs -------------------------------------------------
 for (p in names(inp$presets)) {

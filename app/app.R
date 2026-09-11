@@ -107,11 +107,13 @@ ui <- page_sidebar(
     nav_panel("Map",
               layout_columns(
                 col_widths = c(7, 5),
-                div(leafletOutput("map", height = 560),
+                div(leafletOutput("map", height = 430),
                     div(class = "note", style = "padding-top:6px",
                         "Dot area is the modelled intake. Green means the school fills its admission number, amber within a tenth of it, red short. The shading is the catchment map in force."),
                     div(class = "note", style = "padding-top:4px",
-                        textOutput("design_note"))),
+                        textOutput("design_note")),
+                    div(style = "padding-top:10px",
+                        plotOutput("p_catch_map", height = 250))),
                 div(plotOutput("p_att_live", height = 292),
                     plotOutput("p_abs_live", height = 292)))),
     nav_panel("Places", plotOutput("p_places", height = 430),
@@ -390,43 +392,62 @@ server <- function(input, output, session) {
   # and red for whether a school fills, and these bars are a different
   # question. Grey for the faith schools, which are outside every
   # catchment by design rather than by displacement.
+  # Blue for a place at home, grey for a child who chose to go elsewhere
+  # and got it, orange for one the ceiling pushed out. Only the orange is
+  # a place the system failed to provide, and the colours say so.
   CATCH_COL <- c(`Their own catchment` = "#2a78d6",
-                 `Another catchment`   = "#eb6834",
-                 `A faith school`      = "#9aa5b1")
+                 `Left by choice`      = "#9aa5b1",
+                 `Rationed out`        = "#eb6834")
 
-  output$p_catch <- renderPlot({
-    b <- met()$catchment$by_catch %>%
-      mutate(where = factor(where, names(CATCH_COL)))
-    ord <- b %>% filter(where == "Another catchment") %>% arrange(share)
+  catch_plot <- function(b, title, subtitle, base = 12, label_all = TRUE) {
+    b <- b %>% mutate(where = factor(where, names(CATCH_COL)))
+    ord <- b %>% filter(where == "Rationed out") %>% arrange(share, label)
     b <- b %>% mutate(label = factor(label, ord$label))
-    lab <- ord %>% mutate(label = factor(label, ord$label))
+    lab <- b %>% filter(where != "Their own catchment") %>%
+      group_by(label) %>% summarise(share = sum(share), .groups = "drop")
+    rat <- ord %>% mutate(label = factor(label, ord$label)) %>% filter(share > 0.005)
 
     ggplot(b, aes(share, label, fill = where)) +
-      # Without reverse = TRUE the bar stacks in reverse factor order,
-      # so the legend reads own/another/faith and the bar reads
-      # faith/another/own. Same trap as the deprivation bands in the
-      # document.
       geom_col(width = 0.74, colour = "white", linewidth = 0.6,
                position = position_stack(reverse = TRUE)) +
       geom_text(data = lab, aes(x = 1.02, y = label,
                                 label = sprintf("%.0f%%", 100 * share)),
-                inherit.aes = FALSE, hjust = 0, size = 3.1,
-                colour = "#b8501f", fontface = "bold") +
+                inherit.aes = FALSE, hjust = 0, size = base * 0.26,
+                colour = "grey35") +
+      geom_text(data = rat, aes(x = 1.02, y = label,
+                                label = sprintf("(%.0f%% rationed)", 100 * share)),
+                inherit.aes = FALSE, hjust = 0, size = base * 0.24,
+                colour = "#b8501f", fontface = "bold", nudge_x = 0.10) +
       scale_fill_manual(values = CATCH_COL, name = NULL) +
       scale_x_continuous(labels = scales::label_percent(),
-                         limits = c(0, 1.1), breaks = seq(0, 1, 0.25),
+                         limits = c(0, 1.34), breaks = seq(0, 1, 0.25),
                          expand = expansion(mult = 0)) +
       labs(x = "Children living in the catchment", y = NULL,
-           title = "Who has to leave their catchment to find a place",
-           subtitle = paste(strwrap(paste(
-             "The figure on the right is the share sent to another catchment's school.",
-             "Faith schools have no catchment and are shown separately."),
-             width = 84), collapse = "\n")) +
-      theme_minimal(12) +
+           title = title, subtitle = subtitle) +
+      theme_minimal(base) +
       theme(legend.position = "top",
             panel.grid.major.y = element_blank(),
-            plot.title = element_text(face = "bold"),
-            plot.subtitle = element_text(colour = "grey35", size = 10))
+            plot.title = element_text(face = "bold", size = base),
+            plot.subtitle = element_text(colour = "grey35", size = base * 0.8),
+            legend.text = element_text(size = base * 0.82),
+            axis.title.x = element_text(size = base * 0.8, colour = "grey35"))
+  }
+
+  output$p_catch <- renderPlot({
+    catch_plot(met()$catchment$by_catch,
+               "Who has to leave their catchment, and why",
+               paste(strwrap(paste(
+                 "Grey is a child who chose an out-of-catchment school and got it;",
+                 "orange is one the capacity ceiling pushed out of a full catchment school.",
+                 "Only the orange is a place the system could not provide."),
+                 width = 84), collapse = "\n"))
+  })
+
+  output$p_catch_map <- renderPlot({
+    catch_plot(met()$catchment$by_catch,
+               "Who leaves their catchment, and why",
+               "Grey chose to go; orange was pushed out of a full school.",
+               base = 9.5)
   })
 
   output$t_catch <- renderTable({
@@ -434,33 +455,42 @@ server <- function(input, output, session) {
     m$by_catch %>%
       select(label, where, n) %>%
       tidyr::pivot_wider(names_from = where, values_from = n) %>%
-      inner_join(m$outside %>% select(label, living, displaced_share),
+      inner_join(m$outside %>% select(label, living, outside_share, rationed_share),
                  by = "label") %>%
-      arrange(desc(displaced_share)) %>%
+      arrange(desc(rationed_share), desc(outside_share)) %>%
       transmute(Catchment = label,
                 `Children living there` = fmt_n(living),
-                `Own catchment` = fmt_n(`Their own catchment`),
-                `Another catchment` = fmt_n(`Another catchment`),
-                `Faith school` = fmt_n(`A faith school`),
-                `Sent elsewhere` = sprintf("%.0f%%", 100 * displaced_share))
+                `Place at home` = fmt_n(`Their own catchment`),
+                `Left by choice` = fmt_n(`Left by choice`),
+                `Rationed out` = fmt_n(`Rationed out`),
+                `Outside` = sprintf("%.0f%%", 100 * outside_share),
+                `of which rationed` = sprintf("%.0f%%", 100 * rationed_share))
   }, striped = TRUE, width = "100%")
 
   output$catch_note <- renderUI({
     m <- met()$catchment
     HTML(sprintf(paste0(
-      "<p><b>%s children — %.0f%% of the cohort — are placed at a school in ",
-      "another catchment</b>, on top of the %.0f%% who go to one of the two ",
-      "faith schools, which have no catchment at all. The catchment that ",
-      "keeps fewest of its own children is %s, at %.0f%%.</p>",
-      "<p>A catchment is a promise about where a child can go, and this is ",
-      "the share of that promise the geography cannot keep. It is worth ",
-      "watching two things against it. Splitting the paired catchments ",
-      "makes it much worse, because a child in Varndean's catchment who goes ",
-      "to Dorothy Stringer next door now counts as displaced. And turning up ",
-      "how much the catchment counts collapses it — which is what a binding ",
-      "catchment means.</p>"),
-      fmt_n(m$displaced), 100 * m$displaced_share, 100 * m$faith_share,
-      m$worst, 100 * m$worst_share))
+      "<p><b>Two different things put a child outside their catchment, and ",
+      "they are not the same problem.</b> %.0f%% of the cohort ends up at a ",
+      "school outside the catchment they live in. Almost all of that — ",
+      "%.0f%% of the cohort — is children who preferred an out-of-catchment ",
+      "school and got it, their own catchment school having had room. Only ",
+      "%.0f%% were rationed: they would have taken a place at home and the ",
+      "capacity ceiling did not have one. The %.0f%% who go to the two faith ",
+      "schools, which have no catchment at all, are inside the first group.</p>",
+      "<p><b>Rationing only happens where the schools fill.</b> %s loses ",
+      "%.0f%% of its children and rations none of them, because its schools ",
+      "have room to spare — that is a school nobody is choosing, not a ",
+      "system failing to provide. %s is the catchment where children are ",
+      "actually turned away, at %.0f%%.</p>",
+      "<p>The two move in opposite directions. Turning up how much the ",
+      "catchment counts cuts the leaving, but it converts what is left into ",
+      "rationing: more children want a place at home, and the full schools ",
+      "still cannot take them. The number that measures a system failing ",
+      "its families is the orange one, not the total.</p>"),
+      100 * m$displaced_share, 100 * m$chose_share, 100 * m$rationed_share,
+      100 * m$faith_share, m$worst, 100 * m$worst_share,
+      m$worst_rationed, 100 * m$worst_rationed_share))
   })
 
   # ---- Fairness --------------------------------------------------------
