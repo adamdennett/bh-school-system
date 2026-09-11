@@ -1,0 +1,10 @@
+name: brighton-school-simulator
+title: Brighton secondary schools — policy simulator
+username: adam-dennett
+account: adam-dennett
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17885254
+bundleId: 12541113
+url: https://adam-dennett.shinyapps.io/brighton-school-simulator/
+version: 1

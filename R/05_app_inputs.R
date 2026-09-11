@@ -365,19 +365,45 @@ message(sprintf("  %d neighbourhoods with an IDACI share, %d of them deprived",
 # Simplified hard: this is redrawn on every slider move, so the payload
 # matters more than the coastline does.
 
-lsoa_sf <- bh_data("lsoa.geojson") %>%
-  filter(lsoa21cd %in% zones$lsoa) %>%
-  sf::st_transform(27700) %>%
-  sf::st_simplify(dTolerance = 60) %>%
-  sf::st_transform(4326) %>%
-  select(lsoa = lsoa21cd)
+# The app used to carry sf objects and convert coordinates at run time,
+# which meant the deployed app needed sf - and so, through leaflet, the
+# whole compiled geospatial stack (sf, terra, sp, raster, s2, units).
+# None of that is needed to DRAW a map that is already projected. So the
+# projection and the simplification happen here, once, and the app
+# receives lon/lat numbers and GeoJSON text.
 
 design_sf <- fr$regions_sf %>%
   sf::st_transform(27700) %>% sf::st_simplify(dTolerance = 60) %>%
   sf::st_transform(4326)
 
-message(sprintf("  %d neighbourhood polygons, %d design outlines",
-                nrow(lsoa_sf), nrow(design_sf)))
+# One GeoJSON FeatureCollection per catchment design, as a string.
+design_geojson <- vapply(unique(design_sf$design), function(d) {
+  g <- design_sf[design_sf$design == d, "grp"]
+  f <- tempfile(fileext = ".geojson")
+  sf::st_write(g, f, quiet = TRUE, delete_dsn = TRUE,
+               layer_options = "COORDINATE_PRECISION=5")
+  txt <- paste(readLines(f, warn = FALSE), collapse = "")
+  unlink(f)
+  txt
+}, character(1))
+
+# School dots, projected once. Both sites, so moving Longhill to Elm
+# Grove moves its dot without any run-time transformation.
+to_ll <- function(e, n) {
+  sf::st_coordinates(sf::st_transform(
+    sf::st_as_sf(data.frame(e = e, n = n), coords = c("e", "n"), crs = 27700),
+    4326))
+}
+xy <- to_ll(schools$easting, schools$northing)
+schools$lon <- xy[, 1]; schools$lat <- xy[, 2]
+xy <- to_ll(schools$elm_easting, schools$elm_northing)
+schools$elm_lon <- xy[, 1]; schools$elm_lat <- xy[, 2]
+stopifnot(all(is.finite(schools$lon)), all(is.finite(schools$elm_lat)),
+          all(schools$lon > -0.4 & schools$lon < 0.1),
+          all(schools$lat > 50.7 & schools$lat < 51.0))
+
+message(sprintf("  %d design outlines as GeoJSON (%.0f KB), %d school dots projected",
+                nrow(design_sf), sum(nchar(design_geojson)) / 1024, nrow(schools)))
 
 # ---- 9. Presets ------------------------------------------------------
 # Starting points, so the first thing a user sees is a question rather
@@ -427,7 +453,7 @@ saveRDS(list(
   attain = attain,
   params = params, demand = demand, cohort = cohort, finance = finance,
   seed_intakes = seed_intakes, idaci = idaci,
-  lsoa_sf = lsoa_sf, design_sf = design_sf, presets = presets,
+  design_geojson = design_geojson, presets = presets,
   city = CITY, out_of_city = OUT_OF_CITY,
   elm = elm, built_at = Sys.time()),
   file.path(APP_DIR, "data", "sim_inputs.rds"))

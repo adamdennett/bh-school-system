@@ -20,13 +20,17 @@
 library(shiny)
 library(bslib)
 library(dplyr)
-library(leaflet)
 library(ggplot2)
-library(tibble)
 
-APP <- normalizePath(file.path(dirname(sys.frame(1)$ofile %||% "."), "."),
-                     mustWork = FALSE)
-if (!dir.exists(file.path(APP, "R"))) APP <- "app"
+# Base R gained %||% in 4.4.0 and shinyapps.io may be running something
+# older, so it is defined here rather than assumed.
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Deployed, the app IS the working directory; run locally from the
+# repository root, it is in app/. Look for the files rather than for the
+# script, which is the part that differs between the two.
+APP <- if (file.exists(file.path(".", "data", "sim_inputs.rds"))) "." else "app"
+stopifnot(file.exists(file.path(APP, "data", "sim_inputs.rds")))
 source(file.path(APP, "R", "model.R"))
 source(file.path(APP, "R", "outcomes.R"))
 
@@ -69,7 +73,15 @@ ui <- page_sidebar(
     .kpi .l{font-size:10.5px;color:#666;text-transform:uppercase;letter-spacing:.4px}
     .kpi .d{font-size:10.5px;color:#888}
     .note{font-size:12px;color:#555}
-  "))),
+  ")),
+    # Leaflet itself, served from www/, rather than the R package that
+    # wraps it - the same build that package was shipping, so the map
+    # behaves exactly as it did. See
+    # www/map.js for what that saves.
+    tags$link(rel = "stylesheet",
+              href = "leaflet/leaflet.css"),
+    tags$script(src = "leaflet/leaflet.js"),
+    tags$script(src = "map.js")),
 
   sidebar = sidebar(
     width = 372,
@@ -111,7 +123,7 @@ ui <- page_sidebar(
     nav_panel("Map",
               layout_columns(
                 col_widths = c(7, 5),
-                div(leafletOutput("map", height = 430),
+                div(div(id = "map", style = "height:430px"),
                     div(class = "note", style = "padding-top:6px",
                         "Dot area is the modelled intake. Green means the school fills its admission number, amber within a tenth of it, red short. The shading is the catchment map in force."),
                     div(class = "note", style = "padding-top:4px",
@@ -344,35 +356,17 @@ server <- function(input, output, session) {
   })
 
   # ---- Map ------------------------------------------------------------
-  output$map <- renderLeaflet({
-    leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
-      addTiles(urlTemplate = paste0(
-                 "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/",
-                 "World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"),
-               attribution = paste0(
-                 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; ',
-                 'Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">',
-                 'OpenStreetMap</a> contributors'),
-               options = tileOptions(maxNativeZoom = 16, maxZoom = 20)) %>%
-      addTiles(urlTemplate = paste0(
-                 "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/",
-                 "World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"),
-               attribution = "",
-               options = tileOptions(maxNativeZoom = 16, maxZoom = 20)) %>%
-      setView(-0.14, 50.845, 12)
-  })
-
+  # There is no renderLeaflet here. The map is Leaflet proper, set up in
+  # www/map.js; this sends it the two things it needs. See that file for
+  # why. Redrawing is a message rather than a re-render, so the view the
+  # user has panned to survives every slider move, exactly as
+  # leafletProxy() used to arrange.
   observe({
-    s <- sim(); m <- met()
+    s <- sim()
     sch <- s$schools %>%
-      inner_join(inp$schools %>%
-                   select(name, easting, northing, elm_easting, elm_northing),
+      inner_join(inp$schools %>% select(name, lon, lat, elm_lon, elm_lat),
                  by = "name")
-    e <- if (input$site == "elm") sch$elm_easting else sch$easting
-    n <- if (input$site == "elm") sch$elm_northing else sch$northing
-    ll <- sf::st_as_sf(data.frame(e = e, n = n), coords = c("e", "n"),
-                       crs = 27700) %>% sf::st_transform(4326) %>%
-      sf::st_coordinates()
+    elm <- identical(input$site, "elm")
 
     sch$col <- ifelse(sch$fill >= 0.995, OK,
                       ifelse(sch$fill >= 0.9, WARN, BAD))
@@ -380,34 +374,29 @@ server <- function(input, output, session) {
       "<b>%s</b><br>Intake %s of %s places (%.0f%%)<br>Mean journey %.0f min",
       sch$short, fmt_n(sch$intake), fmt_n(sch$pan), 100 * sch$fill, sch$mean_min)
 
-    poly <- inp$design_sf
     dname <- switch(input$design,
                     "Current catchments" = "Current catchments",
                     "Power diagram" = "Power diagram (proximity and capacity)",
                     "Flow regions, pairs kept" = "Flow regions, pairs kept",
                     "Flow regions, one per school" = "Flow regions, one per school",
                     "Flow regions, Longhill at Elm Grove" = "Flow regions, Elm Grove, PAN 150")
-    poly <- poly[poly$design == dname, ]
+    gj <- unname(inp$design_geojson[dname])
+    if (is.na(gj)) gj <- NULL
 
-    leafletProxy("map") %>%
-      clearShapes() %>% clearMarkers() %>%
-      addPolygons(data = poly, fill = TRUE, fillColor = "#8aa0b4",
-                  fillOpacity = 0.10, color = "#5a6b7c", weight = 1.2,
-                  label = ~grp) %>%
-      # Plain vectors, not formulas: a formula with no data= argument
-      # sends leaflet looking for metaData on NULL and the whole map
-      # silently fails to draw.
-      addCircleMarkers(lng = ll[, 1], lat = ll[, 2],
-                       radius = pmax(5, sqrt(sch$intake) * 1.5),
-                       color = "#333333", weight = 1,
-                       fillColor = sch$col, fillOpacity = 0.85,
-                       label = lapply(sch$lab, HTML))
+    session$sendCustomMessage("map_draw", list(
+      geojson = gj,
+      dots = unname(lapply(seq_len(nrow(sch)), function(i) list(
+        lon = if (elm) sch$elm_lon[i] else sch$lon[i],
+        lat = if (elm) sch$elm_lat[i] else sch$lat[i],
+        r   = max(5, sqrt(sch$intake[i]) * 1.5),
+        col = sch$col[i],
+        lab = sch$lab[i])))))
   })
 
   # ---- Places ---------------------------------------------------------
   output$p_places <- renderPlot({
     s <- sim()$schools %>% filter(city) %>%
-      mutate(short = forcats::fct_reorder(short, fill))
+      mutate(short = stats::reorder(short, fill))
     ggplot(s, aes(fill, short)) +
       geom_vline(xintercept = 1, colour = "grey40", linetype = "31") +
       geom_segment(aes(x = 0, xend = fill, yend = short), colour = "grey78",
@@ -435,7 +424,7 @@ server <- function(input, output, session) {
   # ---- Money -----------------------------------------------------------
   output$p_money <- renderPlot({
     f <- met()$by_school %>%
-      mutate(short = forcats::fct_reorder(short, gap_pct))
+      mutate(short = stats::reorder(short, gap_pct))
     ggplot(f, aes(gap_pct, short)) +
       geom_vline(xintercept = 0, colour = "grey40") +
       geom_segment(aes(x = 0, xend = gap_pct, yend = short),
@@ -539,17 +528,19 @@ server <- function(input, output, session) {
 
   output$t_catch <- renderTable({
     m <- met()$catchment
-    m$by_catch %>%
-      select(label, where, n) %>%
-      tidyr::pivot_wider(names_from = where, values_from = n) %>%
-      inner_join(m$outside %>% select(label, living, outside_share, displaced_share),
-                 by = "label") %>%
+    b <- m$by_catch
+    # This was a pivot_wider. The long frame holds exactly one row per
+    # catchment per bucket, so a match() is the whole of the pivot, and
+    # tidyr need not be deployed for it.
+    at <- function(lab, w) b$n[match(paste(lab, w), paste(b$label, b$where))]
+    m$outside %>%
+      select(label, living, outside_share, displaced_share) %>%
       arrange(desc(displaced_share), desc(outside_share)) %>%
       transmute(Catchment = label,
                 `Children living there` = fmt_n(living),
-                `Place at home` = fmt_n(`Their own catchment`),
-                `Left by choice` = fmt_n(`Left by choice`),
-                `Displaced` = fmt_n(`Displaced`),
+                `Place at home` = fmt_n(at(label, "Their own catchment")),
+                `Left by choice` = fmt_n(at(label, "Left by choice")),
+                `Displaced` = fmt_n(at(label, "Displaced")),
                 `Outside` = sprintf("%.0f%%", 100 * outside_share),
                 `of which displaced` = sprintf("%.0f%%", 100 * displaced_share))
   }, striped = TRUE, width = "100%")
@@ -585,7 +576,7 @@ server <- function(input, output, session) {
     m <- met()
     d <- m$mix %>% filter(name %in% inp$city, n > 0) %>%
       inner_join(inp$schools %>% select(name, short), by = "name") %>%
-      mutate(short = forcats::fct_reorder(short, dep_share))
+      mutate(short = stats::reorder(short, dep_share))
     city_share <- sum(d$dep_n) / sum(d$n)
     ggplot(d, aes(dep_share, short)) +
       geom_vline(xintercept = city_share, colour = "grey40", linetype = "31") +
@@ -714,22 +705,22 @@ server <- function(input, output, session) {
   # reach to fill the places it is offering.
   att_tab <- reactive({
     w <- w_now(); p <- pan_now()
-    purrr::map_dfr(seq_len(nrow(CITY)), function(i) {
+    bind_rows(lapply(seq_len(nrow(CITY)), function(i) {
       nm <- CITY$name[i]
       s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w, pans = p,
                            site = input$site, design = input$design,
                            year = input$year)
-      tibble::tibble(
+      data.frame(
         name = nm, short = CITY$short[i], att8 = CITY$att8[i],
         set_at = CITY$att8[i] + att8_points(inp, w[[nm]]),
         needed = if (is.finite(s$multiplier))
           CITY$att8[i] + att8_points(inp, s$multiplier) else NA_real_,
-        pan = p[[nm]])
-    }) %>% mutate(gap = needed - att8)
+        pan = p[[nm]], stringsAsFactors = FALSE)
+    })) %>% mutate(gap = needed - att8)
   })
 
   output$p_att <- renderPlot({
-    a <- att_tab() %>% mutate(short = forcats::fct_reorder(short, att8))
+    a <- att_tab() %>% mutate(short = stats::reorder(short, att8))
     q <- inp$attain$national$q
     # The three reference lines are named in the subtitle rather than
     # labelled in the panel: a numeric y on a discrete axis is what

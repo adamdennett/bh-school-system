@@ -141,14 +141,20 @@ outcomes <- function(inp, r, shed = 0.75) {
       displaced = pmin(outside, pmax(0, want_home - got_home)),
       chose = outside - displaced)
 
-  by_catch <- by_zone %>%
+  wide <- by_zone %>%
     dplyr::group_by(home) %>%
     dplyr::summarise(living = sum(living), `Their own catchment` = sum(got_home),
                      `Left by choice` = sum(chose),
                      `Displaced` = sum(displaced),
-                     to_faith = sum(to_faith), .groups = "drop") %>%
-    tidyr::pivot_longer(c(`Their own catchment`, `Left by choice`, `Displaced`),
-                        names_to = "where", values_to = "n") %>%
+                     to_faith = sum(to_faith), .groups = "drop")
+
+  # One row per catchment per destination bucket. This was a
+  # tidyr::pivot_longer; stacking three named columns does not justify
+  # shipping tidyr with the app.
+  WHERE <- c("Their own catchment", "Left by choice", "Displaced")
+  by_catch <- dplyr::bind_rows(lapply(WHERE, function(w)
+    dplyr::mutate(wide[, setdiff(names(wide), WHERE), drop = FALSE],
+                  where = w, n = wide[[w]]))) %>%
     dplyr::mutate(share = n / living,
                   label = dplyr::coalesce(unname(catch_lab[home]), home))
 
