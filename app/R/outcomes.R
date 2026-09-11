@@ -133,19 +133,38 @@ outcomes <- function(inp, r, shed = 0.75) {
 #' Returns Inf if the school cannot reach the target at any
 #' attractiveness, which happens when its catchment simply has too few
 #' children within reach.
-solve_w_for_pan <- function(inp, school, target_fill = 1, hi = 60, ...) {
+#'
+#' `w_mult` is a NAMED FORMAL rather than something passed through the
+#' dots. It was in the dots, and the caller passed it, so run_sim saw it
+#' twice and the whole thing errored - and had it not errored it would
+#' have been worse, because the dots version reset every other school's
+#' attractiveness to 1 and answered a question nobody asked. The other
+#' schools stay where the user put them.
+#'
+#' The multiplier returned is on the school's PUBLISHED attractiveness,
+#' not on whatever the slider currently reads.
+solve_w_for_pan <- function(inp, school, target_fill = 1, hi = 60,
+                            w_mult = NULL, ...) {
+  # City schools only: run_sim refuses a multiplier for a school it does
+  # not model, and Peacehaven is in inp$schools but not in the model.
+  city <- inp$schools$name[inp$schools$city]
+  base <- if (is.null(w_mult)) setNames(rep(1, length(city)), city) else w_mult
+  stopifnot(school %in% names(base))
+
   fill_at <- function(m) {
-    r <- run_sim(inp, w_mult = setNames(m, school), ...)
+    w <- base; w[school] <- m
+    r <- run_sim(inp, w_mult = w, ...)
     r$schools$fill[r$schools$name == school]
   }
-  lo_f <- fill_at(1)
+  lo_f <- fill_at(base[[school]])
   if (lo_f >= target_fill)
-    return(list(multiplier = 1, fill = lo_f, note = "already at or above"))
+    return(list(multiplier = base[[school]], fill = lo_f,
+                note = "already at or above"))
   hi_f <- fill_at(hi)
   if (hi_f < target_fill)
     return(list(multiplier = Inf, fill = hi_f,
                 note = "cannot reach it at any attractiveness"))
-  lo <- 1
+  lo <- base[[school]]
   for (i in 1:28) {
     mid <- sqrt(lo * hi)           # geometric: the scale is multiplicative
     if (fill_at(mid) < target_fill) lo <- mid else hi <- mid

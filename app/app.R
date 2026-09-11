@@ -387,19 +387,23 @@ server <- function(input, output, session) {
       return("Pick a school and the app solves for the attractiveness that fills it, holding everything else where you have set it.")
     nm <- CITY$name[match(input$solve_for, CITY$short)]
     p <- pan_now()
-    s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = NULL, pans = p,
+    # The other schools stay where the user has set them: the question
+    # is what THIS school needs given everything else on the screen.
+    s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w_now(), pans = p,
                          site = input$site, design = input$design,
                          year = input$year)
     if (is.infinite(s$multiplier))
       sprintf("%s cannot fill %s places at any attractiveness: at 60 times its own it reaches %.0f%%. There are not enough children within reach.",
               input$solve_for, fmt_n(p[[nm]]), 100 * s$fill)
-    else if (s$multiplier <= 1.001)
-      sprintf("%s already fills at its current attractiveness.", input$solve_for)
+    else if (s$fill >= 0.999 && s$multiplier <= w_now()[[nm]] * 1.001)
+      sprintf("%s already fills %s places where the sliders are now.",
+              input$solve_for, fmt_n(p[[nm]]))
     else
-      sprintf("%s would need %.1f times its current attractiveness to fill %s places — about %s on the weighted-preference scale, against Dorothy Stringer's %.2f.",
+      sprintf("%s would need its attractiveness slider at %.1f× to fill %s places — that is %s on the weighted-preference scale, against Dorothy Stringer's %.2f. It is at %.1f× now.",
               input$solve_for, s$multiplier, fmt_n(p[[nm]]),
               sprintf("%.2f", s$multiplier * inp$schools$W[inp$schools$name == nm]),
-              inp$schools$W[inp$schools$name == "Dorothy Stringer School"])
+              inp$schools$W[inp$schools$name == "Dorothy Stringer School"],
+              w_now()[[nm]])
   })
 
   output$caveats <- renderUI(HTML(paste0(

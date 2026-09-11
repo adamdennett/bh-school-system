@@ -98,6 +98,33 @@ if (is.finite(sol$multiplier)) {
   note("solver: Longhill cannot reach its admission number at any attractiveness")
 }
 
+# ---- The solver as the APP calls it ----------------------------------
+# The app passes the whole slider vector, which is the path that broke:
+# w_mult was reaching run_sim twice, once through the dots and once from
+# inside the solver. The version without w_mult kept working, so the
+# check above never saw it.
+w_all <- setNames(rep(1, length(inp$city)), inp$city)
+w_all[["Varndean School"]] <- 0.5      # a slider the user has moved
+sol2 <- tryCatch(
+  solve_w_for_pan(inp, lh, target_fill = 1, w_mult = w_all, pans = NULL,
+                  site = "now", design = "Current catchments", year = 2026),
+  error = function(e) { note("solver with sliders failed: ", conditionMessage(e)); NULL })
+
+if (is.null(sol2)) {
+  fail <- c(fail, "the solver errors when given the slider vector the app passes")
+} else if (is.finite(sol2$multiplier)) {
+  chk2 <- run_sim(inp, w_mult = replace(w_all, lh, sol2$multiplier),
+                  site = "now", design = "Current catchments", year = 2026)
+  got2 <- chk2$schools$fill[chk2$schools$name == lh]
+  note(sprintf("solver with Varndean at 0.5x: Longhill needs %.1fx, check gives %.3f",
+               sol2$multiplier, got2))
+  if (abs(got2 - 1) > 0.02)
+    fail <- c(fail, "the solver's answer does not fill when the other sliders are held")
+  # Weakening a rival should make the job easier, not harder.
+  if (sol2$multiplier > sol$multiplier + 1e-6)
+    fail <- c(fail, "the solver ignores the other schools' sliders")
+}
+
 if (length(fail)) {
   message("\nFAILED:")
   for (f in fail) message("  - ", f)
