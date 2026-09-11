@@ -100,9 +100,14 @@ ui <- page_sidebar(
     uiOutput("kpi_seg"), uiOutput("kpi_travel"), uiOutput("kpi_gap")),
 
   navset_card_tab(
-    nav_panel("Map", leafletOutput("map", height = 560),
-              div(class = "note", style = "padding-top:6px",
-                  "Dot area is the modelled intake. Green means the school fills its admission number, amber within a tenth of it, red short. The shading is the catchment map in force.")),
+    nav_panel("Map",
+              layout_columns(
+                col_widths = c(7, 5),
+                div(leafletOutput("map", height = 560),
+                    div(class = "note", style = "padding-top:6px",
+                        "Dot area is the modelled intake. Green means the school fills its admission number, amber within a tenth of it, red short. The shading is the catchment map in force.")),
+                div(plotOutput("p_att_live", height = 292),
+                    plotOutput("p_abs_live", height = 292)))),
     nav_panel("Places", plotOutput("p_places", height = 430),
               tableOutput("t_places")),
     nav_panel("Money", plotOutput("p_money", height = 430),
@@ -385,6 +390,72 @@ server <- function(input, output, session) {
             plot.subtitle = element_text(colour = "grey35", size = 10))
   })
 
+  # ---- The two live bars beside the map --------------------------------
+  # Moving a school's attractiveness slider says, implicitly, that its
+  # published numbers changed. These say which numbers, and put them
+  # against the national distribution so the size of the claim is
+  # visible rather than buried in a multiplier.
+  live <- reactive({
+    w <- w_now()
+    CITY %>%
+      mutate(mult = unname(w[name]),
+             att8_new = att8 + att8_points(inp, mult),
+             abs_new = absence_for(inp, absence, att8, att8_new),
+             moved = abs(mult - 1) > 0.01)
+  })
+
+  # A rug of national deciles, with the median and the tails named. All
+  # nine are drawn so the spacing shows how bunched the middle is.
+  decile_layer <- function(q) {
+    d <- as.numeric(q[2:10])
+    list(geom_vline(xintercept = d, colour = "grey88", linewidth = 0.4),
+         geom_vline(xintercept = as.numeric(q[c("10%", "50%", "90%")]),
+                    colour = "grey62", linewidth = 0.5, linetype = "31"))
+  }
+
+  live_plot <- function(d, xnow, xnew, q, title, xlab) {
+    d <- d %>% mutate(short = forcats::fct_reorder(short, .data[[xnow]]))
+    rng <- range(c(d[[xnow]], d[[xnew]], q[["10%"]], q[["90%"]]), na.rm = TRUE)
+    pad <- diff(rng) * 0.10
+    # Two lines at most, and wrapped: the column is 430px wide and a
+    # one-line axis title was being cut off mid-word.
+    xlab <- paste(strwrap(xlab, width = 58), collapse = "\n")
+    ggplot(d, aes(y = short)) +
+      decile_layer(q) +
+      geom_segment(aes(x = .data[[xnow]], xend = .data[[xnew]], yend = short),
+                   colour = "grey70", linewidth = 0.9) +
+      geom_point(aes(x = .data[[xnow]]), size = 2, colour = "grey45") +
+      geom_point(aes(x = .data[[xnew]], colour = moved), size = 2.6) +
+      scale_colour_manual(values = c(`TRUE` = "#2a78d6", `FALSE` = "grey45"),
+                          guide = "none") +
+      scale_x_continuous(limits = c(rng[1] - pad, rng[2] + pad)) +
+      labs(x = xlab, y = NULL, title = title) +
+      theme_minimal(10) +
+      theme(panel.grid.major.y = element_blank(),
+            panel.grid.minor = element_blank(),
+            plot.title = element_text(face = "bold", size = 11),
+            plot.subtitle = element_text(colour = "grey35", size = 8.5),
+            axis.title.x = element_text(size = 8.5, colour = "grey35"),
+            axis.text.y = element_text(size = 8),
+            plot.margin = margin(4, 8, 2, 2))
+  }
+
+  output$p_att_live <- renderPlot({
+    q <- inp$attain$att8_deciles
+    live_plot(live(), "att8", "att8_new", q,
+              "Attainment 8 the slider implies",
+              sprintf("Score. Ticks are England's deciles, dashed the 10th (%.0f), median (%.0f) and 90th (%.0f)",
+                      q[["10%"]], q[["50%"]], q[["90%"]]))
+  })
+
+  output$p_abs_live <- renderPlot({
+    q <- inp$attain$absence$national$q
+    live_plot(live(), "absence", "abs_new", q,
+              "Absence rate that would go with it",
+              sprintf("Per cent of sessions missed, lower better. Dashed: England's 10th (%.1f), median (%.1f), 90th (%.1f)",
+                      q[["10%"]], q[["50%"]], q[["90%"]]))
+  })
+
   # ---- Attainment ------------------------------------------------------
   # What each school's attractiveness is worth in the one published
   # number families appear to respond to, and what it would have to
@@ -491,9 +562,14 @@ server <- function(input, output, session) {
     else {
       pts <- att8_points(inp, s$multiplier)
       now <- inp$schools$att8[inp$schools$name == nm]
-      sprintf("%s would need to be %.1f× as attractive to fill %s places. On the one published number families appear to respond to, that is %+.1f Attainment 8 points — from %.1f to %.1f, which is %s.",
+      ab0 <- inp$schools$absence[inp$schools$name == nm]
+      ab1 <- absence_for(inp, ab0, now, now + pts)
+      sprintf(paste("%s would need to be %.1f× as attractive to fill %s places.",
+                    "On the one published number families appear to respond to, that is %+.1f Attainment 8 points — from %.1f to %.1f, which is %s.",
+                    "Holding its intake still, the attainment model puts the absence rate that goes with that score at %.1f%%, against %.1f%% now — the %s percentile in England."),
               input$solve_for, s$multiplier, fmt_n(p[[nm]]), pts, now, now + pts,
-              att8_context(inp, now + pts))
+              att8_context(inp, now + pts), ab1, ab0,
+              scales::ordinal(pmax(1, round(absence_percentile(inp, ab1)))))
     }
   })
 
@@ -517,6 +593,12 @@ server <- function(input, output, session) {
     "the intake is where a school ends up if this configuration holds for five ",
     "years. Reserves, balances and funding rates are today's, in today's ",
     "prices, with no pay award, energy shock or capital receipt in them.</p>",
+    "<p><b>The absence figures are an inversion, not a plan.</b> They come ",
+    "from the attainment model in section 2.3: absence enters as an ",
+    "elasticity, so holding a school's intake still, the rate that goes with ",
+    "a target score can be read off backwards. Absence is no more a dial than ",
+    "attainment is - a school with 15% absence and one with 6% differ mostly ",
+    "in who attends them.</p>",
     "<p><b>Journeys here are expected journeys, not assigned ones.</b> ",
     "Every child has a probability of attending every school, so a sliver ",
     "of each neighbourhood counts as travelling right across the city. That ",

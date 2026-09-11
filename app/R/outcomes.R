@@ -147,6 +147,18 @@ att8_points <- function(inp, multiplier) log(multiplier) / inp$attain$slope
 #' The multiplier equivalent to a change in Attainment 8 points
 att8_multiplier <- function(inp, points) exp(inp$attain$slope * points)
 
+#' The absence rate that goes with a target Attainment 8 score
+#'
+#' Inverts the Lever specification's elasticity on log(absence), holding
+#' everything else about the school's intake still. Absence is not a
+#' dial either - see the note in the app.
+absence_for <- function(inp, absence_now, att8_now, att8_target)
+  absence_now * (att8_target / att8_now)^(1 / inp$attain$absence$elasticity)
+
+#' Where an absence rate sits nationally, as a percentile
+absence_percentile <- function(inp, rate)
+  100 * inp$attain$absence$national$ecdf(rate)
+
 #' Where a score sits in the national distribution, as a percentile
 att8_percentile <- function(inp, score) 100 * inp$attain$national$ecdf(score)
 
@@ -195,19 +207,29 @@ solve_w_for_pan <- function(inp, school, target_fill = 1, hi = 60,
     r <- run_sim(inp, w_mult = w, ...)
     r$schools$fill[r$schools$name == school]
   }
-  lo_f <- fill_at(base[[school]])
-  if (lo_f >= target_fill)
-    return(list(multiplier = base[[school]], fill = lo_f,
-                note = "already at or above"))
-  hi_f <- fill_at(hi)
-  if (hi_f < target_fill)
-    return(list(multiplier = Inf, fill = hi_f,
+  # The capacity balancer converges to a tolerance, not to the last bit,
+  # so a school that is full comes back at 0.99997 rather than 1. Testing
+  # `fill < 1` therefore kept the bisection climbing past the answer, and
+  # by an amount that depended on where it started: the same question
+  # returned 4.2x from one starting slider and 5.1x from another. The
+  # comparison needs the same tolerance the balancer has.
+  hit <- function(m) fill_at(m) >= target_fill - 1e-3
+
+  # Always start from 1, the school's published attractiveness. Starting
+  # from the slider made the answer depend on the slider, which is the
+  # one thing it must not do - the question is what the school needs, not
+  # what it needs on top of where someone happened to leave the control.
+  lo <- 1
+  lo_f <- fill_at(lo)
+  if (hit(lo))
+    return(list(multiplier = lo, fill = lo_f, note = "already at or above"))
+  if (!hit(hi))
+    return(list(multiplier = Inf, fill = fill_at(hi),
                 note = "cannot reach it at any attractiveness"))
-  lo <- base[[school]]
-  for (i in 1:28) {
+  for (i in 1:40) {
     mid <- sqrt(lo * hi)           # geometric: the scale is multiplicative
-    if (fill_at(mid) < target_fill) lo <- mid else hi <- mid
-    if (hi / lo < 1.002) break
+    if (hit(mid)) hi <- mid else lo <- mid
+    if (hi / lo < 1.001) break
   }
   list(multiplier = hi, fill = fill_at(hi), note = "solved")
 }

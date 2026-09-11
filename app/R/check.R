@@ -92,8 +92,8 @@ if (is.finite(sol$multiplier)) {
   got <- chk$schools$fill[chk$schools$name == lh]
   note(sprintf("solver: Longhill needs %.1fx its attractiveness to fill; check gives %.3f",
                sol$multiplier, got))
-  if (abs(got - 1) > 0.02)
-    fail <- c(fail, sprintf("the solver's answer fills to %.3f, not 1", got))
+  if (got < 0.995)
+    fail <- c(fail, sprintf("the solver's answer only fills to %.3f", got))
 } else {
   note("solver: Longhill cannot reach its admission number at any attractiveness")
 }
@@ -118,12 +118,41 @@ if (is.null(sol2)) {
   got2 <- chk2$schools$fill[chk2$schools$name == lh]
   note(sprintf("solver with Varndean at 0.5x: Longhill needs %.1fx, check gives %.3f",
                sol2$multiplier, got2))
-  if (abs(got2 - 1) > 0.02)
+  if (got2 < 0.995)
     fail <- c(fail, "the solver's answer does not fill when the other sliders are held")
   # Weakening a rival should make the job easier, not harder.
   if (sol2$multiplier > sol$multiplier + 1e-6)
     fail <- c(fail, "the solver ignores the other schools' sliders")
 }
+
+# ---- The answer must not depend on the target's own slider -----------
+# It did. The capacity balancer converges to a tolerance, so a full
+# school reads 0.99997 and a test against exactly 1 kept the bisection
+# climbing - by an amount that depended on where it started. The same
+# question answered 4.2x from one slider position and 5.1x from another.
+inv <- vapply(c(1, 2, 3.5), function(v) {
+  w <- setNames(rep(1, length(inp$city)), inp$city); w[[lh]] <- v
+  solve_w_for_pan(inp, lh, target_fill = 1, w_mult = w, site = "now",
+                  design = "Current catchments", year = 2026)$multiplier
+}, numeric(1))
+note(sprintf("solver invariance to its own slider: %s",
+             paste(sprintf("%.2f", inv), collapse = ", ")))
+if (diff(range(inv)) > 0.02)
+  fail <- c(fail, sprintf("the answer moves with the target's own slider: %s",
+                          paste(round(inv, 2), collapse = ", ")))
+
+# ---- Attainment 8 and absence invert consistently --------------------
+pts <- att8_points(inp, 4)
+note(sprintf("attainment: 4x is %+.1f points; a point is worth %.1f%%",
+             pts, 100 * inp$attain$per_point))
+if (abs(att8_multiplier(inp, pts) - 4) > 1e-6)
+  fail <- c(fail, "the Attainment 8 conversion does not round-trip")
+
+ab <- absence_for(inp, 14.7, 37.2, 37.2 + pts)
+note(sprintf("absence: +%.1f points takes 14.7%% to %.1f%% (%.0fth percentile)",
+             pts, ab, absence_percentile(inp, ab)))
+if (!(ab > 0 && ab < 14.7))
+  fail <- c(fail, "raising attainment does not lower the implied absence rate")
 
 if (length(fail)) {
   message("\nFAILED:")

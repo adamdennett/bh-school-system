@@ -185,9 +185,67 @@ message(sprintf("  city %.1f to %.1f, median %.1f; nationally %d schools, median
                 attain$national$n, attain$national$q[["50%"]],
                 attain$national$q[["90%"]]))
 
+# ---- 4c. And what that would mean for absence -----------------------
+# Section 2.3 fits the specification from "How to Pull the Right Lever":
+# log(Attainment 8) on logged deprivation, absence and EAL rates plus a
+# centred prior-attainment score. Absence enters as an elasticity, so
+# holding a school's intake still, the absence rate that goes with a
+# target score inverts to
+#
+#   absence_needed = absence_now * (att8_target / att8_now)^(1 / b)
+#
+# with b the coefficient on log(absence). It is negative, so a higher
+# score means a lower rate. This is the same "what it would take"
+# framing as the attainment figures, and it carries the same warning:
+# absence is not a dial a school turns either.
+
+lever_d <- nat$national %>%
+  filter(is.finite(ATT8SCR), ATT8SCR > 0, is.finite(PERCTOT), PERCTOT > 0,
+         is.finite(PTFSM6CLA1A), PTFSM6CLA1A > 0,
+         is.finite(PNUMEAL), PNUMEAL > 0, is.finite(KS2ASS)) %>%
+  mutate(ks2_c = KS2ASS - 100)
+
+lever <- lm(log(ATT8SCR) ~ log(PTFSM6CLA1A) + log(PERCTOT) + log(PNUMEAL) + ks2_c,
+            data = lever_d)
+ABS_B <- unname(coef(lever)[["log(PERCTOT)"]])
+stopifnot(ABS_B < 0)
+
+nat_abs <- lever_d$PERCTOT
+
+attain$absence <- list(
+  elasticity = ABS_B,
+  r2 = summary(lever)$r.squared,
+  n = nobs(lever),
+  national = list(q = stats::quantile(nat_abs, seq(0, 1, 0.1)),
+                  ecdf = stats::ecdf(nat_abs), n = length(nat_abs)))
+
+attain$att8_deciles <- stats::quantile(nat_att, seq(0, 1, 0.1))
+
+message(sprintf("  absence elasticity %.3f (R2 %.2f, n %s); national median %.1f%%, 90th %.1f%%",
+                attain$absence$elasticity, attain$absence$r2,
+                fmt_n(attain$absence$n),
+                attain$absence$national$q[["50%"]],
+                attain$absence$national$q[["90%"]]))
+
+# Each school's own rate, over the same window the attainment mean uses,
+# matched on URN because the panel calls Hove Park by its full name and
+# the model does not.
+school_abs <- nat$bh %>%
+  group_by(urn = as.character(URN)) %>%
+  summarise(absence = mean(PERCTOT, na.rm = TRUE),
+            att8_panel = mean(ATT8SCR, na.rm = TRUE), .groups = "drop")
+
 schools <- schools %>%
-  left_join(oi$attract %>% select(name, att8), by = "name")
-stopifnot(!any(is.na(schools$att8[schools$city])))
+  left_join(oi$attract %>% select(name, att8), by = "name") %>%
+  left_join(school_abs, by = "urn")
+
+stopifnot(!any(is.na(schools$att8[schools$city])),
+          !any(is.na(schools$absence[schools$city])),
+          # The panel mean and the attractiveness table's score are the
+          # same window; if they drift apart the absence pairing is
+          # against a different set of years from the attainment one.
+          max(abs(schools$att8[schools$city] -
+                    schools$att8_panel[schools$city])) < 0.5)
 
 # ---- 5. Demand by year ----------------------------------------------
 # The city's projected Year 7 cohort, as an index on 2026. The app
