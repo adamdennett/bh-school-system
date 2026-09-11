@@ -11,7 +11,7 @@
 # you optimise one out of sight of the others.
 #
 # The model is the one in section 7 of the strategic view, at its
-# fullest rung, and app/R/check.R asserts that it still agrees with the
+# fullest rung, and app/tests/check.R asserts that it still agrees with the
 # published figures.
 #
 #   shiny::runApp("app")

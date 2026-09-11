@@ -5,6 +5,6 @@ account: adam-dennett
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 17885254
-bundleId: 12541113
+bundleId: 12541197
 url: https://adam-dennett.shinyapps.io/brighton-school-simulator/
 version: 1

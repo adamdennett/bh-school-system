@@ -7,7 +7,7 @@
 # move, with attractiveness and admission numbers that no precomputed
 # run contains.
 #
-# It is checked against the published M4 figures in app/R/check.R. If
+# It is checked against the published M4 figures in app/tests/check.R. If
 # this file and the document ever disagree, that check fails.
 # ======================================================================
 

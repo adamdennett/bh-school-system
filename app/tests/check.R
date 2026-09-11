@@ -1,4 +1,4 @@
-# app/R/check.R — does the app's model agree with the document's?
+# app/tests/check.R — does the app's model agree with the document's?
 # ======================================================================
 # The app reimplements the spatial interaction model so it can run on
 # arbitrary attractiveness and admission numbers. A reimplementation
@@ -6,9 +6,15 @@
 # in the app wrong in a way nobody would notice, so it is checked
 # against the figures section 7 publishes.
 #
-#   Rscript app/R/check.R
+#   Rscript app/tests/check.R
 #
 # Exits non-zero on disagreement.
+#
+# It lives in tests/ rather than R/ because Shiny sources every file in
+# an app's R/ directory at startup. Sitting there, this ran on each
+# cold start, and a failure would have called quit() on the app rather
+# than reported anything - so the symptom of a broken model would have
+# been an app that simply would not open.
 # ======================================================================
 
 suppressPackageStartupMessages({ library(dplyr) })

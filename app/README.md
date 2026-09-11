@@ -19,11 +19,11 @@ scenarios: the questions the app exists to answer are continuous ones
 precomputed grid answers those. 165 neighbourhoods by 10 schools runs in
 milliseconds, so it runs on every slider move.
 
-`app/R/check.R` asserts that it still reproduces the published M4
+`app/tests/check.R` asserts that it still reproduces the published M4
 figures school by school. Run it after any change to the model:
 
 ```
-Rscript app/R/check.R
+Rscript app/tests/check.R
 ```
 
 It currently agrees to 0.00 children across all ten schools.
@@ -35,7 +35,9 @@ It currently agrees to 0.00 children across all ten schools.
 | `app.R` | UI and server |
 | `R/model.R` | the spatial interaction model and the capacity ceiling |
 | `R/outcomes.R` | scoring a run on places, money, fairness and travel |
-| `R/check.R` | agreement with the published model |
+| `tests/check.R` | agreement with the published model — kept out of `R/`, which Shiny auto-sources |
+| `www/map.js` | the map, in plain Leaflet, fed lon/lat and GeoJSON by the server |
+| `www/leaflet/` | Leaflet itself, so the app needs no CDN and no geospatial R packages |
 | `data/sim_inputs.rds` | built by `R/05_app_inputs.R` in the repository root |
 
 Rebuild the inputs after any change to `data/`:
