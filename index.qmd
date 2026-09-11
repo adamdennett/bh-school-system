@@ -4013,7 +4013,7 @@ cost that takes years and redundancies to move.
 
 ```{r fig-school-reserves}
 #| fig-cap: "Revenue reserve as a share of annual income, for every state secondary school in the city. Panels are ordered by the latest figure, worst first. Shading marks the years a school was carrying a deficit. The academies' series ends a year earlier because their accounts are published on a different cycle — see the note under the table above."
-#| fig-height: 6.4
+#| fig-height: 4.7
 #| column: page
 
 # Deficit is a status, not a category or a magnitude, so it takes a
@@ -4031,7 +4031,7 @@ ggplot(rp, aes(yr, reserve_pct)) +
   geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
   geom_ribbon(aes(ymin = neg, ymax = 0), fill = DEFICIT_COL, alpha = 0.28) +
   geom_line(linewidth = 0.8, colour = "grey20") +
-  geom_point(size = 1.5, colour = "grey20") +
+  geom_point(size = 1.1, colour = "grey20") +
   facet_wrap(~ school, ncol = 5) +
   scale_x_continuous(breaks = sort(unique(rp$yr)),
                      labels = function(x) paste0(substr(x, 3, 4), "/",
@@ -4041,9 +4041,9 @@ ggplot(rp, aes(yr, reserve_pct)) +
        title = "Every school but one has been spending its reserve",
        subtitle = str_wrap(paste("Shaded years are years the school was carrying a deficit.", "The line is the accumulated surplus, not the in-year balance."), 100),
        caption = "Source: DfE school income and expenditure (CFR returns for maintained schools, academy accounts returns for academies).") +
-  theme_bh(10) +
-  theme(axis.text.x = element_text(size = 7),
-        panel.spacing.x = unit(9, "pt"))
+  theme_bh(9) +
+  theme(axis.text.x = element_text(size = 6),
+        panel.spacing.x = unit(7, "pt"))
 ```
 
 *Published per school on the
@@ -4493,7 +4493,7 @@ is shown at three values rather than one.
 
 ```{r fig-risk-gap}
 #| fig-cap: "The annual gap between what each school receives and what it spends, as a share of its income, projected to 2035 on the middle assumption that a school takes out three quarters of the cost when it loses the funding. Each line starts at that school's most recent in-year balance and deteriorates as the roll falls. The schools that end below zero are coloured; the rest stay in surplus and are drawn in grey."
-#| fig-height: 5.8
+#| fig-height: 4.2
 #| column: page
 
 rgap <- risk_mid %>% mutate(ends_down = short %in% r_neg$short)
@@ -4528,9 +4528,9 @@ ggplot(rgap, aes(year, gap_pct, group = short)) +
             aes(colour = short), linewidth = 1) +
   ggrepel::geom_text_repel(
     data = ends, aes(label = short), colour = ends$lab_col,
-    size = 3, hjust = 0, direction = "y", nudge_x = 0.35,
-    segment.size = 0.25, min.segment.length = 0, seed = 4,
-    box.padding = 0.16) +
+    size = 2.6, hjust = 0, direction = "y", nudge_x = 0.3,
+    segment.size = 0.22, min.segment.length = 0, seed = 4,
+    box.padding = 0.12) +
   scale_colour_manual(values = RISK_COL, guide = "none") +
   scale_x_continuous(breaks = seq(min(RISK_YEARS), max(RISK_YEARS), 2),
                      limits = c(min(RISK_YEARS), max(RISK_YEARS) + 3.8)) +
@@ -4542,7 +4542,7 @@ ggplot(rgap, aes(year, gap_pct, group = short)) +
        subtitle = str_wrap(paste("Grey lines are the schools that stay in surplus.",
                                  "Middle assumption: a school takes three quarters of the cost out when the funding goes."), 105),
        caption = "Sources: DfE school income and expenditure; DfE school funding statistics 2025-26; BHCC allocation factsheets; modelled intakes, configuration A.") +
-  theme_bh(11)
+  theme_bh(9.5)
 ```
 
 
@@ -6175,7 +6175,7 @@ DESIGN_COL <- setNames(
 
 ```{r fig-idaci-bands}
 #| fig-cap: "How each catchment's households with dependent children divide between the most deprived three deciles nationally, the middle four, and the least deprived three. Every bar is one catchment; bars are grouped by design and ordered within it by how deprived the catchment is."
-#| fig-height: 7.6
+#| fig-height: 5.9
 #| column: page
 
 bd <- fr$idaci_bands %>%
@@ -6202,7 +6202,7 @@ ggplot(bd, aes(share, row, fill = band)) +
            position = position_stack(reverse = TRUE)) +
   geom_text(data = lab, aes(x = 1.03, y = row,
                             label = sprintf("%.0f%%", 100 * share)),
-            hjust = 0, size = 2.9, colour = "grey25", inherit.aes = FALSE) +
+            hjust = 0, size = 2.5, colour = "grey25", inherit.aes = FALSE) +
   facet_grid(design ~ ., scales = "free_y", space = "free_y",
              labeller = label_wrap_gen(18), switch = "y") +
   scale_y_discrete(labels = row_lab) +
@@ -6215,12 +6215,12 @@ ggplot(bd, aes(share, row, fill = band)) +
        subtitle = str_wrap(paste("Each bar is one catchment, ordered within its design by how deprived it is.",
                                  "The figure at the right is the share in the three most deprived deciles in England."), 96),
        caption = "Sources: ONS postcode household counts; IMD 2019 IDACI.") +
-  theme_bh(9) +
+  theme_bh(8) +
   theme(legend.position = "top",
         panel.grid.major.y = element_blank(),
         strip.placement = "outside",
         strip.text.y.left = element_text(angle = 0, hjust = 1, face = "bold",
-                                         size = 8))
+                                         size = 7))
 ```
 
 
