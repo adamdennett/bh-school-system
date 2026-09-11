@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "policy-simulator",
+      "runtimeExecutable": "C:/Program Files/R/R-4.5.2/bin/Rscript.exe",
+      "runtimeArgs": ["-e", "shiny::runApp('app', port=7788, host='127.0.0.1', launch.browser=FALSE)"],
+      "port": 7788
+    }
+  ]
+}

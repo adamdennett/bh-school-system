@@ -295,6 +295,26 @@ add_school_layer <- function(map, s = schools_sf(), group = "Schools",
 # it is a table of metadata rather than code.
 source(file.path(ROOT, "R", "00_sources.R"))
 
+# ---- Formatting ------------------------------------------------------
+# These were defined in index.qmd, which is fine until something other
+# than index.qmd needs them - R/05_app_inputs.R and the app both do.
+# index.qmd still defines them identically; harmless, and it saves a
+# re-render of a 6,000-line document to remove two lines.
+
+fmt_n   <- function(x, d = 0)
+  formatC(round(x, d), big.mark = ",", format = "f", digits = d)
+
+fmt_pct <- function(x, d = 0)
+  paste0(formatC(x, format = "f", digits = d), "%")
+
+#' Pounds, at whatever scale reads best, with a typographic minus.
+gbp <- function(x, d = 1) {
+  a <- abs(x); s <- ifelse(x < 0, "\u2212", "")
+  ifelse(a >= 1e6, sprintf("%s\u00a3%.*fm", s, d, a / 1e6),
+  ifelse(a >= 1e3, sprintf("%s\u00a3%.0fk", s, a / 1e3),
+                   sprintf("%s\u00a3%.0f", s, a)))
+}
+
 # ---- Plot theme ------------------------------------------------------
 
 theme_bh <- function(base_size = 12) {
