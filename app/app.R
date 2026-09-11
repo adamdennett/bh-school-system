@@ -22,6 +22,7 @@ library(bslib)
 library(dplyr)
 library(leaflet)
 library(ggplot2)
+library(tibble)
 
 APP <- normalizePath(file.path(dirname(sys.frame(1)$ofile %||% "."), "."),
                      mustWork = FALSE)
@@ -109,6 +110,10 @@ ui <- page_sidebar(
     nav_panel("Fairness", plotOutput("p_fair", height = 430),
               div(class = "note",
                   "Gorard's index over the modelled intakes: half the sum of the absolute difference between each school's share of the city's deprived children and its share of all of them. Zero would be a perfectly even spread.")),
+    nav_panel("Attainment",
+              plotOutput("p_att", height = 480),
+              tableOutput("t_att"),
+              div(class = "note", htmlOutput("att_note"))),
     nav_panel("Travel", plotOutput("p_travel", height = 430),
               div(class = "note",
                   "These journeys are longer than the ones in section 8 of the document, and for a reason worth knowing. The model gives every child a probability of attending every school, so a small fraction of each neighbourhood is counted as travelling to a school right across the city. Section 8 instead assigns each child to one school under the admission rules, which is a shorter journey by construction. Use these figures to compare one configuration with another, not against the section 8 numbers.")),
@@ -380,6 +385,91 @@ server <- function(input, output, session) {
             plot.subtitle = element_text(colour = "grey35", size = 10))
   })
 
+  # ---- Attainment ------------------------------------------------------
+  # What each school's attractiveness is worth in the one published
+  # number families appear to respond to, and what it would have to
+  # reach to fill the places it is offering.
+  att_tab <- reactive({
+    w <- w_now(); p <- pan_now()
+    purrr::map_dfr(seq_len(nrow(CITY)), function(i) {
+      nm <- CITY$name[i]
+      s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w, pans = p,
+                           site = input$site, design = input$design,
+                           year = input$year)
+      tibble::tibble(
+        name = nm, short = CITY$short[i], att8 = CITY$att8[i],
+        set_at = CITY$att8[i] + att8_points(inp, w[[nm]]),
+        needed = if (is.finite(s$multiplier))
+          CITY$att8[i] + att8_points(inp, s$multiplier) else NA_real_,
+        pan = p[[nm]])
+    }) %>% mutate(gap = needed - att8)
+  })
+
+  output$p_att <- renderPlot({
+    a <- att_tab() %>% mutate(short = forcats::fct_reorder(short, att8))
+    q <- inp$attain$national$q
+    # The three reference lines are named in the subtitle rather than
+    # labelled in the panel: a numeric y on a discrete axis is what
+    # "Discrete value supplied to a continuous scale" was complaining
+    # about, and the plot did not draw at all.
+    refs <- c(q[["50%"]], q[["90%"]], inp$attain$city$max)
+    ggplot(a, aes(y = short)) +
+      geom_vline(xintercept = refs, colour = "grey72", linetype = "31") +
+      geom_segment(aes(x = att8, xend = needed, yend = short),
+                   colour = "grey78", linewidth = 1.1, na.rm = TRUE) +
+      geom_point(aes(x = att8), size = 3.4, colour = "#1f3b57") +
+      geom_point(aes(x = needed), size = 3.4, colour = BAD, na.rm = TRUE) +
+      geom_text(aes(x = needed, label = sprintf("+%.0f", gap)), hjust = -0.35,
+                size = 3, colour = BAD, na.rm = TRUE) +
+      scale_x_continuous(expand = expansion(mult = c(0.05, 0.12))) +
+      labs(x = "Attainment 8 score", y = NULL,
+           title = "What each school would have to score to fill its places",
+           subtitle = strwrap(sprintf(paste(
+             "Dark dot is this year's score, red is what it would take to fill at the admission number you have set.",
+             "Dashed lines: England median %.0f, England top tenth %.0f, best in the city %.0f."),
+             q[["50%"]], q[["90%"]], inp$attain$city$max), width = 118) %>%
+             paste(collapse = "\n")) +
+      theme_minimal(12) +
+      theme(panel.grid.major.y = element_blank(),
+            plot.title = element_text(face = "bold"),
+            plot.subtitle = element_text(colour = "grey35", size = 10))
+  })
+
+  output$t_att <- renderTable({
+    att_tab() %>% arrange(desc(gap)) %>%
+      transmute(School = short,
+                `Admission number` = fmt_n(pan),
+                `Attainment 8 now` = sprintf("%.1f", att8),
+                `At this slider` = sprintf("%.1f", set_at),
+                `Needed to fill` = ifelse(is.na(needed), "unreachable",
+                                          sprintf("%.1f", needed)),
+                `Points short` = ifelse(is.na(gap), "—",
+                                        sprintf("%+.1f", gap)),
+                `Where that would rank` = ifelse(
+                  is.na(needed), "—",
+                  sprintf("top %.0f%% in England",
+                          pmax(1, round(100 - att8_percentile(inp, needed))))))
+  }, striped = TRUE, width = "100%")
+
+  output$att_note <- renderUI(HTML(sprintf(
+    paste0("<p>Attainment 8 explains %.0f%% of the variation in weighted ",
+           "preferences per place across the city's %d schools, and a point ",
+           "is worth about %.0f%% more preferences. That fit is what converts ",
+           "the attractiveness slider into points here.</p>",
+           "<p><b>It is an association, not a lever.</b> Attainment 8 is ",
+           "largely set by the intake a school receives — section 2 of the ",
+           "document spends some time on how little of it a school controls. ",
+           "Read these as <i>what it would take</i>, not as <i>what to do</i>. ",
+           "A school that raised its score by fifteen points would almost ",
+           "certainly have done so by changing who walks through the door, ",
+           "which is the thing the rest of this app is about.</p>",
+           "<p>England figures are %s state schools in %s: median %.1f, ",
+           "top tenth above %.1f, highest %.1f.</p>"),
+    100 * inp$attain$r2, inp$attain$n, 100 * inp$attain$per_point,
+    fmt_n(inp$attain$national$n), inp$attain$national$year,
+    inp$attain$national$q[["50%"]], inp$attain$national$q[["90%"]],
+    inp$attain$national$q[["100%"]])))
+
   # ---- The inverse question --------------------------------------------
   output$solve_note <- renderText({
     req(input$solve_for)
@@ -398,12 +488,13 @@ server <- function(input, output, session) {
     else if (s$fill >= 0.999 && s$multiplier <= w_now()[[nm]] * 1.001)
       sprintf("%s already fills %s places where the sliders are now.",
               input$solve_for, fmt_n(p[[nm]]))
-    else
-      sprintf("%s would need its attractiveness slider at %.1f× to fill %s places — that is %s on the weighted-preference scale, against Dorothy Stringer's %.2f. It is at %.1f× now.",
-              input$solve_for, s$multiplier, fmt_n(p[[nm]]),
-              sprintf("%.2f", s$multiplier * inp$schools$W[inp$schools$name == nm]),
-              inp$schools$W[inp$schools$name == "Dorothy Stringer School"],
-              w_now()[[nm]])
+    else {
+      pts <- att8_points(inp, s$multiplier)
+      now <- inp$schools$att8[inp$schools$name == nm]
+      sprintf("%s would need to be %.1f× as attractive to fill %s places. On the one published number families appear to respond to, that is %+.1f Attainment 8 points — from %.1f to %.1f, which is %s.",
+              input$solve_for, s$multiplier, fmt_n(p[[nm]]), pts, now, now + pts,
+              att8_context(inp, now + pts))
+    }
   })
 
   output$caveats <- renderUI(HTML(paste0(

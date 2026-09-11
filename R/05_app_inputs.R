@@ -137,6 +137,58 @@ params <- list(beta = mt$beta, sigma = mt$sigma,
 message(sprintf("  beta %.2f, gamma %.2f, delta %.2f, sigma %.0f",
                 params$beta, params$gamma, params$delta, params$sigma))
 
+# ---- 4b. What attractiveness means in Attainment 8 ------------------
+# Section 5.4 finds that the published number families respond to is
+# headline Attainment 8, and fits log(weighted preferences per place)
+# against it. The app needs that fit the other way round: given a
+# multiplier on attractiveness, how many Attainment 8 points is that?
+#
+# The response is logged, so the slope is a constant proportional effect
+# per point and the inversion is just log(m) / b. Fitted here on the ten
+# city schools, the same rows section 5.4 uses.
+
+att_fit <- lm(log(W_wprefs) ~ att8,
+              data = oi$attract %>% filter(name %in% CITY))
+ATT_B <- unname(coef(att_fit)[["att8"]])
+
+stopifnot(ATT_B > 0, summary(att_fit)$r.squared > 0.5)
+
+attain <- list(
+  slope = ATT_B,
+  r2 = summary(att_fit)$r.squared,
+  n = nobs(att_fit),
+  se = unname(summary(att_fit)$coefficients["att8", "Std. Error"]),
+  # A point of Attainment 8 is worth this much on the attractiveness
+  # scale: about 7% more weighted preferences per place.
+  per_point = exp(ATT_B) - 1)
+
+# The national distribution, so the app can say where a required score
+# would sit rather than just naming it. State-funded mainstream schools
+# in the latest year the panel covers.
+nat <- readRDS(file.path(DATA, "performance_panel.rds"))
+nat_att <- nat$national$ATT8SCR
+nat_att <- nat_att[is.finite(nat_att) & nat_att > 0]
+
+attain$national <- list(
+  year = nat$latest, n = length(nat_att),
+  q = stats::quantile(nat_att, c(0, 0.1, 0.25, 0.5, 0.75, 0.9, 1)),
+  ecdf = stats::ecdf(nat_att))
+
+city_att <- oi$attract$att8[oi$attract$name %in% CITY]
+attain$city <- list(min = min(city_att), median = stats::median(city_att),
+                    max = max(city_att))
+
+message(sprintf("  Attainment 8: %.4f log-W per point (R2 %.2f, n %d); a point is worth %.1f%%",
+                attain$slope, attain$r2, attain$n, 100 * attain$per_point))
+message(sprintf("  city %.1f to %.1f, median %.1f; nationally %d schools, median %.1f, 90th %.1f",
+                attain$city$min, attain$city$max, attain$city$median,
+                attain$national$n, attain$national$q[["50%"]],
+                attain$national$q[["90%"]]))
+
+schools <- schools %>%
+  left_join(oi$attract %>% select(name, att8), by = "name")
+stopifnot(!any(is.na(schools$att8[schools$city])))
+
 # ---- 5. Demand by year ----------------------------------------------
 # The city's projected Year 7 cohort, as an index on 2026. The app
 # scales every zone's Oi by it, which holds the geography of demand
@@ -275,6 +327,7 @@ presets <- list(
 
 saveRDS(list(
   schools = schools, zones = zones, cost = cost, designs = DESIGNS,
+  attain = attain,
   params = params, demand = demand, finance = finance,
   seed_intakes = seed_intakes, idaci = idaci,
   lsoa_sf = lsoa_sf, design_sf = design_sf, presets = presets,

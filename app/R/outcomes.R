@@ -127,6 +127,45 @@ outcomes <- function(inp, r, shed = 0.75) {
     list(year = r$year, design = r$design, site = r$site))
 }
 
+#' Attainment 8 and attractiveness, in both directions
+#'
+#' Section 5.4 of the strategic view finds that headline Attainment 8 is
+#' the published number families respond to, and fits
+#' log(weighted preferences per place) against it. That fit is what lets
+#' the app answer "how many more points?" instead of only "how many
+#' times more attractive?".
+#'
+#' The relationship is an ASSOCIATION across ten schools, not a lever.
+#' Attainment 8 is itself largely set by the intake, so a school cannot
+#' simply decide to score higher - which is the point section 2 makes at
+#' length, and the reason these numbers are framed as "what it would
+#' take" rather than "what to do".
+
+#' Attainment 8 points equivalent to a multiplier on attractiveness
+att8_points <- function(inp, multiplier) log(multiplier) / inp$attain$slope
+
+#' The multiplier equivalent to a change in Attainment 8 points
+att8_multiplier <- function(inp, points) exp(inp$attain$slope * points)
+
+#' Where a score sits in the national distribution, as a percentile
+att8_percentile <- function(inp, score) 100 * inp$attain$national$ecdf(score)
+
+#' One line of context for a required score
+att8_context <- function(inp, score) {
+  city <- inp$attain$city
+  pc <- att8_percentile(inp, score)
+  top <- inp$schools$short[inp$schools$city][
+    which.max(replace(inp$schools$att8[inp$schools$city], NA, -Inf))]
+  where <- if (score > city$max)
+    sprintf("above every school in the city — %s is the highest at %.1f",
+            top, city$max)
+  else if (score > city$median)
+    sprintf("above the city median of %.1f", city$median)
+  else sprintf("below the city median of %.1f", city$median)
+  sprintf("%s, and in the top %.0f%% of the %s state schools in England",
+          where, 100 - pc, fmt_n(inp$attain$national$n))
+}
+
 #' What would it take for one school to fill?
 #'
 #' The inverse question, by bisection on an attractiveness multiplier.
