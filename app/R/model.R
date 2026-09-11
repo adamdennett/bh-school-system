@@ -66,7 +66,7 @@ ipf_cap <- function(flow, orig, dest, o_target, cap,
 #' @param capped whether the admission numbers bind
 run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
-                    capped = TRUE) {
+                    capped = TRUE, gamma = NULL) {
 
   # City schools only, which is what section 7 models. Peacehaven is in
   # the cost matrix and in the bundle, but the published model does not
@@ -109,8 +109,14 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     !is.na(dsg$school[d$name]) &
       dsg$school[d$name] == dsg$zone[d$zone])
 
+  # How much living in a catchment counts. The fitted value is a nudge,
+  # not a rule - which is why changing the map moves so few children -
+  # and the app lets it be turned up so that can be seen rather than
+  # taken on trust.
+  g <- if (is.null(gamma)) inp$params$gamma else gamma
+
   util <- d$Wj * d$cij^(-inp$params$beta) *
-    exp(inp$params$gamma * d$in_catch + inp$params$delta * log(d$Cj))
+    exp(g * d$in_catch + inp$params$delta * log(d$Cj))
 
   # Production-constrained: every neighbourhood places its own children.
   A <- tapply(util, d$zone, sum)
@@ -134,5 +140,6 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                   at_pan = fill >= 0.995)
 
   list(flows = d, schools = by_school, W = W, cap = cap,
-       year = year, site = site, design = design, index = idx)
+       year = year, site = site, design = design, index = idx, gamma = g,
+       in_catch_share = sum(d$flow[d$in_catch == 1]) / sum(d$flow))
 }

@@ -221,6 +221,23 @@ attain$absence <- list(
 
 attain$att8_deciles <- stats::quantile(nat_att, seq(0, 1, 0.1))
 
+# Fixed axis limits for the app's two live charts. They have to be
+# constant - an axis computed from the data rescales when a slider
+# moves, which made the charts look inert - but the national extremes
+# are outliers that would squeeze all ten schools into a third of the
+# panel. The 1st to 99th percentile, widened to hold every city school,
+# is stable and uses the space.
+# The 1st percentile of Attainment 8 is 7.9, from schools with a handful
+# of entries; anchoring there squeezes every Brighton school into the
+# right third of the panel. The 10th to the 98th holds the whole decile
+# rug and leaves room above the best score in the city.
+lim_for <- function(x, city_vals, lo, hi, pad = 0.04) {
+  q <- stats::quantile(x, c(lo, hi))
+  r <- range(c(q, city_vals))
+  r + c(-1, 1) * diff(r) * pad
+}
+attain$att8_lims <- lim_for(nat_att, city_att, lo = 0.10, hi = 0.98)
+
 message(sprintf("  absence elasticity %.3f (R2 %.2f, n %s); national median %.1f%%, 90th %.1f%%",
                 attain$absence$elasticity, attain$absence$r2,
                 fmt_n(attain$absence$n),
@@ -238,6 +255,13 @@ school_abs <- nat$bh %>%
 schools <- schools %>%
   left_join(oi$attract %>% select(name, att8), by = "name") %>%
   left_join(school_abs, by = "urn")
+
+# Absence starts at zero, because an implied rate can land below
+# anything any school actually reports and that is exactly the finding
+# worth seeing rather than squashing against the edge.
+attain$abs_lims <- lim_for(nat_abs, schools$absence[schools$city],
+                           lo = 0.02, hi = 0.95)
+attain$abs_lims[1] <- 0
 
 stopifnot(!any(is.na(schools$att8[schools$city])),
           !any(is.na(schools$absence[schools$city])),
@@ -375,6 +399,10 @@ presets <- list(
             `Patcham High School` = 180,
             `Portslade Aldridge Community Academy` = 180),
     w = NULL),
+  `Make the catchment count` = list(
+    note = "Everything as it is, but living in a catchment weighs far more heavily on the choice than families currently behave as though it does. This is the other way to fill a school, and it needs nothing from the school itself.",
+    design = "Current catchments", site = "now", year = 2026,
+    gamma = 3, pan = NULL, w = NULL),
   `Make Longhill wanted` = list(
     note = "Longhill's attractiveness lifted to Dorothy Stringer's, everything else unchanged. The question is what it takes, and who loses the children.",
     design = "Current catchments", site = "now", year = 2026,

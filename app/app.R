@@ -83,6 +83,10 @@ ui <- page_sidebar(
     sliderInput("year", "Entry year", min = min(inp$demand$year),
                 max = max(inp$demand$year), value = 2026, step = 1, sep = "",
                 ticks = FALSE),
+    sliderInput("gamma", "How much living in the catchment counts",
+                min = 0, max = 3, value = inp$params$gamma, step = 0.1,
+                ticks = FALSE),
+    div(class = "note", textOutput("gamma_note")),
     hr(),
     div(strong("Per school"), span(class = "note", " — attractiveness ×, and admission number")),
     div(style = "margin-top:8px", lapply(seq_len(nrow(CITY)),
@@ -105,7 +109,9 @@ ui <- page_sidebar(
                 col_widths = c(7, 5),
                 div(leafletOutput("map", height = 560),
                     div(class = "note", style = "padding-top:6px",
-                        "Dot area is the modelled intake. Green means the school fills its admission number, amber within a tenth of it, red short. The shading is the catchment map in force.")),
+                        "Dot area is the modelled intake. Green means the school fills its admission number, amber within a tenth of it, red short. The shading is the catchment map in force."),
+                    div(class = "note", style = "padding-top:4px",
+                        textOutput("design_note"))),
                 div(plotOutput("p_att_live", height = 292),
                     plotOutput("p_abs_live", height = 292)))),
     nav_panel("Places", plotOutput("p_places", height = 430),
@@ -135,6 +141,10 @@ server <- function(input, output, session) {
     updateSelectInput(session, "design", selected = s$design)
     updateSelectInput(session, "site", selected = s$site)
     updateSliderInput(session, "year", value = s$year)
+    # A preset that does not name a catchment strength means the fitted
+    # one, not "leave whatever the last preset set".
+    updateSliderInput(session, "gamma",
+                      value = s$gamma %||% inp$params$gamma)
     for (i in seq_len(nrow(CITY))) {
       nm <- CITY$name[i]; urn <- CITY$urn[i]
       updateSliderInput(session, paste0("w_", urn),
@@ -149,6 +159,19 @@ server <- function(input, output, session) {
   observeEvent(input$reset, apply_preset(input$preset))
 
   output$preset_note <- renderText(inp$presets[[input$preset]]$note)
+
+  output$gamma_note <- renderText({
+    req(input$gamma)
+    s <- sim()
+    fitted <- inp$params$gamma
+    base <- sprintf("%.0f%% of children are modelled as going to a school in their own catchment. ",
+                    100 * s$in_catch_share)
+    paste0(base, if (abs(input$gamma - fitted) < 0.05)
+      sprintf("%.1f is the value fitted on the real preferences — a nudge, which is why changing the map moves so few children. Turn it up to see what a binding catchment would do.", fitted)
+      else sprintf("The fitted value is %.1f; this is %s.", fitted,
+                   if (input$gamma > fitted) "a stronger catchment than families actually behave as though they face"
+                   else "a weaker one"))
+  })
 
   w_now <- reactive({
     v <- vapply(CITY$urn, function(u) input[[paste0("w_", u)]] %||% 1, numeric(1))
@@ -165,7 +188,7 @@ server <- function(input, output, session) {
     w <- w_now(); p <- pan_now()
     req(all(is.finite(w)), all(is.finite(p)))
     run_sim(inp, w_mult = w, pans = p, site = input$site,
-            design = input$design, year = input$year)
+            design = input$design, year = input$year, gamma = input$gamma)
   })
   met <- reactive(outcomes(inp, sim()))
 
@@ -206,6 +229,26 @@ server <- function(input, output, session) {
     kpi(sprintf("%+.1f min", m$dep_gap), "Deprived children travel",
         "further than everyone else",
         if (m$dep_gap <= 0) OK else if (m$dep_gap <= 5) WARN else BAD) })
+
+  # How much work the chosen map is doing. Without this the design
+  # control looks inert, when what is actually true is that it moves
+  # very few children at the strength families behave as though
+  # catchments have.
+  output$design_note <- renderText({
+    base <- inp$designs[["Current catchments"]]$zone
+    z <- inp$designs[[input$design]]$zone
+    regrouped <- sum(z[names(base)] != base, na.rm = TRUE)
+    now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
+                   design = "Current catchments", year = input$year,
+                   gamma = input$gamma)
+    moved <- sum(pmax(0, sim()$schools$intake - now$schools$intake))
+    if (regrouped == 0)
+      sprintf("This is the map in force. %.0f%% of children are modelled as attending a school in their own catchment.",
+              100 * sim()$in_catch_share)
+    else
+      sprintf("This map regroups %d of the %d neighbourhood-catchment zones against the one in force, and at this catchment strength it moves %s children between schools.",
+              regrouped, length(base), fmt_n(moved))
+  })
 
   # ---- Map ------------------------------------------------------------
   output$map <- renderLeaflet({
@@ -413,22 +456,30 @@ server <- function(input, output, session) {
                     colour = "grey62", linewidth = 0.5, linetype = "31"))
   }
 
-  live_plot <- function(d, xnow, xnew, q, title, xlab) {
-    d <- d %>% mutate(short = forcats::fct_reorder(short, .data[[xnow]]))
-    rng <- range(c(d[[xnow]], d[[xnew]], q[["10%"]], q[["90%"]]), na.rm = TRUE)
-    pad <- diff(rng) * 0.10
+  live_plot <- function(d, xnow, xnew, q, title, xlab, lims, digits = 1) {
     # Two lines at most, and wrapped: the column is 430px wide and a
     # one-line axis title was being cut off mid-word.
     xlab <- paste(strwrap(xlab, width = 58), collapse = "\n")
+    # The row order and the axis are FIXED, on the school's own current
+    # value and on England's full range. Both used to be computed from
+    # the data, so moving a slider rescaled the frame and reordered the
+    # rows underneath the dot that had just moved - which is why the
+    # charts looked inert when they were in fact responding. A dot now
+    # moves against a backdrop that stays still.
+    d <- d %>% mutate(short = factor(short, d$short[order(d[[xnow]])]))
     ggplot(d, aes(y = short)) +
       decile_layer(q) +
       geom_segment(aes(x = .data[[xnow]], xend = .data[[xnew]], yend = short),
                    colour = "grey70", linewidth = 0.9) +
       geom_point(aes(x = .data[[xnow]]), size = 2, colour = "grey45") +
       geom_point(aes(x = .data[[xnew]], colour = moved), size = 2.6) +
+      geom_text(data = d %>% filter(moved),
+                aes(x = .data[[xnew]],
+                    label = sprintf("%.*f", digits, .data[[xnew]])),
+                colour = "#2a78d6", size = 2.9, vjust = -1, fontface = "bold") +
       scale_colour_manual(values = c(`TRUE` = "#2a78d6", `FALSE` = "grey45"),
                           guide = "none") +
-      scale_x_continuous(limits = c(rng[1] - pad, rng[2] + pad)) +
+      scale_x_continuous(limits = lims, oob = scales::squish) +
       labs(x = xlab, y = NULL, title = title) +
       theme_minimal(10) +
       theme(panel.grid.major.y = element_blank(),
@@ -445,7 +496,8 @@ server <- function(input, output, session) {
     live_plot(live(), "att8", "att8_new", q,
               "Attainment 8 the slider implies",
               sprintf("Score. Ticks are England's deciles, dashed the 10th (%.0f), median (%.0f) and 90th (%.0f)",
-                      q[["10%"]], q[["50%"]], q[["90%"]]))
+                      q[["10%"]], q[["50%"]], q[["90%"]]),
+              lims = inp$attain$att8_lims, digits = 1)
   })
 
   output$p_abs_live <- renderPlot({
@@ -453,7 +505,8 @@ server <- function(input, output, session) {
     live_plot(live(), "absence", "abs_new", q,
               "Absence rate that would go with it",
               sprintf("Per cent of sessions missed, lower better. Dashed: England's 10th (%.1f), median (%.1f), 90th (%.1f)",
-                      q[["10%"]], q[["50%"]], q[["90%"]]))
+                      q[["10%"]], q[["50%"]], q[["90%"]]),
+              lims = inp$attain$abs_lims, digits = 1)
   })
 
   # ---- Attainment ------------------------------------------------------
