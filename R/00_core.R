@@ -15,82 +15,83 @@ ROOT <- here::here()
 DATA <- file.path(ROOT, "data")
 LOGOS <- file.path(ROOT, "assets", "school_logos")
 
-# ---- CARTO basemaps --------------------------------------------------
-# CARTO require an API key on their raster tiles; without one the tiles
-# carry an "API key required" watermark. leaflet-providers has no slot
-# for a key, so the tile URL has to be built by hand.
+# ---- Basemaps --------------------------------------------------------
+# Esri's World Light Gray Canvas, which needs no API key.
 #
-# This used to be done by shadowing leaflet::addProviderTiles(). That
-# failed twice, and both times it failed *silently*: when the shim did
-# not take effect the real function ran, the maps rendered perfectly,
-# and the only symptom was a watermark that had to be noticed by eye.
+# This was CARTO Positron, and CARTO's raster tiles require a key: every
+# clone, every CI run and every render from a shell that did not have
+# CARTO_KEY in its environment produced watermarked tiles with no other
+# symptom. That happened repeatedly and was caught only by a check
+# written specially to catch it. A basemap that cannot be misconfigured
+# is worth more than a slightly prettier one.
 #
-# So the basemap is now added by an explicitly named function. If it is
-# missing from a map the map has no basemap at all, which is impossible
-# to miss; and addProviderTiles() is stubbed below so a reintroduced
-# call fails loudly rather than quietly reverting to unkeyed tiles.
+# Of the keyless light-canvas options, this is the one that actually is
+# keyless. Stadia's tiles return 401 without a key and Jawg's return
+# 400; both moved to requiring one.
+#
+# TWO LAYERS, because Esri splits what CARTO ships as one. The base
+# carries the land, water and roads; the reference carries the place
+# names. Positron has the labels baked in, so both are added and the
+# result matches what these maps looked like before.
+#
+# MAX NATIVE ZOOM 16, which is the constraint that matters. Esri
+# publishes this canvas to level 16, and above that the server returns a
+# grey tile reading "Map data not yet available" rather than a 404 - so
+# the failure would be a wash of grey with no error anywhere.
+# maxNativeZoom tells Leaflet to upsample level 16 instead of asking for
+# 17, which keeps the postcode map in section 2 usable at the depth a
+# reader will want it. The basemap goes soft past 16; the markers and
+# boundaries drawn over it stay sharp.
 
-CARTO_VARIANTS <- c(
-  Positron             = "light_all",
-  PositronNoLabels     = "light_nolabels",
-  PositronOnlyLabels   = "light_only_labels",
-  DarkMatter           = "dark_all",
-  DarkMatterNoLabels   = "dark_nolabels",
-  DarkMatterOnlyLabels = "dark_only_labels",
-  Voyager              = "rastertiles/voyager",
-  VoyagerNoLabels      = "rastertiles/voyager_nolabels",
-  VoyagerOnlyLabels    = "rastertiles/voyager_only_labels",
-  VoyagerLabelsUnder   = "rastertiles/voyager_labels_under")
+ESRI_TILE <- paste0("https://server.arcgisonline.com/ArcGIS/rest/services/",
+                    "Canvas/World_Light_Gray_%s/MapServer/tile/{z}/{y}/{x}")
+ESRI_MAX_NATIVE <- 16
 
-#' Add a keyed CARTO raster basemap
-#'
-#' Attribution is set explicitly because addTiles() does not inherit a
-#' provider's, and keeping the CARTO and OpenStreetMap credits visible
-#' is a condition of the free tier.
-#'
-#' The key is read from CARTO_KEY in ~/.Renviron. If it is unset the map
-#' still renders, just watermarked, so clones and CI are unaffected --
-#' but a warning is emitted, because a silent watermark is exactly the
-#' failure this function exists to prevent.
+ESRI_ATTRIB <- paste0(
+  'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, ',
+  'HERE, Garmin, &copy; ',
+  '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  ' contributors')
+
+#' Add the basemap
 #'
 #' @param map a leaflet map
-#' @param variant one of names(CARTO_VARIANTS), default Positron
+#' @param labels whether to draw place names over the canvas (default
+#'   TRUE, matching the single labelled layer this replaced)
 #' @param ... passed to leaflet::addTiles (group, layerId, options)
-add_carto <- function(map, variant = "Positron", ...) {
-  variant <- match.arg(variant, names(CARTO_VARIANTS))
-  key <- Sys.getenv("CARTO_KEY", "")
-
-  if (!nzchar(key)) {
-    warning("CARTO_KEY is not set, so basemap tiles will be watermarked. ",
-            "Set it in ~/.Renviron.", call. = FALSE)
-  }
-
+add_basemap <- function(map, labels = TRUE, ...) {
   dots <- list(...)
-  opts <- leaflet::tileOptions(subdomains = "abcd", maxZoom = 20)
+  opts <- leaflet::tileOptions(maxNativeZoom = ESRI_MAX_NATIVE, maxZoom = 20)
   if (!is.null(dots$options)) {
     opts <- utils::modifyList(opts, dots$options); dots$options <- NULL
   }
 
-  url <- sprintf("https://{s}.basemaps.cartocdn.com/%s/{z}/{x}/{y}{r}.png",
-                 CARTO_VARIANTS[[variant]])
-  if (nzchar(key)) url <- paste0(url, "?key=", key)
+  map <- do.call(leaflet::addTiles, c(list(
+    map,
+    urlTemplate = sprintf(ESRI_TILE, "Base"),
+    attribution = ESRI_ATTRIB,
+    options = opts), dots))
 
+  if (!labels)
+    return(map)
+
+  # The label layer carries no attribution of its own: repeating it
+  # would print the same credit twice in the corner of every map.
   do.call(leaflet::addTiles, c(list(
     map,
-    urlTemplate = url,
-    attribution = paste0(
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      ' contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'),
+    urlTemplate = sprintf(ESRI_TILE, "Reference"),
+    attribution = "",
     options = opts), dots))
 }
 
-# A tripwire. Calling leaflet's own addProviderTiles() in this project
-# would produce unkeyed, watermarked CARTO tiles without any error, so
-# make it an error instead.
+# A tripwire. leaflet-providers' own Esri.WorldGrayCanvas caps the map
+# at zoom 16 rather than upsampling past it, and its CARTO entries
+# render watermarked; either would be a silent visual regression, so
+# route every map through one function.
 addProviderTiles <- function(map, provider, ...) {
-  stop("Use add_carto() in this project, not addProviderTiles().\n",
-       "  leaflet-providers has no slot for the CARTO API key, so this ",
-       "would render watermarked tiles with no other symptom.\n",
+  stop("Use add_basemap() in this project, not addProviderTiles().\n",
+       "  leaflet-providers caps this canvas at zoom 16 instead of ",
+       "upsampling it, and its CARTO entries render watermarked.\n",
        "  See R/00_core.R.", call. = FALSE)
 }
 # ----------------------------------------------------------------------

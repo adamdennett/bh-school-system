@@ -40,7 +40,7 @@ SOURCES <- tibble::tribble(
   "bhcc_plan",   "School place planning reports and forecasts", "Brighton & Hove City Council",      "Catchment forecasts and admission-number proposals, in committee papers and consultation documents.", "https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions",                    "OGL v3",
   "bhcc_catch",  "Secondary catchment boundaries",            "Brighton & Hove City Council",        "The catchment map in force from September 2026 entry, and the map it replaced.",               "https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions",                        "OGL v3",
   "lever",       "How to Pull the Right Lever",               "Dennett and colleagues, UCL CASA",    "The multilevel model of school-level attainment whose specification and decomposition section 2 follows.", "https://adamdennett.github.io/school_attainment_tool/index.html", "author’s own work",
-  "carto",       "CARTO basemaps",                            "CARTO",                               "The base cartography under every map in this document.",                                       "https://carto.com/basemaps",                                                                     "CARTO free tier, attribution required")
+  "esri",        "World Light Gray Canvas",                   "Esri",                                "The base cartography under every map in this document. Keyless, unlike the CARTO tiles it replaced.", "https://www.arcgis.com/home/item.html?id=979c6cc89af9449cbeb5342a439c6a76",                  "Esri terms, attribution required")
 
 stopifnot(!any(duplicated(SOURCES$key)), !any(is.na(SOURCES$url)))
 

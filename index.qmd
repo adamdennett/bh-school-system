@@ -418,7 +418,7 @@ r_scale <- function(n) 3 + 17 * sqrt(n / max(n, na.rm = TRUE))
 pal_catch <- colorFactor(unname(CATCH_COLOURS), names(CATCH_COLOURS))
 
 m <- leaflet(width = "100%", height = 620) %>%
-  add_carto() %>%
+  add_basemap() %>%
   setView(lng = -0.10, lat = 50.84, zoom = 12) %>%
   addPolygons(
     data = catch, group = "Catchments",
@@ -572,7 +572,7 @@ band_sf$lab <- sprintf("%g - %g children per hectare", band_sf$lo, band_sf$hi)
 
 leaflet(width = "100%", height = 600,
         options = leafletOptions(preferCanvas = TRUE)) %>%
-  add_carto() %>%
+  add_basemap() %>%
   addPolygons(data = band_sf, fillColor = ~col, fillOpacity = 0.72,
               color = NA, weight = 0, label = ~lab, group = "Children") %>%
   addPolygons(data = catch, fill = FALSE, color = "#333333",
@@ -610,7 +610,7 @@ pal_idaci <- colorFactor("RdYlBu", domain = sort(unique(pcd_sf$idaci_decile)))
 # they are drawn into a single element and the map stays responsive.
 leaflet(width = "100%", height = 600,
         options = leafletOptions(preferCanvas = TRUE)) %>%
-  add_carto() %>%
+  add_basemap() %>%
   addPolygons(data = catch, fill = FALSE, color = "#333333",
               weight = 1.6, opacity = 0.7, group = "Catchments",
               label = ~unname(CATCH_LABELS[catchment])) %>%
@@ -2158,7 +2158,7 @@ elm_xy <- st_coordinates(elm_pt)
 
 m_pick <- leaflet(width = "100%", height = 600,
                   options = leafletOptions(preferCanvas = TRUE)) %>%
-  add_carto()
+  add_basemap()
 
 layer_names <- c(sort(unique(oi$costs_now$name)), ELM_LABEL)
 
@@ -2279,7 +2279,7 @@ pal_mode <- colorFactor(c("BUS" = "#2166ac", "WALK" = "#e08214"),
                         domain = c("BUS", "WALK"))
 
 mleg <- leaflet(width = "100%", height = 560) %>%
-  add_carto()
+  add_basemap()
 
 for (j in sort(unique(legs$journey))) {
   d <- legs %>% filter(journey == j)
@@ -2328,7 +2328,7 @@ near <- lsoa %>%
 pal_near <- colorFactor("Set3", domain = sort(unique(near$nearest_school)))
 
 leaflet(width = "100%", height = 560) %>%
-  add_carto() %>%
+  add_basemap() %>%
   addPolygons(data = near, group = "Nearest school",
               fillColor = ~pal_near(nearest_school), fillOpacity = 0.72,
               color = "white", weight = 0.4,
@@ -2401,7 +2401,7 @@ pal_cum  <- colorNumeric("viridis", reverse = TRUE,
 acc_base <- function() {
   leaflet(width = "100%", height = 560,
           options = leafletOptions(preferCanvas = TRUE)) %>%
-    add_carto()
+    add_basemap()
 }
 
 #' Two-scenario choropleth with a radio control to switch between them,
@@ -2805,7 +2805,7 @@ payload <- list(
     simplifyVector = FALSE))
 
 m_cum <- leaflet(width = "100%", height = 580) %>%
-  add_carto() %>%
+  add_basemap() %>%
   fitBounds(lng1 = min(sch_pts$lon) - 0.03, lat1 = min(sch_pts$lat) - 0.02,
             lng2 = max(sch_pts$lon) + 0.03, lat2 = max(sch_pts$lat) + 0.02) %>%
   addCircleMarkers(data = sch_pts %>% filter(short != "longhill"),
@@ -3166,7 +3166,7 @@ biv_legend <- paste0(
   '</div></div>')
 
 leaflet(width = "100%", height = 600) %>%
-  add_carto() %>%
+  add_basemap() %>%
   addPolygons(data = biv_map, group = "Accessibility x deprivation",
               fillColor = ~fill, fillOpacity = 0.85,
               color = "white", weight = 0.3,
@@ -4647,7 +4647,7 @@ ggplot() +
 
 m <- leaflet(width = "100%", height = 620,
              options = leafletOptions(preferCanvas = TRUE)) %>%
-  add_carto("Positron") %>%
+  add_basemap() %>%
   addPolygons(data = catch, fill = FALSE, color = "#555555",
               weight = 1, opacity = 0.5, group = "Catchment boundaries")
 
@@ -5265,7 +5265,7 @@ fa_bb <- st_bbox(fa_net)
 
 ma <- leaflet(width = "100%", height = 660,
               options = leafletOptions(preferCanvas = TRUE)) %>%
-  add_carto("Positron") %>%
+  add_basemap() %>%
   addPolygons(data = catch, fill = FALSE, color = "#555555",
               weight = 1, opacity = 0.5, group = "Catchment boundaries")
 
@@ -5453,7 +5453,7 @@ elm_pt <- st_as_sf(tibble(name = "Longhill High School (Elm Grove)",
 # other map in this document passes the pair.
 mr <- leaflet(width = "100%", height = 720,
               options = leafletOptions(preferCanvas = TRUE)) %>%
-  add_carto("Positron")
+  add_basemap()
 
 for (d in fr_designs) {
   poly <- fr$regions_sf %>% filter(design == d)
@@ -6817,10 +6817,12 @@ above.
 routed journey time is © OpenStreetMap contributors, available under the
 [Open Database Licence](https://www.openstreetmap.org/copyright).
 
-**The basemaps are CARTO's.** Every map in this document carries the
-CARTO and OpenStreetMap attribution in its corner, which is the
-condition of the free tier, and `R/99_verify_render.R` fails the build
-if a map loses it.
+**The basemaps are Esri's World Light Gray Canvas**, used because it
+needs no API key. Every map carries the Esri and OpenStreetMap
+attribution in its corner, which the terms require, and
+`R/99_verify_render.R` fails the build if a map loses it. These tiles
+replaced CARTO's, which are keyed: a render from a shell without the key
+produced watermarked maps and no other symptom, repeatedly.
 
 **The analysis is reproducible from these sources.** `R/01_assemble.R`
 pulls every input into `data/`; `R/02_accessibility.R` and

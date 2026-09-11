@@ -42,24 +42,26 @@ source("R/99_verify_render.R") # check the output before publishing
 
 ## Basemaps
 
-Maps use CARTO raster tiles, which require an API key. Set `CARTO_KEY`
-in `~/.Renviron`; without it the maps still render, just watermarked.
+Maps use **Esri's World Light Gray Canvas**, which needs no API key.
+Nothing has to be set up to render them.
 
-**Every map calls `add_carto()`** from `R/00_core.R` — never
-`leaflet::addProviderTiles()`, which has no slot for the key. That
-function is stubbed in `00_core.R` to raise an error, because calling it
-would silently produce watermarked tiles with no other symptom.
+This replaced CARTO Positron, whose raster tiles are keyed. That failed
+repeatedly and always *quietly*: a render from a shell that did not have
+`CARTO_KEY` in its environment produced watermarked tiles, and the only
+symptom was a watermark someone had to notice. Of the keyless
+alternatives, Esri's is the one that is actually keyless — Stadia's
+tiles now return 401 without a key and Jawg's return 400.
 
-This replaced an earlier approach that shadowed `addProviderTiles()`
-transparently. It failed twice, and both times it failed *quietly* — the
-maps rendered correctly and the only sign was a watermark that had to be
-noticed by eye. An explicitly named function fails visibly instead: a
-map without it has no basemap at all.
+**Every map calls `add_basemap()`** from `R/00_core.R` — never
+`leaflet::addProviderTiles()`, which is stubbed there to raise an error.
+Going through one function matters for two reasons: leaflet-providers
+caps this canvas at zoom 16 rather than upsampling it, so deep-zoom maps
+would show a grey wash; and its CARTO entries still render watermarked.
 
-`R/99_verify_render.R` remains as a belt-and-braces check on the
-rendered output. It fails if any CARTO layer is unkeyed, if
-`leaflet-providers` has been loaded, or if either required attribution
-is missing — the last of which is a condition of the free tier.
+`R/99_verify_render.R` checks the rendered output. It fails if a page
+has no basemap, if the canvas and label layers do not pair up, if any
+CARTO tile URL survives, if `leaflet-providers` has been loaded, if
+`maxNativeZoom` is missing, or if either required attribution is gone.
 
 Once `data/` is populated the repository is self-contained and renders
 anywhere.
