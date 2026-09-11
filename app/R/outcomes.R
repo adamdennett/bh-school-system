@@ -125,7 +125,7 @@ outcomes <- function(inp, r, shed = 0.75) {
   #
   # The uncapped flow says what they wanted; the capped flow says what
   # they got. The shortfall between the two, at the home catchment, is
-  # the rationing. Everything else outside is choice.
+  # the displacement. Everything else outside is choice.
   by_zone <- f2 %>%
     dplyr::group_by(zone, home) %>%
     dplyr::summarise(living = sum(flow),
@@ -137,17 +137,17 @@ outcomes <- function(inp, r, shed = 0.75) {
       outside = pmax(0, living - got_home),
       # Capacity balancing can leave a zone with MORE home places than it
       # asked for, when its other choices were cut harder; the pmin keeps
-      # rationing from going negative and the remainder is choice.
-      rationed = pmin(outside, pmax(0, want_home - got_home)),
-      chose = outside - rationed)
+      # displacement from going negative and the remainder is choice.
+      displaced = pmin(outside, pmax(0, want_home - got_home)),
+      chose = outside - displaced)
 
   by_catch <- by_zone %>%
     dplyr::group_by(home) %>%
     dplyr::summarise(living = sum(living), `Their own catchment` = sum(got_home),
                      `Left by choice` = sum(chose),
-                     `Rationed out` = sum(rationed),
+                     `Displaced` = sum(displaced),
                      to_faith = sum(to_faith), .groups = "drop") %>%
-    tidyr::pivot_longer(c(`Their own catchment`, `Left by choice`, `Rationed out`),
+    tidyr::pivot_longer(c(`Their own catchment`, `Left by choice`, `Displaced`),
                         names_to = "where", values_to = "n") %>%
     dplyr::mutate(share = n / living,
                   label = dplyr::coalesce(unname(catch_lab[home]), home))
@@ -156,23 +156,23 @@ outcomes <- function(inp, r, shed = 0.75) {
     dplyr::filter(where != "Their own catchment") %>%
     dplyr::group_by(home, label, living) %>%
     dplyr::summarise(outside = sum(n), .groups = "drop") %>%
-    dplyr::left_join(by_catch %>% dplyr::filter(where == "Rationed out") %>%
-                       dplyr::select(home, rationed = n), by = "home") %>%
+    dplyr::left_join(by_catch %>% dplyr::filter(where == "Displaced") %>%
+                       dplyr::select(home, displaced = n), by = "home") %>%
     dplyr::mutate(outside_share = outside / living,
-                  rationed_share = rationed / living)
+                  displaced_share = displaced / living)
 
   tot <- sum(by_zone$living)
   catchment <- list(
     by_catch = by_catch, outside = outside, by_zone = by_zone,
-    displaced = sum(outside$outside),
-    displaced_share = sum(outside$outside) / tot,
-    rationed = sum(by_zone$rationed),
-    rationed_share = sum(by_zone$rationed) / tot,
+    outside_total = sum(outside$outside),
+    outside_share = sum(outside$outside) / tot,
+    displaced = sum(by_zone$displaced),
+    displaced_share = sum(by_zone$displaced) / tot,
     chose_share = sum(by_zone$chose) / tot,
     worst = outside$label[which.max(outside$outside_share)],
     worst_share = max(outside$outside_share),
-    worst_rationed = outside$label[which.max(outside$rationed_share)],
-    worst_rationed_share = max(outside$rationed_share),
+    worst_displaced = outside$label[which.max(outside$displaced_share)],
+    worst_displaced_share = max(outside$displaced_share),
     faith_share = sum(by_zone$to_faith) / tot)
 
   # ---- Money ---------------------------------------------------------

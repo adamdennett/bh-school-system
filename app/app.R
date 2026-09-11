@@ -397,11 +397,11 @@ server <- function(input, output, session) {
   # a place the system failed to provide, and the colours say so.
   CATCH_COL <- c(`Their own catchment` = "#2a78d6",
                  `Left by choice`      = "#9aa5b1",
-                 `Rationed out`        = "#eb6834")
+                 `Displaced`        = "#eb6834")
 
   catch_plot <- function(b, title, subtitle, base = 12, label_all = TRUE) {
     b <- b %>% mutate(where = factor(where, names(CATCH_COL)))
-    ord <- b %>% filter(where == "Rationed out") %>% arrange(share, label)
+    ord <- b %>% filter(where == "Displaced") %>% arrange(share, label)
     b <- b %>% mutate(label = factor(label, ord$label))
     lab <- b %>% filter(where != "Their own catchment") %>%
       group_by(label) %>% summarise(share = sum(share), .groups = "drop")
@@ -415,7 +415,7 @@ server <- function(input, output, session) {
                 inherit.aes = FALSE, hjust = 0, size = base * 0.26,
                 colour = "grey35") +
       geom_text(data = rat, aes(x = 1.02, y = label,
-                                label = sprintf("(%.0f%% rationed)", 100 * share)),
+                                label = sprintf("(%.0f%% displaced)", 100 * share)),
                 inherit.aes = FALSE, hjust = 0, size = base * 0.24,
                 colour = "#b8501f", fontface = "bold", nudge_x = 0.10) +
       scale_fill_manual(values = CATCH_COL, name = NULL) +
@@ -455,16 +455,16 @@ server <- function(input, output, session) {
     m$by_catch %>%
       select(label, where, n) %>%
       tidyr::pivot_wider(names_from = where, values_from = n) %>%
-      inner_join(m$outside %>% select(label, living, outside_share, rationed_share),
+      inner_join(m$outside %>% select(label, living, outside_share, displaced_share),
                  by = "label") %>%
-      arrange(desc(rationed_share), desc(outside_share)) %>%
+      arrange(desc(displaced_share), desc(outside_share)) %>%
       transmute(Catchment = label,
                 `Children living there` = fmt_n(living),
                 `Place at home` = fmt_n(`Their own catchment`),
                 `Left by choice` = fmt_n(`Left by choice`),
-                `Rationed out` = fmt_n(`Rationed out`),
+                `Displaced` = fmt_n(`Displaced`),
                 `Outside` = sprintf("%.0f%%", 100 * outside_share),
-                `of which rationed` = sprintf("%.0f%%", 100 * rationed_share))
+                `of which displaced` = sprintf("%.0f%%", 100 * displaced_share))
   }, striped = TRUE, width = "100%")
 
   output$catch_note <- renderUI({
@@ -475,22 +475,22 @@ server <- function(input, output, session) {
       "school outside the catchment they live in. Almost all of that — ",
       "%.0f%% of the cohort — is children who preferred an out-of-catchment ",
       "school and got it, their own catchment school having had room. Only ",
-      "%.0f%% were rationed: they would have taken a place at home and the ",
+      "%.0f%% were displaced: they would have taken a place at home and the ",
       "capacity ceiling did not have one. The %.0f%% who go to the two faith ",
       "schools, which have no catchment at all, are inside the first group.</p>",
-      "<p><b>Rationing only happens where the schools fill.</b> %s loses ",
-      "%.0f%% of its children and rations none of them, because its schools ",
+      "<p><b>Displacement only happens where the schools fill.</b> %s loses ",
+      "%.0f%% of its children and displaces none of them, because its schools ",
       "have room to spare — that is a school nobody is choosing, not a ",
       "system failing to provide. %s is the catchment where children are ",
       "actually turned away, at %.0f%%.</p>",
       "<p>The two move in opposite directions. Turning up how much the ",
       "catchment counts cuts the leaving, but it converts what is left into ",
-      "rationing: more children want a place at home, and the full schools ",
+      "displacement: more children want a place at home, and the full schools ",
       "still cannot take them. The number that measures a system failing ",
       "its families is the orange one, not the total.</p>"),
-      100 * m$displaced_share, 100 * m$chose_share, 100 * m$rationed_share,
+      100 * m$outside_share, 100 * m$chose_share, 100 * m$displaced_share,
       100 * m$faith_share, m$worst, 100 * m$worst_share,
-      m$worst_rationed, 100 * m$worst_rationed_share))
+      m$worst_displaced, 100 * m$worst_displaced_share))
   })
 
   # ---- Fairness --------------------------------------------------------

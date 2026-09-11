@@ -123,7 +123,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   d$flow <- util * (z$Oi[match(d$zone, z$zone)] / A[d$zone])
 
   # Keep what the model wanted before the ceiling bit. The difference
-  # between this and the capped flow is the whole of the rationing, and
+  # between this and the capped flow is the whole of the displacement, and
   # without it "outside their catchment" cannot be split into children
   # who chose to leave and children who were pushed out.
   d$wanted <- d$flow
