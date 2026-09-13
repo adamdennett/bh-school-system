@@ -103,7 +103,10 @@ outcomes <- function(inp, r, shed = 0.75) {
   dsg <- inp$designs[[r$design]]
   faith_names <- inp$schools$name[inp$schools$faith]
 
-  f2 <- r$flows %>%
+  flows <- r$flows
+  if (!"p6" %in% names(flows)) flows$p6 <- 0
+
+  f2 <- flows %>%
     dplyr::mutate(home = unname(dsg$zone[zone]),
                   dest_grp = unname(dsg$school[name]),
                   at_home = !is.na(dest_grp) & dest_grp == home,
@@ -132,6 +135,7 @@ outcomes <- function(inp, r, shed = 0.75) {
                      got_home = sum(flow[at_home]),
                      want_home = sum(wanted[at_home]),
                      to_faith = sum(flow[where == "A faith school"]),
+                     via_p6 = sum(p6),
                      .groups = "drop") %>%
     dplyr::mutate(
       outside = pmax(0, living - got_home),
@@ -139,19 +143,26 @@ outcomes <- function(inp, r, shed = 0.75) {
       # asked for, when its other choices were cut harder; the pmin keeps
       # displacement from going negative and the remainder is choice.
       displaced = pmin(outside, pmax(0, want_home - got_home)),
-      chose = outside - displaced)
+      # A child placed under priority 6 chose to leave and got the school
+      # they chose, but through a rule that exists to let them. It is
+      # counted apart from the choice the rules did not have to make room
+      # for. Under the published model it is zero.
+      through_p6 = pmin(outside - displaced, via_p6),
+      chose = outside - displaced - through_p6)
 
   wide <- by_zone %>%
     dplyr::group_by(home) %>%
     dplyr::summarise(living = sum(living), `Their own catchment` = sum(got_home),
                      `Left by choice` = sum(chose),
+                     `Through priority 6` = sum(through_p6),
                      `Displaced` = sum(displaced),
                      to_faith = sum(to_faith), .groups = "drop")
 
   # One row per catchment per destination bucket. This was a
   # tidyr::pivot_longer; stacking three named columns does not justify
   # shipping tidyr with the app.
-  WHERE <- c("Their own catchment", "Left by choice", "Displaced")
+  WHERE <- c("Their own catchment", "Left by choice", "Through priority 6",
+             "Displaced")
   by_catch <- dplyr::bind_rows(lapply(WHERE, function(w)
     dplyr::mutate(wide[, setdiff(names(wide), WHERE), drop = FALSE],
                   where = w, n = wide[[w]]))) %>%
@@ -175,6 +186,8 @@ outcomes <- function(inp, r, shed = 0.75) {
     displaced = sum(by_zone$displaced),
     displaced_share = sum(by_zone$displaced) / tot,
     chose_share = sum(by_zone$chose) / tot,
+    p6 = sum(by_zone$through_p6),
+    p6_share = sum(by_zone$through_p6) / tot,
     worst = outside$label[which.max(outside$outside_share)],
     worst_share = max(outside$outside_share),
     worst_displaced = outside$label[which.max(outside$displaced_share)],
@@ -214,7 +227,8 @@ outcomes <- function(inp, r, shed = 0.75) {
     # act on first, so it gets counted separately.
     critical = sum(fin$reserve <= 0 & fin$gap < 0))
 
-  c(places, travel, fairness, money, list(catchment = catchment),
+  c(places, travel, fairness, money,
+    list(catchment = catchment, tiers = r$tiers, rule = r$rule),
     list(year = r$year, design = r$design, site = r$site))
 }
 

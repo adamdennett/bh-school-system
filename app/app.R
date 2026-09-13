@@ -59,6 +59,11 @@ school_row <- function(s) {
 }
 
 ui <- page_sidebar(
+  # Not a fillable page. A fillable main area shrinks every plotOutput to
+  # whatever space is left, so a tab holding two charts and a table drew
+  # them below R's minimum margins ("figure margins too large") and the
+  # cohort banner at 65 pixels. Declared heights are kept; the page scrolls.
+  fillable = FALSE,
   title = "Brighton secondary schools — policy simulator",
   theme = bs_theme(version = 5, bootswatch = "cosmo", base_font_size = "0.92rem"),
   tags$head(tags$style(HTML("
@@ -100,6 +105,19 @@ ui <- page_sidebar(
                 ticks = FALSE),
     div(class = "note", textOutput("gamma_note")),
     hr(),
+    radioButtons("rule", "When a school is full",
+                 choices = c("Everyone has the same chance (the published model)" = "published",
+                             "The council's priorities (2026/27 arrangements)" = "priorities"),
+                 selected = "published"),
+    conditionalPanel(
+      "input.rule == 'priorities'",
+      sliderInput("p6", "Places for single-school catchments (priority 6)",
+                  min = 0, max = 20, value = 5, step = 1, post = "%",
+                  ticks = FALSE),
+      checkboxInput("fsm", "Free school meals priority (4 and 5)", value = TRUE),
+      checkboxInput("targeted", "Narrowed to Targeted FSM (2027/28)", value = FALSE),
+      div(class = "note", textOutput("rule_note"))),
+    hr(),
     div(strong("Per school"), span(class = "note", " — attractiveness ×, and admission number")),
     div(style = "margin-top:8px", lapply(seq_len(nrow(CITY)),
                                          function(i) school_row(CITY[i, ]))),
@@ -137,6 +155,8 @@ ui <- page_sidebar(
     nav_panel("Catchments",
               plotOutput("p_catch", height = 430),
               tableOutput("t_catch"),
+              plotOutput("p_priority", height = 360),
+              div(class = "note", htmlOutput("priority_note")),
               div(class = "note", htmlOutput("catch_note"))),
     nav_panel("Money", plotOutput("p_money", height = 430),
               tableOutput("t_money")),
@@ -167,6 +187,12 @@ server <- function(input, output, session) {
     # one, not "leave whatever the last preset set".
     updateSliderInput(session, "gamma",
                       value = s$gamma %||% inp$params$gamma)
+    # Likewise a preset that says nothing about the admission rules means
+    # the published model, not whatever the last preset left.
+    updateRadioButtons(session, "rule", selected = s$rule %||% "published")
+    updateSliderInput(session, "p6", value = s$p6 %||% 5)
+    updateCheckboxInput(session, "fsm", value = s$fsm %||% TRUE)
+    updateCheckboxInput(session, "targeted", value = s$targeted %||% FALSE)
     for (i in seq_len(nrow(CITY))) {
       nm <- CITY$name[i]; urn <- CITY$urn[i]
       updateSliderInput(session, paste0("w_", urn),
@@ -205,12 +231,20 @@ server <- function(input, output, session) {
     setNames(v, CITY$name)
   })
 
+  # The admission rules in force, in the shape run_sim() takes.
+  rule_args <- reactive(list(
+    rule = input$rule %||% "published",
+    p6_share = (input$p6 %||% 5) / 100,
+    fsm = isTRUE(input$fsm %||% TRUE),
+    targeted = isTRUE(input$targeted %||% FALSE)))
+
   sim <- reactive({
     req(input$design, input$site, input$year)
     w <- w_now(); p <- pan_now()
     req(all(is.finite(w)), all(is.finite(p)))
     run_sim(inp, w_mult = w, pans = p, site = input$site,
-            design = input$design, year = input$year, gamma = input$gamma)
+            design = input$design, year = input$year, gamma = input$gamma,
+            rules = rule_args())
   })
   met <- reactive(outcomes(inp, sim()))
 
@@ -262,7 +296,7 @@ server <- function(input, output, session) {
     regrouped <- sum(z[names(base)] != base, na.rm = TRUE)
     now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
                    design = "Current catchments", year = input$year,
-                   gamma = input$gamma)
+                   gamma = input$gamma, rules = rule_args())
     moved <- sum(pmax(0, sim()$schools$intake - now$schools$intake))
     if (regrouped == 0)
       sprintf("This is the map in force. %.0f%% of children are modelled as attending a school in their own catchment.",
@@ -471,8 +505,11 @@ server <- function(input, output, session) {
   # Blue for a place at home, grey for a child who chose to go elsewhere
   # and got it, orange for one the ceiling pushed out. Only the orange is
   # a place the system failed to provide, and the colours say so.
+  # Purple for a child placed under priority 6: they chose to leave, but
+  # through a rule that exists to let them, so it is not the same grey.
   CATCH_COL <- c(`Their own catchment` = "#2a78d6",
                  `Left by choice`      = "#9aa5b1",
+                 `Through priority 6`  = "#7b61c9",
                  `Displaced`        = "#eb6834")
 
   catch_plot <- function(b, title, subtitle, base = 12, label_all = TRUE) {
@@ -514,6 +551,7 @@ server <- function(input, output, session) {
                "Who has to leave their catchment, and why",
                paste(strwrap(paste(
                  "Grey is a child who chose an out-of-catchment school and got it;",
+                 "purple, one placed there under priority 6;",
                  "orange is one the capacity ceiling pushed out of a full catchment school.",
                  "Only the orange is a place the system could not provide."),
                  width = 84), collapse = "\n"))
@@ -540,6 +578,7 @@ server <- function(input, output, session) {
                 `Children living there` = fmt_n(living),
                 `Place at home` = fmt_n(at(label, "Their own catchment")),
                 `Left by choice` = fmt_n(at(label, "Left by choice")),
+                `Through priority 6` = fmt_n(at(label, "Through priority 6")),
                 `Displaced` = fmt_n(at(label, "Displaced")),
                 `Outside` = sprintf("%.0f%%", 100 * outside_share),
                 `of which displaced` = sprintf("%.0f%%", 100 * displaced_share))
@@ -569,6 +608,94 @@ server <- function(input, output, session) {
       100 * m$outside_share, 100 * m$chose_share, 100 * m$displaced_share,
       100 * m$faith_share, m$worst, 100 * m$worst_share,
       m$worst_displaced, 100 * m$worst_displaced_share))
+  })
+
+  # ---- The council's priorities ---------------------------------------
+  output$rule_note <- renderText({
+    r <- sim()
+    if (is.null(r$tiers)) return("")
+    t <- r$tiers
+    held <- (input$p6 %||% 5) / 100 * sum(r$cap[t$name])
+    sprintf("Priority 6 fills %s of the %s places it holds at the six community schools; %s children are placed under the FSM priority.",
+            fmt_n(sum(t$p6)), fmt_n(held), fmt_n(sum(t$p45_in + t$p45_out)))
+  })
+
+  PRIO_COL <- c(`FSM (4-5)` = "#1baf7a",
+                `Single-school catchments (6)` = "#7b61c9",
+                `Catchment, with siblings, SEN, looked-after (1-3, 7)` = "#2a78d6",
+                `Other (8)` = "#9aa5b1")
+
+  output$p_priority <- renderPlot({
+    r <- sim()
+    if (is.null(r$tiers))
+      return(ggplot() +
+        annotate("text", 0, 0, size = 4.2, colour = "grey40",
+                 label = "Set 'When a school is full' to the council's priorities\nto see how each community school's places are filled.") +
+        theme_void())
+    sh <- setNames(inp$schools$short, inp$schools$name)
+    b <- names(PRIO_COL)
+    mod <- r$tiers
+    long <- dplyr::bind_rows(
+      tibble(school = mod$name, src = "model", bucket = b[1], n = mod$p45_in + mod$p45_out),
+      tibble(school = mod$name, src = "model", bucket = b[2], n = mod$p6),
+      tibble(school = mod$name, src = "model", bucket = b[3], n = mod$p7),
+      tibble(school = mod$name, src = "model", bucket = b[4], n = mod$p8),
+      inp$rules$outturn_2026 %>%
+        mutate(bucket = dplyr::case_when(priority %in% 4:5 ~ b[1],
+                                         priority == 6 ~ b[2],
+                                         priority == 8 ~ b[4],
+                                         TRUE ~ b[3])) %>%
+        group_by(school, bucket) %>%
+        summarise(n = sum(offers), .groups = "drop") %>%
+        mutate(src = "September 2026 offers"))
+    long <- long %>%
+      mutate(row = paste0(sh[school], ifelse(src == "model", "  (model)", "  (Sept 2026 offers)")),
+             bucket = factor(bucket, b))
+    lev <- unlist(lapply(sort(sh[mod$name]), function(s)
+      c(paste0(s, "  (model)"), paste0(s, "  (Sept 2026 offers)"))))
+    long <- long %>% filter(row %in% lev) %>% mutate(row = factor(row, rev(lev)))
+
+    ggplot(long, aes(n, row, fill = bucket)) +
+      geom_col(width = 0.72, colour = "white", linewidth = 0.5,
+               position = position_stack(reverse = TRUE)) +
+      scale_fill_manual(values = PRIO_COL, name = NULL, drop = FALSE) +
+      labs(x = "Places", y = NULL,
+           title = "How each community school's places are filled",
+           subtitle = paste(strwrap(paste(
+             "Under the rules as set. The published September 2026 offers sit under the three",
+             "schools that rationed, for comparison rather than as a target: they were made to",
+             "a different cohort, and the model cannot separate priorities 1-3 from the catchment."),
+             width = 100), collapse = "\n")) +
+      theme_minimal(11) +
+      theme(legend.position = "top", legend.text = element_text(size = 9),
+            panel.grid.major.y = element_blank(),
+            plot.title = element_text(face = "bold"),
+            plot.subtitle = element_text(colour = "grey35", size = 9))
+  })
+
+  output$priority_note <- renderUI({
+    rl <- inp$rules
+    HTML(sprintf(paste0(
+      "<p><b>How the priorities run.</b> At the six community schools a full ",
+      "school is filled tier by tier - FSM children up to 30%% of places, then ",
+      "children from single-school catchments up to the priority-6 share, then ",
+      "the catchment, then everyone else - and by lottery within each tier. ",
+      "The two academies and the two faith schools keep the published model's ",
+      "single lottery; their own criteria are not in published data.</p>",
+      "<p><b>What is fitted, and what is not.</b> Who is eligible for FSM and ",
+      "claims it is not published by neighbourhood. The IDACI score gives the ",
+      "shape, and one constant (%.2f times it, %.0f%%%% of the city's children) ",
+      "sets the level so that the model's FSM offers at Blatchington Mill, ",
+      "Stringer and Varndean together match the %d the council made in ",
+      "September 2026. How those places split between the three, and ",
+      "everything under priority 6, is not fitted.</p>",
+      "<p><b>What is left out.</b> Siblings, SEN and looked-after children ",
+      "(priorities 1-3) sit inside the catchment tier, which is where most of ",
+      "them live. Families are held to the same preferences whatever the ",
+      "rules, when in practice a family with a real chance at a school is more ",
+      "likely to name it.</p>"),
+      rl$fsm_takeup, 100 * rl$fsm_city,
+      sum(rl$outturn_2026$offers[rl$outturn_2026$priority %in% 4:5])))
   })
 
   # ---- Fairness --------------------------------------------------------
@@ -708,6 +835,7 @@ server <- function(input, output, session) {
     bind_rows(lapply(seq_len(nrow(CITY)), function(i) {
       nm <- CITY$name[i]
       s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w, pans = p,
+                           rules = rule_args(),
                            site = input$site, design = input$design,
                            year = input$year)
       data.frame(
@@ -794,6 +922,7 @@ server <- function(input, output, session) {
     # The other schools stay where the user has set them: the question
     # is what THIS school needs given everything else on the screen.
     s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w_now(), pans = p,
+                           rules = rule_args(),
                          site = input$site, design = input$design,
                          year = input$year)
     if (is.infinite(s$multiplier))
@@ -850,8 +979,10 @@ server <- function(input, output, session) {
     "read the level against the document.</p>",
     "<p><b>The catchment term is a nudge, not a rule.</b> Living in a ",
     "catchment raises the odds of choosing that school; it does not guarantee ",
-    "a place, and the admission rules are not modelled here. Section 8.6 of ",
-    "the document does that separately.</p>")))
+    "a place. The published model gives every applicant to a full school the ",
+    "same chance. Switch 'When a school is full' to run the council's ",
+    "oversubscription priorities instead; the Catchments tab says how, and ",
+    "what that switch cannot see.</p>")))
 }
 
 shinyApp(ui, server)

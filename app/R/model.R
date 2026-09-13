@@ -55,6 +55,118 @@ ipf_cap <- function(flow, orig, dest, o_target, cap,
   flow
 }
 
+#' The council's oversubscription priorities, as a tiered ceiling
+#'
+#' ipf_cap() cuts every applicant to a full school back by the same
+#' proportion, which is the average outcome of one lottery over everyone
+#' who applied. The council draws its lottery WITHIN priorities, so at the
+#' six community schools the ceiling is filled tier by tier instead:
+#'
+#'   4  FSM children living in the catchment    } together up to 30% of
+#'   5  FSM children living elsewhere           } the admission number
+#'   6  children from a single-school catchment applying outside it, up
+#'      to a share of the admission number (5% from 2026/27)
+#'   7  children living in the catchment
+#'   8  everyone else
+#'
+#' and proportionally inside each tier, which is what a lottery averages
+#' to. A child who misses a capped tier drops to the one below: an FSM
+#' child in the catchment to 7, an FSM child elsewhere to 6 if they
+#' qualify for it and 8 if not, a priority-6 child to 8. The academies and
+#' faith schools keep the proportional ceiling; their own criteria are not
+#' in any published data.
+#'
+#' Priorities 1-3 - looked-after children, SEN and exceptional need, and
+#' siblings - cannot be told apart in zone-level flows. Most siblings live
+#' in the catchment, so they sit inside tier 7.
+#'
+#' The private allocation engine (BH_Pupil_Destinations,
+#' R/20_admissions_allocation.R) confirms, on the pupil records, that the
+#' tie-break inside each priority is random rather than by distance, which
+#' is why the proportional cut inside a tier is the right mean-field.
+#'
+#' @param ff,fn flows of FSM-eligible children and of everyone else
+#' @param in_c,s6,com logical per flow row: lives in the destination's
+#'   catchment; lives in a single-school catchment and is applying outside
+#'   it; the destination is a community school
+tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
+                        p6_share, fsm_cap_share) {
+  S <- names(cap)
+  by <- factor(name, levels = S)
+  sumby <- function(x) { v <- tapply(x, by, sum); v[is.na(v)] <- 0; v[S] }
+  ratio <- function(a, d) ifelse(d > 1e-12, a / d, 1)
+  C <- cap[S]
+  Fc <- fsm_cap_share * pan[S]
+  Rc <- p6_share * pan[S]
+
+  d4  <- sumby(ff * in_c)
+  d5s <- sumby(ff * (!in_c & s6))
+  d5o <- sumby(ff * (!in_c & !s6))
+  a4 <- pmin(d4, Fc, C); r4 <- ratio(a4, d4); C <- C - a4
+  a5 <- pmin(d5s + d5o, pmax(Fc - a4, 0), C); r5 <- ratio(a5, d5s + d5o); C <- C - a5
+  d6 <- sumby(fn * s6) + d5s * (1 - r5)
+  a6 <- pmin(d6, Rc, C); r6 <- ratio(a6, d6); C <- C - a6
+  d7 <- sumby(fn * in_c) + d4 * (1 - r4)
+  a7 <- pmin(d7, C); r7 <- ratio(a7, d7); C <- C - a7
+  d8 <- sumby(fn * (!in_c & !s6)) + d5o * (1 - r5) + d6 * (1 - r6)
+  a8 <- pmin(d8, C); r8 <- ratio(a8, d8)
+
+  k <- as.character(name)
+  af <- ifelse(in_c, r4[k] + (1 - r4[k]) * r7[k],
+        ifelse(s6, r5[k] + (1 - r5[k]) * (r6[k] + (1 - r6[k]) * r8[k]),
+                   r5[k] + (1 - r5[k]) * r8[k]))
+  an <- ifelse(in_c, r7[k], ifelse(s6, r6[k] + (1 - r6[k]) * r8[k], r8[k]))
+
+  # Everywhere else, the proportional ceiling.
+  g <- pmin(cap[S] / sumby(ff + fn), 1)
+  g[!is.finite(g)] <- 1
+  af[!com] <- g[k][!com]
+  an[!com] <- g[k][!com]
+
+  list(f = unname(af), n = unname(an),
+       p6f = unname(ifelse(com & s6, (1 - r5[k]) * r6[k], 0)),
+       p6n = unname(ifelse(com & s6, r6[k], 0)),
+       tiers = data.frame(name = S, p45_in = unname(a4), p45_out = unname(a5),
+                          p6 = unname(a6), p7 = unname(a7), p8 = unname(a8)))
+}
+
+#' Balance two populations against the tiered ceiling
+#'
+#' FSM children and everyone else share preferences but not priorities,
+#' and a child refused under one tier goes on to their other choices as a
+#' member of the group they belong to. So each population places all of
+#' its own children, and the ceiling is applied to both together.
+ipf_priorities <- function(flow, zone, name, o_target, cap, pan, fsm_share,
+                           in_c, s6, com, p6_share, fsm_cap_share,
+                           max_iter = 500, tol = 1e-4) {
+  ff <- flow * fsm_share[zone]
+  fn <- flow - ff
+  of <- o_target * fsm_share[names(o_target)]
+  on <- o_target - of
+  rebal <- function(x, target) {
+    now <- tapply(x, zone, sum)
+    f <- target[names(now)] / now
+    f[!is.finite(f)] <- 1
+    x * f[zone]
+  }
+  for (i in seq_len(max_iter)) {
+    ff <- rebal(ff, of)
+    fn <- rebal(fn, on)
+    acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
+                       p6_share, fsm_cap_share)
+    p6 <- ff * acc$p6f + fn * acc$p6n
+    ff <- ff * acc$f
+    fn <- fn * acc$n
+    tot <- ff + fn
+    d_chk <- tapply(tot, name, sum)
+    o_chk <- tapply(tot, zone, sum)
+    if (max(d_chk - cap[names(d_chk)]) <= tol &&
+        max(abs(o_chk - o_target[names(o_chk)])) <= tol) break
+  }
+  list(flow = unname(tot), fsm = unname(ff), p6 = unname(p6),
+       tiers = acc$tiers, iterations = i)
+}
+
 #' Run one configuration
 #'
 #' @param inp the bundle from R/05_app_inputs.R
@@ -64,9 +176,12 @@ ipf_cap <- function(flow, orig, dest, o_target, cap,
 #' @param design a name from inp$designs
 #' @param year an entry year; scales the cohort, not its geography
 #' @param capped whether the admission numbers bind
+#' @param rules NULL for the published model's proportional ceiling, or a
+#'   list(rule = "priorities", p6_share, fsm, targeted) for the council's
+#'   oversubscription priorities
 run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
-                    capped = TRUE, gamma = NULL) {
+                    capped = TRUE, gamma = NULL, rules = NULL) {
 
   # City schools only, which is what section 7 models. Peacehaven is in
   # the cost matrix and in the bundle, but the published model does not
@@ -128,13 +243,52 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   # who chose to leave and children who were pushed out.
   d$wanted <- d$flow
 
-  if (capped)
+  # Which ceiling. With no rules the published model's, so everything
+  # checked against the document is untouched unless asked for.
+  rl <- inp$rules
+  rule <- utils::modifyList(
+    list(rule = "published",
+         p6_share = if (is.null(rl)) 0.05 else rl$p6_share,
+         fsm = TRUE, targeted = FALSE),
+    if (is.null(rules)) list() else rules)
+  stopifnot(rule$rule %in% c("published", "priorities"))
+
+  d$p6 <- 0
+  d$fsm_flow <- 0
+  tiers <- NULL
+
+  if (capped && rule$rule == "published")
     d$flow <- as.numeric(ipf_cap(d$flow, d$zone, d$name,
                                  setNames(z$Oi, z$zone), cap))
 
+  if (capped && rule$rule == "priorities") {
+    stopifnot(!is.null(rl), "fsm" %in% names(z))
+    share <- if (isTRUE(rule$fsm))
+      z$fsm * (if (isTRUE(rule$targeted)) rl$targeted_share else 1)
+    else 0 * z$Oi
+
+    # Priority 6 belongs to any catchment with one school in it, under
+    # whichever map is in force - the four today, all of them under a
+    # one-region-per-school design.
+    grp <- dsg$school[sch$name[!sch$faith]]
+    n_sch <- table(grp[!is.na(grp)])
+    single <- names(n_sch)[n_sch == 1]
+    in_c <- d$in_catch == 1
+    s6 <- unname(dsg$zone[d$zone]) %in% single & !in_c
+    com <- d$name %in% rl$community
+
+    res <- ipf_priorities(d$flow, d$zone, d$name, setNames(z$Oi, z$zone),
+                          cap, cap, setNames(share, z$zone),
+                          in_c, s6, com, rule$p6_share, rl$fsm_cap_share)
+    d$flow <- res$flow
+    d$fsm_flow <- res$fsm
+    d$p6 <- res$p6
+    tiers <- res$tiers[res$tiers$name %in% rl$community, ]
+  }
+
   by_school <- d %>%
     dplyr::group_by(name) %>%
-    dplyr::summarise(intake = sum(flow),
+    dplyr::summarise(intake = sum(flow), p6 = sum(p6), fsm = sum(fsm_flow),
                      mean_min = stats::weighted.mean(cij, flow),
                      mean_km = stats::weighted.mean(km, flow),
                      .groups = "drop") %>%
@@ -146,6 +300,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                   at_pan = fill >= 0.995)
 
   list(flows = d, schools = by_school, W = W, cap = cap,
+       rule = rule$rule, rules = rule, tiers = tiers,
        year = year, site = site, design = design, index = idx, gamma = g,
        in_catch_share = sum(d$flow[d$in_catch == 1]) / sum(d$flow))
 }

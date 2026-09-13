@@ -40,11 +40,18 @@ dir.create(file.path(APP_DIR, "data"), showWarnings = FALSE, recursive = TRUE)
 CITY <- oi$schools$name[oi$schools$name != "Peacehaven Community School"]
 OUT_OF_CITY <- setdiff(oi$schools$name, CITY)
 
+# The six schools the council is the admission authority for, and so the
+# only ones its oversubscription priorities apply to.
+COMMUNITY <- c("Blatchington Mill School", "Dorothy Stringer School",
+               "Hove Park School", "Longhill High School",
+               "Patcham High School", "Varndean School")
+
 schools <- oi$schools %>%
   transmute(name, short = short_sch(name), urn = as.character(urn),
             easting, northing, faith,
             pan = pan2026,
-            city = name %in% CITY) %>%
+            city = name %in% CITY,
+            community = name %in% COMMUNITY) %>%
   left_join(oi$attract %>% select(name, W = W_wprefs), by = "name") %>%
   left_join(
     purrr::imap_dfr(oi$catchment_schools, ~ tibble(name = .x, group = .y)),
@@ -69,7 +76,15 @@ message(sprintf("  %d schools, %d of them in the city", nrow(schools), sum(schoo
 
 zones <- oi$zones %>%
   filter(area != "Expansion area") %>%
-  transmute(zone, lsoa, catchment, Oi)
+  transmute(zone, lsoa, catchment, Oi) %>%
+  # IDACI score: the share of children living in income-deprived
+  # households, per neighbourhood. It is the raw material for the free
+  # school meals priority; the share actually eligible and claiming is
+  # calibrated against published offers in section 10.
+  left_join(bh_data("deprivation_open.rds")$idaci %>%
+              select(lsoa, idaci_score), by = "lsoa")
+stopifnot(!any(is.na(zones$idaci_score)))
+zones <- zones
 
 cost <- list(
   now = oi$costs_now %>% filter(zone %in% zones$zone) %>%
@@ -446,10 +461,84 @@ presets <- list(
     pan = NULL,
     w = c(`Longhill High School` =
             schools$W[schools$name == "Dorothy Stringer School"] /
-            schools$W[schools$name == "Longhill High School"])))
+            schools$W[schools$name == "Longhill High School"])),
+  `The 2026/27 admission rules` = list(
+    note = "Today's city under the council's own oversubscription priorities: FSM children first up to 30% of places, then 5% for children from the four single-school catchments, then the catchment. Compare the Catchments tab with the published model.",
+    design = "Current catchments", site = "now", year = 2026,
+    pan = NULL, w = NULL, rule = "priorities", p6 = 5, fsm = TRUE, targeted = FALSE),
+  `The council's first proposal: 20% open` = list(
+    note = "The open-admissions priority as the council first consulted on it, at 20% of places rather than the 5% it settled on after objections from the six community schools. Watch displacement in the two dual catchments.",
+    design = "Current catchments", site = "now", year = 2026,
+    pan = NULL, w = NULL, rule = "priorities", p6 = 20, fsm = TRUE, targeted = FALSE),
+  `The 2027/28 rules: Targeted FSM` = list(
+    note = "The 2027/28 arrangements: the FSM priority narrowed to Targeted FSM, which the council puts at about 56% of currently eligible children. Everything else as in 2026/27.",
+    design = "Current catchments", site = "now", year = 2027,
+    pan = NULL, w = NULL, rule = "priorities", p6 = 5, fsm = TRUE, targeted = TRUE))
+
+# ---- 10. The admission rules, and FSM take-up -----------------------
+# The app can run the council's oversubscription priorities as a tiered
+# ceiling (app/R/model.R). Two things it needs are published: the rules,
+# and what they produced in September 2026, from the council's Secondary
+# school admissions guide 2027-2028. Those offers are made on national
+# offer day, before six months of appeals and movement, which is the same
+# basis the model runs on.
+#
+# One thing is not published: how many children in each neighbourhood are
+# eligible for FSM AND claim the priority. The IDACI score is the shape;
+# a single take-up constant sets the level, chosen so the model's FSM-
+# priority offers at the three schools that ration match the 192 the
+# council actually made there. How those 192 split between the schools,
+# and everything under priority 6, is then not fitted.
+
+RATIONING <- c("Blatchington Mill School", "Dorothy Stringer School",
+               "Varndean School")
+
+OUTTURN_2026 <- local({
+  # SEN, then priorities 1 to 8
+  w <- rbind(`Blatchington Mill School` = c(7, 3, 0, 73, 45, 14, 17, 171, 0),
+             `Dorothy Stringer School`  = c(11, 3, 2, 65, 35, 32, 17, 148, 17),
+             `Varndean School`          = c(19, 8, 1, 70, 61, 5, 15, 121, 0))
+  tibble(school = rep(rownames(w), each = 9), priority = rep(0:8, times = 3),
+         offers = as.vector(t(w)))
+})
+stopifnot(all(tapply(OUTTURN_2026$offers, OUTTURN_2026$school, sum) ==
+                schools$pan[match(sort(RATIONING), schools$name)]))
+
+RULES <- list(
+  community = COMMUNITY, rationing = RATIONING,
+  fsm_cap_share = 0.30, p6_share = 0.05,
+  # The council's own figure for the Targeted FSM narrowing, as quoted in
+  # the open model's FSM section.
+  targeted_share = 0.56,
+  outturn_2026 = OUTTURN_2026,
+  source = "Brighton & Hove City Council, Secondary school admissions guide 2027-2028")
+
+source(file.path(APP_DIR, "R", "model.R"))
+cal <- list(schools = schools, zones = zones, cost = cost, designs = DESIGNS,
+            params = params, demand = demand, rules = RULES)
+fsm_target <- sum(OUTTURN_2026$offers[OUTTURN_2026$priority %in% 4:5])
+fsm_places <- function(k) {
+  cal$zones$fsm <- pmin(k * cal$zones$idaci_score, 0.95)
+  t <- run_sim(cal, year = 2026, rules = list(rule = "priorities"))$tiers
+  sum((t$p45_in + t$p45_out)[t$name %in% RATIONING])
+}
+lo <- 0.05; hi <- 6
+if (fsm_places(hi) < fsm_target)
+  stop("FSM take-up cannot reach the published FSM offers at any level")
+for (i in 1:40) {
+  mid <- (lo + hi) / 2
+  if (fsm_places(mid) < fsm_target) lo <- mid else hi <- mid
+  if (hi - lo < 1e-4) break
+}
+zones$fsm <- pmin(hi * zones$idaci_score, 0.95)
+RULES$fsm_takeup <- hi
+RULES$fsm_city <- weighted.mean(zones$fsm, zones$Oi)
+message(sprintf("  FSM take-up %.3f x IDACI: %.0f FSM-priority places at the three rationing schools (published %d); %.1f%% of the city's children",
+                hi, fsm_places(hi), fsm_target, 100 * RULES$fsm_city))
 
 saveRDS(list(
   schools = schools, zones = zones, cost = cost, designs = DESIGNS,
+  rules = RULES,
   attain = attain,
   params = params, demand = demand, cohort = cohort, finance = finance,
   seed_intakes = seed_intakes, idaci = idaci,

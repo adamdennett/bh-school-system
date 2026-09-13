@@ -88,7 +88,7 @@ if (max(abs(sums$s - 1)) > 1e-6)
   fail <- c(fail, "a catchment's three shares do not sum to one")
 if (abs(sum(cd$outside$living) - m$intake) > 1)
   fail <- c(fail, "the children living in the catchments do not sum to the cohort")
-if (abs(cd$chose_share + cd$displaced_share - cd$outside_share) > 1e-9)
+if (abs(cd$chose_share + cd$p6_share + cd$displaced_share - cd$outside_share) > 1e-9)
   fail <- c(fail, "choosing and displacement do not add up to being outside")
 
 # A catchment whose schools have room cannot displace anybody. Longhill's
@@ -117,7 +117,10 @@ for (p in names(inp$presets)) {
   s <- inp$presets[[p]]
   ok <- tryCatch({
     rr <- run_sim(inp, w_mult = s$w, pans = s$pan, site = s$site,
-                  design = s$design, year = s$year)
+                  design = s$design, year = s$year, gamma = s$gamma,
+                  rules = if (is.null(s$rule)) NULL else
+                    list(rule = s$rule, p6_share = (s$p6 %||% 5) / 100,
+                         fsm = s$fsm %||% TRUE, targeted = s$targeted %||% FALSE))
     mm <- outcomes(inp, rr)
     is.finite(mm$gorard) && is.finite(mm$city_gap)
   }, error = function(e) { note("preset '", p, "' failed: ", conditionMessage(e)); FALSE })
@@ -196,6 +199,78 @@ note(sprintf("absence: +%.1f points takes 14.7%% to %.1f%% (%.0fth percentile)",
              pts, ab, absence_percentile(inp, ab)))
 if (!(ab > 0 && ab < 14.7))
   fail <- c(fail, "raising attainment does not lower the implied absence rate")
+
+# ---- The council's priorities ----------------------------------------
+# The tiered ceiling. FSM take-up is calibrated so the FSM-priority offers
+# at the three rationing schools match the September 2026 total, so that
+# total must come back. Everything else is an invariant, or a comparison
+# with published offers that nothing was fitted to.
+RATION <- inp$rules$rationing
+pr <- function(...) utils::modifyList(
+  list(rule = "priorities", p6_share = 0.05, fsm = TRUE, targeted = FALSE),
+  list(...))
+rp <- run_sim(inp, site = "now", design = "Current catchments", year = 2026,
+              rules = pr())
+tp <- rp$tiers
+out <- inp$rules$outturn_2026
+
+fsm_m <- sum((tp$p45_in + tp$p45_out)[tp$name %in% RATION])
+fsm_p <- sum(out$offers[out$priority %in% 4:5])
+note(sprintf("priorities: FSM places at the three rationing schools %.1f, published %d (calibrated)",
+             fsm_m, fsm_p))
+if (abs(fsm_m - fsm_p) > 1)
+  fail <- c(fail, "FSM take-up no longer reproduces the published FSM offers")
+
+cmp <- data.frame(
+  school = substr(RATION, 1, 24),
+  fsm_model = round((tp$p45_in + tp$p45_out)[match(RATION, tp$name)], 1),
+  fsm_pub = vapply(RATION, function(s) sum(out$offers[out$school == s & out$priority %in% 4:5]), numeric(1)),
+  p6_model = round(tp$p6[match(RATION, tp$name)], 1),
+  p6_pub = vapply(RATION, function(s) sum(out$offers[out$school == s & out$priority == 6]), numeric(1)),
+  row.names = NULL)
+print(cmp, row.names = FALSE)
+
+o2 <- rp$flows %>% group_by(zone) %>% summarise(s = sum(flow), .groups = "drop") %>%
+  inner_join(inp$zones %>% select(zone, Oi), by = "zone")
+if (max(abs(o2$s - o2$Oi)) > 1)
+  fail <- c(fail, "priorities: children are being lost or invented")
+if (any(rp$schools$intake - rp$schools$pan > 1e-3))
+  fail <- c(fail, "priorities: a school is over its admission number")
+if (any(tp$p6 > 0.05 * rp$cap[tp$name] + 1e-6))
+  fail <- c(fail, "priority 6 exceeds its share of the admission number")
+if (any(tp$p45_in + tp$p45_out > 0.30 * rp$cap[tp$name] + 1e-6))
+  fail <- c(fail, "the FSM priority exceeds 30% of the admission number")
+if (sum(rp$flows$p6[!rp$flows$name %in% inp$rules$community]) > 1e-9)
+  fail <- c(fail, "priority 6 places children at a school it does not apply to")
+
+cp <- outcomes(inp, rp)$catchment
+if (abs(cp$chose_share + cp$p6_share + cp$displaced_share - cp$outside_share) > 1e-9)
+  fail <- c(fail, "priorities: the catchment buckets do not add up")
+
+s20 <- run_sim(inp, year = 2026, rules = pr(p6_share = 0.20))
+c20 <- outcomes(inp, s20)$catchment
+note(sprintf("priority 6 at 5%%: %.1f places, %.2f%% displaced; at 20%%: %.1f places, %.2f%% displaced",
+             sum(tp$p6), 100 * cp$displaced_share,
+             sum(s20$tiers$p6), 100 * c20$displaced_share))
+if (sum(s20$tiers$p6) < sum(tp$p6) - 1e-6)
+  fail <- c(fail, "a larger priority-6 share places fewer children under it")
+if (c20$displaced_share < cp$displaced_share - 1e-6)
+  fail <- c(fail, "a larger priority-6 share displaces fewer catchment children")
+
+tg <- run_sim(inp, year = 2026, rules = pr(targeted = TRUE))
+f_all <- sum(tp$p45_in + tp$p45_out); f_tg <- sum(tg$tiers$p45_in + tg$tiers$p45_out)
+note(sprintf("Targeted FSM: %.1f FSM places at the community schools, against %.1f", f_tg, f_all))
+if (f_tg >= f_all)
+  fail <- c(fail, "narrowing FSM eligibility does not shrink the FSM priority")
+
+off <- run_sim(inp, year = 2026, rules = pr(p6_share = 0, fsm = FALSE))
+if (sum(off$flows$p6) > 1e-9 || sum(off$tiers$p45_in + off$tiers$p45_out) > 1e-9)
+  fail <- c(fail, "switching priorities 4-6 off leaves places under them")
+
+# Priority 6 belongs to single-school catchments under any map.
+one <- run_sim(inp, year = 2026, design = "Flow regions, one per school", rules = pr())
+note(sprintf("one region per school: %.1f priority-6 places at the community schools",
+             sum(one$tiers$p6)))
 
 if (length(fail)) {
   message("\nFAILED:")
