@@ -6918,9 +6918,10 @@ PAN 210 version scores `r sprintf("%.3f", i_e210$gorard)` against
 `r sprintf("%.3f", i_now$gorard)` for the map in force and
 `r sprintf("%.3f", i_pd$gorard)` for the power diagram.
 
-So the relocation that @sec-longhill finds best for Longhill is not the
-redesign that is best for the city, on any measure here except the
-capacity gap it creates for itself. That is not an argument against
+So the relocation designs are not the best for the city on any measure
+here except the capacity gap they create for themselves --- and
+@sec-longhill-m5 finds that, once catchment terms are fitted to what
+families ask for, moving is not the best for Longhill either. That is not an argument against
 moving the school. It is an argument for deciding the admission number
 and the boundary together, and for asking what happens to Ovingdean,
 Rottingdean and Saltdean before rather than after.
@@ -7383,23 +7384,86 @@ On that test the strongest `r if (nrow(best) > 1) "are" else "is"`
 from the same cohort.
 `r if (nrow(best) > 1) "They tie because they put the school on the same site behind the same catchments, and differ only in the admission number --- which is the lever this section has already argued is largely spent." else ""`
 
-The important point is not which single option wins. It is that **no
-single instrument is sufficient, and the instruments compose.** Moving
-the school changes its position in the travel network. Reducing its
-admission number changes what "full" means. Redrawing catchments changes
-which children are steered towards it. Each on its own leaves a school
-that is still under-filled on the central specification; taken together
-they reach a configuration that works. A decision that picks one lever
-and rejects the others is choosing the worst of the available futures.
+On the open scenario suite that reads as an argument that **the
+instruments compose**: moving the school changes its position in the
+travel network, reducing its admission number changes what "full"
+means, redrawing catchments changes which children are steered towards
+it, and together they reach a configuration that works. But that suite
+runs one catchment term for the whole city, with attractiveness taken
+straight from preferences per place. The full model of section 7 does
+not, and for this question the difference is decisive.
+
+### The same options under the full model {#sec-longhill-m5}
+
+```{r longhill-m5}
+#| include: false
+rl5 <- mt$calibrated$relocation
+m5n <- function(id, y) rl5$central$natural[rl5$central$id == id & rl5$central$entry_year == y]
+m5s <- function(id, y, v) rl5$sens$natural[rl5$sens$id == id & rl5$sens$entry_year == y & rl5$sens$variant == v]
+me  <- function(col, y) rl5$move_effect[[col]][rl5$move_effect$entry_year == y]
+```
+
+```{r tbl-longhill-m5}
+#| tbl-cap: "Longhill's natural recruitment under each option in the full model, M5: catchment terms fitted to what each catchment's children ask for, attractiveness balanced to first preferences. Children drawn with the school's own admission number unbinding, so options that differ only in that number draw the same children."
+rl5$central %>%
+  select(config, entry_year, natural) %>%
+  mutate(natural = fmt_n(natural)) %>%
+  pivot_wider(names_from = entry_year, values_from = natural) %>%
+  rename(Option = config) %>%
+  knitr::kable(align = "lrrr")
+```
+
+The catchment term is strongest in exactly the two places a move trades
+between. Longhill's own families, at
+$\gamma$ = `r sprintf("%.1f", mt$calibrated$gamma[["Longhill"]])`, are the
+ones the move takes the school away from. Stringer / Varndean's, at
+`r sprintf("%.1f", mt$calibrated$gamma[["DS_Varndean"]])`, are most of the
+families near Elm Grove it moves towards --- and they are the most
+attached to their own schools of any in the city.
+
+- **Moving on its own costs Longhill about `r fmt_n(abs(me("move_only", 2030)))` children a year.** It draws `r fmt_n(m5n("A", 2030))` at Ovingdean in 2030 and `r fmt_n(m5n("C", 2030))` at Elm Grove behind today's catchments.
+- **Moving with redrawn catchments roughly breaks even**: `r fmt_n(m5n("E", 2030))` in 2030 against `r fmt_n(m5n("B", 2030))` staying put. The redraw wins back what the move lost.
+- **Redrawing without moving costs children too**, `r fmt_n(m5n("F", 2030))` in 2030, because the designed map passes some of Longhill's hinterland to its neighbours.
+- **Nothing draws 150 children after 2026.** By 2035 the best option draws `r fmt_n(max(rl5$central$natural[rl5$central$entry_year == 2035]))`.
+
+```{r tbl-longhill-m5-sens}
+#| tbl-cap: "How much the answer rests on two assumptions: the fitted catchment terms halved, and no paired-catchment families who would take only one of the two schools."
+rl5$sens %>%
+  mutate(natural = fmt_n(natural), Option = unname(rl5$labels[id])) %>%
+  select(Option, Assumption = variant, entry_year, natural) %>%
+  pivot_wider(names_from = entry_year, values_from = natural) %>%
+  knitr::kable(align = "llrrr")
+```
+
+**A move looks better the less families follow their catchment, and the
+evidence is that they follow it closely.** Halve the catchment terms and
+the site stops mattering for a move on its own ---
+`r fmt_n(m5s("A", 2030, "Catchment terms halved"))` at Ovingdean against
+`r fmt_n(m5s("C", 2030, "Catchment terms halved"))` at Elm Grove in 2030
+--- and a move with a redraw gains. At the strength families actually
+show, it does not.
+
+So the instruments do not compose the way the open suite suggests.
+**Size is the one lever that works on every model here**, because it
+changes what "full" means rather than who comes --- and under the full
+model even 150 places is more than Longhill draws after 2026.
+Relocation's case is real, but it is the one section 8 makes on behalf
+of the city, that deprived children in the east would stop travelling
+further than everyone else (@sec-fr-journey-equity). It is not a case
+that the move would refill the school.
 
 ::: {.callout-important appearance="simple"}
-## Read these figures with the open model's limits in mind
+## Read these figures with the models' limits in mind
 
-These are modelled intakes from an uncalibrated model with no catchment
-term, and they are systematically more optimistic about relocation than
-a calibrated model would be. The direction of every comparison here is
-robust across the swept range; the magnitudes are not. Nothing in this
-section should be read as a prediction of a roll.
+The figure and the first comparisons in this section come from the open
+scenario suite, which runs one catchment term for the whole city and is
+more optimistic about relocation than the full model. The full model's
+figures rest on the assumptions stated in @sec-m5: distance decay is set
+rather than fitted, and the catchment terms carry over to a redrawn map
+at the strength families follow the map they have. Whether families
+would follow a new boundary as closely as the old one is the question
+that decides relocation, and no published data answers it. Nothing in
+this section is a prediction of a roll.
 :::
 
 # What the council needs to do {#sec-council}
