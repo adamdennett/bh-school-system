@@ -47,6 +47,49 @@ total_grid <- function(total) list(
 
 OK <- "#1baf7a"; BAD <- "#d03b3b"; WARN <- "#eda100"; INK <- "#1f3b57"
 
+# ---- Map colours: demand against places ---------------------------------
+# Green for every school at its admission number was misleading: it made a
+# school that just fills - the goldilocks case - look the same as one
+# turning a hundred children away, and neither extreme is what a city
+# wants. So the dots are coloured on one continuous, diverging scale:
+#
+#   below 1   intake / PAN            a school short of its number (red)
+#   1         full, demand = places   the sweet spot (neutral grey)
+#   above 1   demand / PAN            more children want it than it has
+#                                     places (blue)
+#
+# Demand is the model's uncapped flow: what families ask for before the
+# ceiling cuts it back. Intake cannot show over-subscription, because the
+# ceiling holds it at the admission number.
+#
+# Two hues and a grey midpoint, symmetric about full, so neither side of
+# it reads as 'better'. The stops are sent to the map with the dots and
+# the legend is drawn from them, so the two cannot drift apart.
+PRESSURE_STOPS <- data.frame(at  = c(0.4, 0.7, 1.0, 1.3, 1.6),
+                             col = c("#b2182b", "#ef8a62", "#bdb8b0", "#67a9cf", "#2166ac"),
+                             stringsAsFactors = FALSE)
+
+pressure_col <- function(r) {
+  at <- PRESSURE_STOPS$at
+  m <- t(grDevices::col2rgb(PRESSURE_STOPS$col))
+  r <- pmin(pmax(r, min(at)), max(at))
+  vapply(r, function(v) {
+    k <- min(findInterval(v, at, rightmost.closed = TRUE), length(at) - 1)
+    f <- (v - at[k]) / (at[k + 1] - at[k])
+    x <- m[k, ] + f * (m[k + 1, ] - m[k, ])
+    grDevices::rgb(x[1], x[2], x[3], maxColorValue = 255)
+  }, character(1))
+}
+
+MAP_LEGEND <- list(
+  title = "Demand against places",
+  left = "Short of its number", right = "More want it than it can take",
+  stops = lapply(seq_len(nrow(PRESSURE_STOPS)), function(i)
+    list(at = PRESSURE_STOPS$at[i], col = PRESSURE_STOPS$col[i])),
+  ticks = list(list(at = 0.4, lab = "40%"), list(at = 0.7, lab = "70%"),
+               list(at = 1.0, lab = "Full"), list(at = 1.3, lab = "1.3×"),
+               list(at = 1.6, lab = "1.6×+")))
+
 
 
 # ---- UI --------------------------------------------------------------
@@ -86,6 +129,11 @@ ui <- page_sidebar(
     .kpi .l{font-size:10.5px;color:#666;text-transform:uppercase;letter-spacing:.4px}
     .kpi .d{font-size:10.5px;color:#888}
     .note{font-size:12px;color:#555}
+    .map-legend{background:rgba(255,255,255,.93);padding:6px 10px 4px;border-radius:5px;box-shadow:0 1px 4px rgba(0,0,0,.25);font-size:10.5px;color:#333;width:240px;line-height:1.25}
+    .map-legend .ml-title{font-weight:600;margin-bottom:1px}
+    .map-legend .ml-sides{display:flex;justify-content:space-between;color:#666;font-size:9.5px}
+    .map-legend .ml-bar{height:10px;border-radius:3px;margin:2px 0 1px;border:1px solid #aaa}
+    .map-legend .ml-ticks{position:relative;height:14px}
   ")),
     # Leaflet itself, served from www/, rather than the R package that
     # wraps it - the same build that package was shipping, so the map
@@ -162,7 +210,7 @@ ui <- page_sidebar(
                 col_widths = c(7, 5),
                 div(div(id = "map", style = "height:430px"),
                     div(class = "note", style = "padding-top:6px",
-                        "Dot area is the modelled intake. Green means the school fills its admission number, amber within a tenth of it, red short. The shading is the catchment map in force."),
+                        "Dot area is the modelled intake. Colour is demand against places, on the scale in the map's legend: red is a school short of its admission number, grey one that is full with demand close to its places, and blue one that more children want than it can take. Hover a school for the numbers. The shading is the catchment map in force."),
                     div(class = "note", style = "padding-top:4px",
                         textOutput("design_note")),
                     div(style = "padding-top:10px",
@@ -490,11 +538,22 @@ server <- function(input, output, session) {
                  by = "name")
     elm <- identical(input$site, "elm")
 
-    sch$col <- ifelse(sch$fill >= 0.995, OK,
-                      ifelse(sch$fill >= 0.9, WARN, BAD))
+    # Demand before the ceiling, per school, and where it sits on the scale.
+    wanted <- tapply(s$flows$wanted, s$flows$name, sum)
+    sch$wanted <- dplyr::coalesce(as.numeric(wanted[sch$name]), 0)
+    full <- sch$fill >= 0.995
+    sch$pressure <- ifelse(full, pmax(1, sch$wanted / sch$pan), sch$fill)
+    sch$col <- pressure_col(sch$pressure)
     sch$lab <- sprintf(
-      "<b>%s</b><br>Intake %s of %s places (%.0f%%)<br>Mean journey %.0f min",
-      sch$short, fmt_n(sch$intake), fmt_n(sch$pan), 100 * sch$fill, sch$mean_min)
+      "<b>%s</b><br>Intake %s of %s places (%.0f%%)<br>%s<br>Mean journey %.0f min",
+      sch$short, fmt_n(sch$intake), fmt_n(sch$pan), 100 * sch$fill,
+      ifelse(!full,
+             sprintf("%s places short of its admission number", fmt_n(sch$pan - sch$intake)),
+             ifelse(sch$wanted > 1.005 * sch$pan,
+                    sprintf("Demand %.2f× its places: about %s more children want it than it can take",
+                            sch$wanted / sch$pan, fmt_n(sch$wanted - sch$pan)),
+                    "Full, with demand close to its places")),
+      sch$mean_min)
 
     dname <- switch(input$design,
                     "Current catchments" = "Current catchments",
@@ -507,6 +566,7 @@ server <- function(input, output, session) {
 
     session$sendCustomMessage("map_draw", list(
       geojson = gj,
+      legend = MAP_LEGEND,
       dots = unname(lapply(seq_len(nrow(sch)), function(i) list(
         lon = if (elm) sch$elm_lon[i] else sch$lon[i],
         lat = if (elm) sch$elm_lat[i] else sch$lat[i],

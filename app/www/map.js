@@ -11,7 +11,7 @@
    exchange for. */
 
 (function () {
-  var map = null, shapes = null, dots = null;
+  var map = null, shapes = null, dots = null, legend = null;
 
   function ensure() {
     if (map) return map;
@@ -41,6 +41,35 @@
      tiles can be cut off until Leaflet is told the size changed. */
   function nudge() { if (map) setTimeout(function () { map.invalidateSize(); }, 0); }
 
+  /* The colour legend. Built once, from the stops the server sends with
+     the dots, so the scale on the map and the scale in the legend are the
+     same numbers. Bottom left, clear of the attribution. */
+  function drawLegend(lg) {
+    if (!lg || legend) return;
+    var lo = lg.stops[0].at, hi = lg.stops[lg.stops.length - 1].at;
+    var pos = function (v) { return (v - lo) / (hi - lo) * 100; };
+    legend = L.control({ position: "bottomleft" });
+    legend.onAdd = function () {
+      var div = L.DomUtil.create("div", "map-legend");
+      var grad = lg.stops.map(function (s) {
+        return s.col + " " + pos(s.at).toFixed(1) + "%";
+      }).join(", ");
+      var ticks = lg.ticks.map(function (t) {
+        var p = pos(t.at);
+        return '<span style="position:absolute;top:0;left:' + p.toFixed(1) +
+          '%;transform:translateX(-' + p.toFixed(0) + '%);white-space:nowrap">' +
+          t.lab + '</span>';
+      }).join("");
+      div.innerHTML =
+        '<div class="ml-title">' + lg.title + '</div>' +
+        '<div class="ml-sides"><span>' + lg.left + '</span><span>' + lg.right + '</span></div>' +
+        '<div class="ml-bar" style="background:linear-gradient(to right,' + grad + ')"></div>' +
+        '<div class="ml-ticks">' + ticks + '</div>';
+      return div;
+    };
+    legend.addTo(map);
+  }
+
   Shiny.addCustomMessageHandler("map_draw", function (msg) {
     if (!ensure()) return;
     shapes.clearLayers();
@@ -64,6 +93,7 @@
       }).bindTooltip(d.lab, { sticky: true }).addTo(dots);
     });
 
+    drawLegend(msg.legend);
     nudge();
   });
 
