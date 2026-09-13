@@ -244,7 +244,9 @@ ui <- page_sidebar(
               tableOutput("t_money")),
     nav_panel("Fairness", plotOutput("p_fair", height = 430),
               div(class = "note",
-                  "Gorard's index over the modelled intakes: half the sum of the absolute difference between each school's share of the city's deprived children and its share of all of them. Zero would be a perfectly even spread.")),
+                  "Gorard's index over the modelled intakes: half the sum of the absolute difference between each school's share of the city's deprived children and its share of all of them. Zero would be a perfectly even spread."),
+              div(class = "note", style = "margin-top:10px;max-width:820px",
+                  htmlOutput("fair_note"))),
     nav_panel("Attainment",
               plotOutput("p_att", height = 480),
               tableOutput("t_att"),
@@ -923,9 +925,58 @@ server <- function(input, output, session) {
             plot.subtitle = element_text(colour = "grey35", size = 10))
   })
 
+  # ---- Why priority 6 can raise segregation ------------------------------
+  # Found by moving the slider: 0% to 15% under the council's priorities
+  # takes Gorard from about 0.152 to 0.162 in 2026. The live line compares
+  # the run on screen with the same run and priority 6 switched off, so
+  # the note reports what THIS configuration does rather than a fixed
+  # number.
+  output$fair_note <- renderUI({
+    m <- met()
+    live <- ""
+    if (identical(input$rule, "priorities") && (input$p6 %||% 5) > 0) {
+      r0 <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
+                    design = input$design, year = input$year, gamma = input$gamma,
+                    exclusive = input$exclusive,
+                    rules = utils::modifyList(rule_args(), list(p6_share = 0)))
+      g0 <- outcomes(inp, r0)$gorard
+      live <- sprintf(paste0(
+        "<p><b>In this run:</b> Gorard %.3f with priority 6 at %d%% of places, ",
+        "against %.3f with it switched off (%+.1f%%), and %s children placed under it.</p>"),
+        m$gorard, as.integer(input$p6), g0, 100 * (m$gorard / g0 - 1),
+        fmt_n(sum(sim()$flows$p6)))
+    }
+    HTML(paste0(live,
+      "<p><b>Priority 6 can make the city's intakes slightly more segregated, not less.</b> ",
+      "Under the council's priorities in 2026, raising it from 0% to 15% of places moves ",
+      "the Gorard index from about 0.152 to 0.162; past about 17% there is no more demand ",
+      "for the places, and it stops moving. Two things in the model drive it.</p>",
+      "<p><b>The children who use it still go to the popular school nearest them.</b> ",
+      "Priority 6 lets a child cross a catchment boundary, but families still choose on ",
+      "distance, and the popular schools do not all sit among the same kind of ",
+      "neighbourhood. Brighton Aldridge's and ",
+      "Longhill's catchments send their priority-6 children mostly to Varndean, whose ",
+      "intake is already more deprived than the city's; the catchment children they ",
+      "displace move next door to Stringer, which barely changes. Portslade's go west, ",
+      "to Blatchington Mill and Hove Park, whose intakes are already the least deprived. ",
+      "A school above the city average moves further above it, and one below further below.</p>",
+      "<p><b>The families who use it are the better-off ones in their catchment.</b> ",
+      "Priority-6 places won from Brighton Aldridge's catchment go to neighbourhoods about ",
+      "two-thirds deprived, where the catchment as a whole is nearer four in five; from ",
+      "Portslade's, fewer than one in five against nearly one in three. A lottery does not ",
+      "change that: it is who applies out of catchment that sets it, and in the model that ",
+      "follows how strongly each neighbourhood is drawn to each school.</p>",
+      "<p>The effect is small beside what a catchment redesign does, and deprivation here ",
+      "is a neighbourhood measure, so a better-off family in a deprived neighbourhood ",
+      "counts as deprived. Priority 6 may still widen access for the children who use it. ",
+      "What it does not do, on this measure, is even out the intakes.</p>"))
+  })
+
   # ---- Travel ----------------------------------------------------------
   output$p_travel <- renderPlot({
-    f <- sim()$flows
+    # City schools only, like the journey figures: the routed times to the
+    # East Sussex schools go through Brighton by bus.
+    f <- sim()$flows %>% filter(name %in% inp$city)
     brk <- seq(0, 90, 5)
     h <- f %>% mutate(b = cut(cij, brk, labels = brk[-length(brk)] + 2.5)) %>%
       group_by(b) %>% summarise(n = sum(flow), .groups = "drop") %>%
