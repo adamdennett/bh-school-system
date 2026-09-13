@@ -228,6 +228,14 @@ ui <- page_sidebar(
                 choices = c("—", CITY$short)),
     div(class = "note", textOutput("solve_note"))),
 
+  # Before the numbers, so nobody reads them as counts.
+  div(style = "background:#eef4fb;border:1px solid #c9dbef;border-radius:6px;padding:6px 12px;font-size:12.5px;color:#1f3b57",
+      tags$b("Every number here is modelled"),
+      " - an estimate from a model of the city's schools, not a record of what happened or a forecast to plan on. ",
+      "For the detail of the inputs and the models behind the simulator, read the full documentation: ",
+      tags$a(href = "https://adamdennett.github.io/bh-school-system/", target = "_blank",
+             rel = "noopener", "The Brighton Secondary School System: a strategic view"), "."),
+
   layout_columns(
     fill = FALSE, col_widths = c(2, 2, 2, 2, 2, 2),
     uiOutput("kpi_fill"), uiOutput("kpi_short"), uiOutput("kpi_money"),
