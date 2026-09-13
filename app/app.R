@@ -156,7 +156,13 @@ ui <- page_sidebar(
 
   sidebar = sidebar(
     width = 372,
-    selectInput("preset", "Scenarios", choices = names(inp$presets)),
+    div(strong("Scenarios")),
+    div(class = "note", style = "margin:2px 0 6px",
+        "A selection of ready-made scenarios. Each one sets the controls below ",
+        "to match it. They are starting points: everything can then be adjusted ",
+        "by hand to see the likely impact of any policy choice."),
+    selectInput("preset", NULL, choices = names(inp$presets)),
+    div(style = "font-size:12px;font-weight:600;margin-top:-6px", "Scenario explanation"),
     div(class = "note", textOutput("preset_note")),
     hr(),
     selectInput("design", "Catchment map", choices = names(inp$designs)),
