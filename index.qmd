@@ -13,6 +13,12 @@ abstract: |
   of the council. It is written to be argued with.
 ---
 
+::: {.callout-warning appearance="default" icon="true"}
+## Beta
+
+**This simulator is currently in beta test mode** - outputs have not been validated fully, so nothing should, at this point, be taken as reliable, however the simulator shows what could be possible to develop and outputs that are possible.
+:::
+
 ```{r setup}
 #| include: false
 
@@ -6055,7 +6061,7 @@ place. "Set" means chosen and stated rather than estimated.
 | Component | What is used | Where it comes from | Why, and what else was tried |
 |:---|:---|:---|:---|
 | What a flow is | Preferences, not offers | --- | Offers are rationed. A model fitted to them learns the admission numbers, which is what happened to $\gamma$ in M3. |
-| Who is modelled | Brighton & Hove children, and the ten city schools as destinations | Cohort estimates from section 3 | Children leaving for Peacehaven, independent schools or elsewhere are not modelled, so every school's intake is slightly high. The simulator shows an estimate of them beside the model --- the adjudicator's published count of children offered a place outside the city, by catchment, a three-round mean scaled with the cohort --- and takes it out of the children the model places at another city school. |
+| Who is modelled | Brighton & Hove children, and the ten city schools as destinations | Cohort estimates from section 3 | Some children do leave the city --- to schools such as Priory School in Lewes, as well as to Peacehaven and independent schools --- about 70 a year, three in four of them from Longhill's catchment. The model's destinations are the city schools, so those children are not routed to a school outside it and every city school's intake is slightly high. The simulator shows them beside the model instead: the adjudicator's published count of children offered a place outside the city, by catchment, a three-round mean scaled with the cohort, taken out of the children the model places at another city school. |
 | Journey cost | Routed walk and bus minutes, $c_{ij}^{-\beta}$ | r5r over OpenStreetMap and bus timetables | Straight-line distance sends families across hills and water no bus crosses. |
 | Distance decay | $\beta$ = `r sprintf("%.1f", mt$beta)` | Set | Not identifiable from catchment-level data. It is the value the accessibility work settles on, inside the open model's swept range. |
 | School attractiveness | $W_j$ balanced so demand matches each school's share of first preferences | Catchment preference table, school totals | Weighted preferences per place (M1 to M4) left Cardinal Newman short of its demand and gave Hove Park more than twice its own. Balancing to weighted preferences filled Hove Park, which does not fill. |
