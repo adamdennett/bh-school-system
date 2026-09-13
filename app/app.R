@@ -172,7 +172,7 @@ ui <- page_sidebar(
     conditionalPanel(
       "input.rule == 'priorities'",
       sliderInput("p6", "Places for single-school catchments (priority 6)",
-                  min = 0, max = 20, value = 5, step = 1, post = "%",
+                  min = 0, max = 40, value = 5, step = 1, post = "%",
                   ticks = FALSE),
       checkboxInput("fsm", "Free school meals priority (4 and 5)", value = TRUE),
       checkboxInput("targeted", "Narrowed to Targeted FSM (2027/28)", value = FALSE),
