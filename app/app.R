@@ -115,7 +115,14 @@ ui <- page_sidebar(
   # them below R's minimum margins ("figure margins too large") and the
   # cohort banner at 65 pixels. Declared heights are kept; the page scrolls.
   fillable = FALSE,
-  title = "Brighton secondary schools — policy simulator",
+  # Beta watermark, in the title bar so it is on screen whatever tab is open.
+  title = div(class = "app-title",
+    span("Brighton secondary schools — policy simulator"),
+    span(class = "beta-mark",
+         span(class = "beta-tag", "BETA"),
+         span(tags$b("This simulator is currently in beta test mode"),
+              " - outputs have not been validated fully, so nothing should, at this point, be taken as reliable, however the simulator shows what could be possible to develop and outputs that are possible"))),
+  window_title = "Brighton secondary schools — policy simulator (beta)",
   theme = bs_theme(version = 5, bootswatch = "cosmo", base_font_size = "0.92rem"),
   tags$head(tags$style(HTML("
     .sch-row{display:flex;align-items:center;gap:6px;margin-bottom:-14px}
@@ -129,6 +136,9 @@ ui <- page_sidebar(
     .kpi .l{font-size:10.5px;color:#666;text-transform:uppercase;letter-spacing:.4px}
     .kpi .d{font-size:10.5px;color:#888}
     .note{font-size:12px;color:#555}
+    .app-title{display:flex;align-items:center;gap:14px;flex-wrap:wrap;width:100%}
+    .beta-mark{display:flex;align-items:center;gap:8px;flex:1;min-width:280px;background:#fff3cd;color:#664d03;border:1px solid #e0b84a;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:400;line-height:1.3;white-space:normal}
+    .beta-tag{background:#b35c00;color:#fff;font-weight:700;letter-spacing:1px;border-radius:4px;padding:1px 7px;font-size:11px;flex:none}
     .map-legend{background:rgba(255,255,255,.93);padding:6px 10px 4px;border-radius:5px;box-shadow:0 1px 4px rgba(0,0,0,.25);font-size:10.5px;color:#333;width:240px;line-height:1.25}
     .map-legend .ml-title{font-weight:600;margin-bottom:1px}
     .map-legend .ml-sides{display:flex;justify-content:space-between;color:#666;font-size:9.5px}
