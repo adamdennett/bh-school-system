@@ -57,6 +57,105 @@ ipf_cap <- function(flow, orig, dest, o_target, cap,
   flow
 }
 
+#' Where refused children go
+#'
+#' A proportional ceiling cuts every applicant to a full school back by
+#' the same share and then scales each neighbourhood's flows back up to
+#' place all its children - which spreads a refused child across every
+#' other school in proportion to how much they wanted it first. That is
+#' not what happens. A child refused at Varndean who would take Stringer
+#' gets Stringer, and a child refused at Cardinal Newman goes where
+#' families like them put their second preference.
+#'
+#' So refused demand is re-offered in two steps, only ever to schools with
+#' room:
+#'
+#'   1  PARTNER FIRST. In the two paired catchments, a family who would
+#'      take either school and is refused at one goes to the other.
+#'   2  SECOND PREFERENCES. Everything else is shared among schools with
+#'      room in proportion to the second preferences the family's home
+#'      catchment gives each school (the council's catchment preference
+#'      table), modulated by how near this neighbourhood is to each
+#'      school compared with its catchment as a whole.
+#'
+#' Re-offered demand can overfill a school with little room; the next
+#' round cuts it back and re-offers the excess. If no school has room at
+#' all, the refused children stay unplaced rather than being forced over
+#' an admission number.
+#'
+#' The kernel and the partner map are traits of where a family lives, so
+#' they follow the neighbourhood's own catchment under any map.
+overflow_setup <- function(flow, orig, name, home, pop, kern, partner) {
+  oid <- match(orig, unique(orig))
+  u <- flow / rowsum(flow, oid)[oid, 1]
+  u[!is.finite(u)] <- 0
+  hs <- paste(home, name)
+  ubar <- stats::ave(u, hs, FUN = mean)
+  k <- unname(kern[hs]); k[is.na(k)] <- 0
+  bw <- k * u / pmax(ubar, 1e-12)
+  bw[!is.finite(bw)] <- 0
+  p_name <- unname(partner[hs])
+  pr <- pop == "either" & !is.na(p_name)
+  p_idx <- rep(NA_integer_, length(flow))
+  p_idx[pr] <- match(paste(orig[pr], p_name[pr]), paste(orig, name))
+  pr <- pr & !is.na(p_idx)
+  list(oid = oid, u = u, bw = bw, pr = pr, p_idx = p_idx)
+}
+
+overflow_room <- function(held_rows, name, cap) {
+  held <- tapply(held_rows, name, sum)
+  unname((held < cap[names(held)] - 1e-6)[name])
+}
+
+overflow_add <- function(refused, room, st) {
+  add <- numeric(length(refused))
+  to_p <- st$pr
+  to_p[st$pr] <- room[st$p_idx[st$pr]]
+  if (any(to_p)) {
+    pa <- rowsum(refused[to_p], st$p_idx[to_p])
+    idx <- as.integer(rownames(pa))
+    add[idx] <- add[idx] + pa[, 1]
+  }
+  rest <- refused
+  rest[to_p] <- 0
+  R <- rowsum(rest, st$oid)[, 1]
+  w <- st$bw * room
+  ws <- rowsum(w, st$oid)[st$oid, 1]
+  w2 <- st$u * room
+  ws2 <- rowsum(w2, st$oid)[st$oid, 1]
+  share <- ifelse(ws > 0, w / ws, ifelse(ws2 > 0, w2 / ws2, 0))
+  add + unname(R[st$oid]) * share
+}
+
+cascade_cap <- function(flow, orig, name, home, pop, kern, partner, cap,
+                        max_iter = 500, tol = 1e-6) {
+  st <- overflow_setup(flow, orig, name, home, pop, kern, partner)
+  D <- flow
+  for (i in seq_len(max_iter)) {
+    load <- tapply(D, name, sum)
+    g <- pmin(cap[names(load)] / load, 1)
+    g[!is.finite(g)] <- 1
+    H <- D * unname(g[name])
+    refused <- D - H
+    if (sum(refused) <= tol) { D <- H; break }
+    room <- overflow_room(H, name, cap)
+    if (!any(room)) { D <- H; break }
+    D <- H + overflow_add(refused, room, st)
+  }
+  attr(D, "iterations") <- i
+  D
+}
+
+partner_map <- function(ex) {
+  out <- character(0)
+  if (is.null(ex) || !nrow(ex)) return(out)
+  for (h in unique(ex$catchment)) {
+    s <- ex$school[ex$catchment == h]
+    if (length(s) == 2) out <- c(out, stats::setNames(rev(s), paste(h, s)))
+  }
+  out
+}
+
 #' The council's oversubscription priorities, as a tiered ceiling
 #'
 #' ipf_cap() cuts every applicant to a full school back by the same
@@ -138,34 +237,34 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
 #' and a child refused under one tier goes on to their other choices as a
 #' member of the group they belong to. So each population places all of
 #' its own children, and the ceiling is applied to both together.
-ipf_priorities <- function(flow, zone, name, o_target, cap, pan, fsm_share,
+ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
                            in_c, s6, com, p6_share, fsm_cap_share,
-                           max_iter = 500, tol = 1e-4) {
-  ff <- flow * fsm_share[zone]
+                           home, pop, kern, partner,
+                           max_iter = 500, tol = 1e-6) {
+  st <- overflow_setup(flow, orig, name, home, pop, kern, partner)
+  ff <- flow * unname(fsm_share[orig])
   fn <- flow - ff
-  of <- o_target * fsm_share[names(o_target)]
-  on <- o_target - of
-  rebal <- function(x, target) {
-    now <- tapply(x, zone, sum)
-    f <- target[names(now)] / now
-    f[!is.finite(f)] <- 1
-    x * f[zone]
-  }
   for (i in seq_len(max_iter)) {
-    ff <- rebal(ff, of)
-    fn <- rebal(fn, on)
     acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
                        p6_share, fsm_cap_share)
-    p6 <- ff * acc$p6f + fn * acc$p6n
-    ff <- ff * acc$f
-    fn <- fn * acc$n
-    tot <- ff + fn
-    d_chk <- tapply(tot, name, sum)
-    o_chk <- tapply(tot, zone, sum)
-    if (max(d_chk - cap[names(d_chk)]) <= tol &&
-        max(abs(o_chk - o_target[names(o_chk)])) <= tol) break
+    Hf <- ff * acc$f
+    Hn <- fn * acc$n
+    rf <- ff - Hf
+    rn <- fn - Hn
+    if (sum(rf + rn) <= tol) { ff <- Hf; fn <- Hn; break }
+    # A refused child is re-offered as a member of the group they belong
+    # to, so FSM children and everyone else overflow separately, into the
+    # same schools with room.
+    room <- overflow_room(Hf + Hn, name, cap)
+    if (!any(room)) { ff <- Hf; fn <- Hn; break }
+    ff <- Hf + overflow_add(rf, room, st)
+    fn <- Hn + overflow_add(rn, room, st)
   }
-  list(flow = unname(tot), fsm = unname(ff), p6 = unname(p6),
+  # The tiers of the intake that results, not of the last round's queue.
+  acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
+                     p6_share, fsm_cap_share)
+  list(flow = unname(ff + fn), fsm = unname(ff),
+       p6 = unname(ff * acc$p6f + fn * acc$p6n),
        tiers = acc$tiers, iterations = i)
 }
 
@@ -297,8 +396,17 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   d$fsm_flow <- 0
   tiers <- NULL
 
+  # Where refused children go: partner school first in the paired
+  # catchments, then the home catchment's second preferences. Older input
+  # bundles without the kernel fall back to the proportional ceiling.
+  kern <- inp$params$overflow
+  partner <- partner_map(ex)
+
   if (capped && rule$rule == "published")
-    d$flow <- as.numeric(ipf_cap(d$flow, d$orig, d$name, o_pop, cap))
+    d$flow <- if (is.null(kern))
+      as.numeric(ipf_cap(d$flow, d$orig, d$name, o_pop, cap))
+    else as.numeric(cascade_cap(d$flow, d$orig, d$name, d$catchment, d$pop,
+                                kern, partner, cap))
 
   if (capped && rule$rule == "priorities") {
     stopifnot(!is.null(rl), "fsm" %in% names(z))
@@ -318,9 +426,10 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
 
     share_z <- setNames(share, z$zone)
     share_o <- setNames(unname(share_z[sub("#.*$", "", names(o_pop))]), names(o_pop))
-    res <- ipf_priorities(d$flow, d$orig, d$name, o_pop,
-                          cap, cap, share_o,
-                          in_c, s6, com, rule$p6_share, rl$fsm_cap_share)
+    stopifnot(!is.null(kern))
+    res <- ipf_priorities(d$flow, d$orig, d$name, cap, cap, share_o,
+                          in_c, s6, com, rule$p6_share, rl$fsm_cap_share,
+                          d$catchment, d$pop, kern, partner)
     d$flow <- res$flow
     d$fsm_flow <- res$fsm
     d$p6 <- res$p6

@@ -301,6 +301,32 @@ note(sprintf("shrink scenario: %s places for a 2035 cohort of %.0f (%.0f%%)",
 if (is.null(shr$total) || shr$total %% 30 != 0)
   fail <- c(fail, "the shrink scenario does not set a total in classes of 30")
 
+# ---- Where the choosers go, three ways ----------------------------------
+c3 <- outcomes(inp, run_sim(inp, year = 2026))$catchment
+if (abs(c3$faith_choice_share + c3$other_city_share + c3$left_city_share - c3$chose_share) > 1e-9)
+  fail <- c(fail, "faith, other city and outside the city do not add up to choice")
+note(sprintf("choice, 2026: %.0f%% faith school, %.0f%% another city school, %.0f children outside the city",
+             100 * c3$faith_choice_share, 100 * c3$other_city_share, c3$left_city))
+
+# ---- A family that would take either school is never displaced ----------
+# ... while the other school of its pair has room. That was the
+# inconsistency the proportional ceiling produced: Stringer short of its
+# admission number and Stringer / Varndean families counted as displaced.
+for (yr in c(2026, 2027, 2030)) for (rl_ in list(NULL, pr())) {
+  rr <- run_sim(inp, year = yr, rules = rl_)
+  bz <- outcomes(inp, rr)$catchment$by_zone
+  for (h in unique(inp$params$exclusive$catchment)) {
+    pair <- inp$params$exclusive$school[inp$params$exclusive$catchment == h]
+    room <- any(rr$schools$intake[rr$schools$name %in% pair] <
+                  rr$schools$pan[rr$schools$name %in% pair] - 0.5)
+    d_either <- sum(bz$displaced[bz$own == h & grepl("#either$", bz$orig)])
+    if (room && d_either > 0.5)
+      fail <- c(fail, sprintf("%d %s: %.1f either-school families displaced while the pair has room",
+                              yr, h, d_either))
+  }
+}
+note("either-school families: never displaced while their pair has room (2026, 2027, 2030; both rules)")
+
 if (length(fail)) {
   message("\nFAILED:")
   for (f in fail) message("  - ", f)

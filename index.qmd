@@ -5838,8 +5838,9 @@ densest part of Hove, collects the demand Stringer and Varndean should
 have.
 
 M5 fits three things to the table, all on **uncapped** demand --- what
-families ask for --- and then applies the capacity ceiling exactly as M2
-does.
+families ask for --- and then applies the capacity ceiling. Unlike M2, it
+re-offers the children a full school refuses the way a family's second
+preference would, rather than in proportion to their first.
 
 #### A catchment term for each catchment
 
@@ -5938,6 +5939,59 @@ substitutes, so the real overlap is above what independent naming would
 produce, and the share of exclusive families below it. The simulator lets
 it be scaled.
 
+#### Where refused children go
+
+M2's ceiling cuts every applicant to a full school back by the same share
+and then scales each neighbourhood's flows back up until all its children
+are placed. That spreads a refused child across every other school in
+proportion to how much the neighbourhood wanted it *first*. It is a fair
+average of a random tie-break at the school that is full. It is not a
+fair account of where the refused child then goes, and in one place it
+produced a contradiction: in the Stringer / Varndean catchment the model
+counted families who would take either school as displaced from the
+catchment while Stringer itself was short of its admission number,
+because their refused Varndean demand had been spread across the city
+rather than offered to the school next door.
+
+M5 re-offers refused demand in two steps, and only ever to schools with
+room:
+
+1. **The other school of the pair first.** A family in a paired
+   catchment who would take either school, refused at one, goes to the
+   other while it has places.
+2. **Then second preferences.** Everything else is shared among schools
+   with room in proportion to the second preferences the family's home
+   catchment gives each school, in the same catchment preference table,
+   adjusted for how near this neighbourhood is to each school compared
+   with its catchment as a whole.
+
+Demand re-offered to a school with little room can overfill it; the next
+round cuts that back and re-offers the excess. If no school anywhere has
+room, the children stay unplaced rather than being forced over an
+admission number. It is the average of what a round of deferred
+acceptance does when ties are broken at random, with second preferences
+standing in for the rest of each family's list.
+
+```{r tbl-m5-overflow}
+#| tbl-cap: "Where each catchment's second preferences go: the share of the catchment's second preferences, over three rounds, naming each school. These are the weights refused children are re-offered with, among schools that still have places. Faith schools are included; they are full in every round, so they take none of it."
+if (!is.null(cal$overflow)) {
+  cal$overflow %>%
+    mutate(Catchment = unname(catch_lab[catchment]), School = short_sch(school)) %>%
+    select(Catchment, School, share) %>%
+    group_by(Catchment) %>%
+    arrange(desc(share), .by_group = TRUE) %>%
+    slice_head(n = 3) %>%
+    summarise(`Where its second preferences go, top three` =
+                paste(sprintf("%s %s", School, fmt_pct(100 * share, 0)), collapse = ", "),
+              .groups = "drop") %>%
+    knitr::kable(align = "ll")
+}
+```
+
+The kernel is a trait of where a family lives, like the catchment term,
+so under a redrawn map it stays with the neighbourhood. The same code
+runs in the simulator, which is checked against these runs.
+
 #### What M5 changes
 
 ```{r tbl-m5-fit}
@@ -6001,7 +6055,7 @@ place. "Set" means chosen and stated rather than estimated.
 | Component | What is used | Where it comes from | Why, and what else was tried |
 |:---|:---|:---|:---|
 | What a flow is | Preferences, not offers | --- | Offers are rationed. A model fitted to them learns the admission numbers, which is what happened to $\gamma$ in M3. |
-| Who is modelled | Brighton & Hove children, and the ten city schools as destinations | Cohort estimates from section 3 | Children leaving for Peacehaven, independent schools or elsewhere are not modelled, so every school's intake is slightly high. |
+| Who is modelled | Brighton & Hove children, and the ten city schools as destinations | Cohort estimates from section 3 | Children leaving for Peacehaven, independent schools or elsewhere are not modelled, so every school's intake is slightly high. The simulator shows an estimate of them beside the model --- the adjudicator's published count of children offered a place outside the city, by catchment, a three-round mean scaled with the cohort --- and takes it out of the children the model places at another city school. |
 | Journey cost | Routed walk and bus minutes, $c_{ij}^{-\beta}$ | r5r over OpenStreetMap and bus timetables | Straight-line distance sends families across hills and water no bus crosses. |
 | Distance decay | $\beta$ = `r sprintf("%.1f", mt$beta)` | Set | Not identifiable from catchment-level data. It is the value the accessibility work settles on, inside the open model's swept range. |
 | School attractiveness | $W_j$ balanced so demand matches each school's share of first preferences | Catchment preference table, school totals | Weighted preferences per place (M1 to M4) left Cardinal Newman short of its demand and gave Hove Park more than twice its own. Balancing to weighted preferences filled Hove Park, which does not fill. |
@@ -6009,7 +6063,7 @@ place. "Set" means chosen and stated rather than estimated.
 | Paired catchments | A share of families who would take only one school of the pair | Bounded by the same table; set midway | The table counts who named each school, not who named both. Without it, a child refused at one school of the pair always falls back on the other, and displacement from those catchments is understated. |
 | Competing destinations | $C_j^{\delta}$, $\delta$ = `r sprintf("%+.1f", cal$delta)` | Fitted in the ladder, against offers | Kept at its ladder value and not re-fitted. It is a small term; @sec-m4 sets out why its sign should not be read as a finding. |
 | Faith schools | Open to every family | --- | Holding half the city ineligible fits the second-preference profile better but stops Cardinal Newman filling, and it fills. |
-| Capacity | A one-sided ceiling by iterative proportional fitting | Admission numbers in force | Applicants to a full school are cut back in proportion, which is what a random tie-break averages to --- and the council breaks ties at random. |
+| Capacity | A one-sided ceiling; refused demand re-offered to the other school of a pair, then by second preference, to schools with room | Admission numbers in force; catchment preference table, second preferences | Applicants to a full school are cut back in proportion, which is what a random tie-break averages to --- and the council breaks ties at random. Re-offering refused children in proportion to their *first* preferences (M2 to M4) left Stringer short of its number while counting Stringer / Varndean families as displaced. |
 | Admission rules (simulator only) | Optionally, the council's 2026/27 priorities as a tiered ceiling at the six community schools | Admissions guide 2027--28 | FSM eligibility is the IDACI score scaled by one take-up constant, set so FSM-priority offers at the three schools that ration match the 192 made in September 2026. Priority-6 places are not fitted. |
 | Offer day, not September | Every comparison is with national offer day | --- | Six months of appeals and movement follow offer day, so September rolls are not what an allocation produces. |
 

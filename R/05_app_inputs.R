@@ -156,7 +156,11 @@ stopifnot(!is.null(cal), length(cal$gamma) == 6, all(is.finite(cal$W)))
 params <- list(beta = cal$beta, sigma = cal$sigma, delta = cal$delta,
                gamma = cal$gamma, gamma_m4 = cal$gamma_m4,
                exclusive = cal$exclusive %>%
-                 select(catchment, school, share, share_lo, share_hi))
+                 select(catchment, school, share, share_lo, share_hi),
+               # Where refused children go: each home catchment's second
+               # preferences, as shares.
+               overflow = with(cal$overflow, setNames(share, paste(catchment, school))))
+stopifnot(length(params$overflow) > 0, all(is.finite(params$overflow)))
 message(sprintf("  beta %.2f, delta %.2f, sigma %.0f; catchment terms %s",
                 params$beta, params$delta, params$sigma,
                 paste(sprintf("%s %.1f", names(params$gamma), params$gamma), collapse = ", ")))
@@ -553,9 +557,19 @@ RULES$fsm_city <- weighted.mean(zones$fsm, zones$Oi)
 message(sprintf("  FSM take-up %.3f x IDACI: %.0f FSM-priority places at the three rationing schools (published %d); %.1f%% of the city's children",
                 hi, fsm_places(hi), fsm_target, 100 * RULES$fsm_city))
 
+# Children offered a place outside Brighton & Hove, by home catchment: the
+# adjudicator's determination, Table 11, mean of its three rounds. The app
+# shows these beside the model's flows; it does not simulate them.
+outflow <- bh_data("adjudicator.rds")$outside %>%
+  group_by(catchment) %>% summarise(children = mean(children), .groups = "drop")
+outflow <- with(outflow, setNames(children, catchment))
+stopifnot(length(outflow) == 6, all(is.finite(outflow)))
+message(sprintf("  offered a place outside the city, mean of three rounds: %s",
+                paste(sprintf("%s %.0f", names(outflow), outflow), collapse = ", ")))
+
 saveRDS(list(
   schools = schools, zones = zones, cost = cost, designs = DESIGNS,
-  rules = RULES,
+  rules = RULES, outflow = outflow,
   attain = attain,
   params = params, demand = demand, cohort = cohort, finance = finance,
   seed_intakes = seed_intakes, idaci = idaci,

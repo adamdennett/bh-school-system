@@ -655,10 +655,15 @@ server <- function(input, output, session) {
   # a place the system failed to provide, and the colours say so.
   # Purple for a child placed under priority 6: they chose to leave, but
   # through a rule that exists to let them, so it is not the same grey.
-  CATCH_COL <- c(`Their own catchment` = "#2a78d6",
-                 `Left by choice`      = "#9aa5b1",
-                 `Through priority 6`  = "#7b61c9",
-                 `Displaced`        = "#eb6834")
+  # Choice now splits three ways: two greys for the modelled choices, a
+  # sand for children offered a place outside the city, which comes from
+  # published counts rather than the model.
+  CATCH_COL <- c(`Their own catchment`          = "#2a78d6",
+                 `Left for a faith school`      = "#7d8793",
+                 `Left for another city school` = "#b9c1c9",
+                 `Left the city (estimate)`     = "#d6c29b",
+                 `Through priority 6`           = "#7b61c9",
+                 `Displaced`                    = "#eb6834")
 
   catch_plot <- function(b, title, subtitle, base = 12, label_all = TRUE) {
     b <- b %>% mutate(where = factor(where, names(CATCH_COL)))
@@ -698,17 +703,17 @@ server <- function(input, output, session) {
     catch_plot(met()$catchment$by_catch,
                "Who has to leave their catchment, and why",
                paste(strwrap(paste(
-                 "Grey is a child who chose an out-of-catchment school and got it;",
-                 "purple, one placed there under priority 6;",
-                 "orange is one the capacity ceiling pushed out of a full catchment school.",
-                 "Only the orange is a place the system could not provide."),
+                 "Dark grey chose a faith school, light grey another city school, and sand",
+                 "took a place outside the city (an estimate from published counts);",
+                 "purple was placed under priority 6; orange was pushed out of a full",
+                 "catchment school. Only the orange is a place the system could not provide."),
                  width = 84), collapse = "\n"))
   })
 
   output$p_catch_map <- renderPlot({
     catch_plot(met()$catchment$by_catch,
                "Who leaves their catchment, and why",
-               "Grey chose to go; orange was pushed out of a full school.",
+               "Greys and sand chose to go; orange was pushed out of a full school.",
                base = 9.5)
   })
 
@@ -725,7 +730,9 @@ server <- function(input, output, session) {
       transmute(Catchment = label,
                 `Children living there` = fmt_n(living),
                 `Place at home` = fmt_n(at(label, "Their own catchment")),
-                `Left by choice` = fmt_n(at(label, "Left by choice")),
+                `To a faith school` = fmt_n(at(label, "Left for a faith school")),
+                `To another city school` = fmt_n(at(label, "Left for another city school")),
+                `Outside the city (est.)` = fmt_n(at(label, "Left the city (estimate)")),
                 `Through priority 6` = fmt_n(at(label, "Through priority 6")),
                 `Displaced` = fmt_n(at(label, "Displaced")),
                 `Outside` = sprintf("%.0f%%", 100 * outside_share),
@@ -739,10 +746,13 @@ server <- function(input, output, session) {
       "they are not the same problem.</b> %.0f%% of the cohort ends up at a ",
       "school outside the catchment they live in. Almost all of that — ",
       "%.0f%% of the cohort — is children who preferred an out-of-catchment ",
-      "school and got it, their own catchment school having had room. Only ",
-      "%.0f%% were displaced: they would have taken a place at home and the ",
-      "capacity ceiling did not have one. The %.0f%% who go to the two faith ",
-      "schools, which have no catchment at all, are inside the first group.</p>",
+      "school and got it, their own catchment school having had room: ",
+      "%.0f%% of the cohort at the two faith schools, which have no catchment ",
+      "at all, %.0f%% at another city school, and about %s children offered a ",
+      "place outside Brighton & Hove. That last figure is not modelled: it is ",
+      "the adjudicator's published count for each catchment, scaled with the ",
+      "cohort. Only %.0f%% were displaced: they would have taken a place at ",
+      "home and the capacity ceiling did not have one.</p>",
       "<p><b>Displacement only happens where the schools fill.</b> %s loses ",
       "%.0f%% of its children and displaces none of them, because its schools ",
       "have room to spare — that is a school nobody is choosing, not a ",
@@ -753,8 +763,9 @@ server <- function(input, output, session) {
       "displacement: more children want a place at home, and the full schools ",
       "still cannot take them. The number that measures a system failing ",
       "its families is the orange one, not the total.</p>"),
-      100 * m$outside_share, 100 * m$chose_share, 100 * m$displaced_share,
-      100 * m$faith_share, m$worst, 100 * m$worst_share,
+      100 * m$outside_share, 100 * m$chose_share,
+      100 * m$faith_choice_share, 100 * m$other_city_share, fmt_n(m$left_city),
+      100 * m$displaced_share, m$worst, 100 * m$worst_share,
       m$worst_displaced, 100 * m$worst_displaced_share))
   })
 
