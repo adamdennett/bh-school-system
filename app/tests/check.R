@@ -21,6 +21,7 @@ suppressPackageStartupMessages({ library(dplyr) })
 ROOT <- here::here()
 source(file.path(ROOT, "app", "R", "model.R"))
 source(file.path(ROOT, "app", "R", "outcomes.R"))
+source(file.path(ROOT, "app", "R", "export.R"))
 
 inp <- readRDS(file.path(ROOT, "app", "data", "sim_inputs.rds"))
 mt  <- readRDS(file.path(ROOT, "data", "model_terms.rds"))
@@ -326,6 +327,27 @@ for (yr in c(2026, 2027, 2030)) for (rl_ in list(NULL, pr())) {
   }
 }
 note("either-school families: never displaced while their pair has room (2026, 2027, 2030; both rules)")
+
+# ---- The download: a workbook that reproduces the run ---------------
+st <- list(design = "Current catchments", site = "now", year = 2027, gamma = 1.2,
+           exclusive = 1, rule = "priorities", p6 = 10, fsm = TRUE, targeted = FALSE)
+w_x <- setNames(rep(1, sum(inp$schools$city)), inp$schools$name[inp$schools$city])
+w_x["Longhill High School"] <- 1.5
+p_x <- setNames(inp$schools$pan[inp$schools$city], inp$schools$name[inp$schools$city])
+rx <- run_sim(inp, w_mult = w_x, pans = p_x, year = 2027, gamma = 1.2,
+              rules = list(rule = "priorities", p6_share = 0.10))
+wb <- scenario_export(inp, rx, outcomes(inp, rx), names(inp$presets)[1], st, w_x, p_x)
+tmp <- tempfile(fileext = ".xlsx")
+writexl::write_xlsx(wb, tmp)
+if (!file.exists(tmp) || file.size(tmp) < 5000)
+  fail <- c(fail, "the scenario workbook was not written")
+if (abs(sum(wb$Schools$Intake) - sum(rx$schools$intake[rx$schools$city])) > 0.1)
+  fail <- c(fail, "the workbook's intakes do not match the run")
+if (sum(wb$Scenario$Changed == "changed") < 3 || sum(wb$Schools$Changed == "changed") != 1)
+  fail <- c(fail, "the workbook does not mark what was changed from the scenario")
+note(sprintf("download: %d sheets, %s, %d settings and %d school marked changed",
+             length(wb), format(structure(file.size(tmp), class = "object_size"), units = "KB"),
+             sum(wb$Scenario$Changed == "changed"), sum(wb$Schools$Changed == "changed")))
 
 if (length(fail)) {
   message("\nFAILED:")

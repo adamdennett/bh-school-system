@@ -201,6 +201,11 @@ ui <- page_sidebar(
     div(style = "margin-top:10px", uiOutput("pan_total")),
     div(style = "margin-top:12px",
         actionButton("reset", "Reset to the scenario", class = "btn-sm btn-outline-secondary")),
+    div(style = "margin-top:10px",
+        downloadButton("download_xlsx", "Download this run (Excel)",
+                       class = "btn-sm btn-outline-primary")),
+    div(class = "note", style = "margin-top:4px",
+        "A workbook of this run: the base scenario, every setting as the scenario had it and as used here (marked where changed), each school's numbers, where each catchment's children go, the headline outcomes, the money and the fixed parameters."),
     hr(),
     selectInput("solve_for", "How attractive would a school have to be to fill?",
                 choices = c("—", CITY$short)),
@@ -392,6 +397,23 @@ server <- function(input, output, session) {
             exclusive = input$exclusive, rules = rule_args())
   })
   met <- reactive(outcomes(inp, sim()))
+
+  # ---- Download this run -------------------------------------------------
+  output$download_xlsx <- downloadHandler(
+    filename = function()
+      sprintf("bh-school-simulator_%s_%s.xlsx",
+              gsub("[^A-Za-z0-9]+", "-", input$preset %||% "run"),
+              format(Sys.time(), "%Y%m%d-%H%M")),
+    content = function(file) {
+      settings <- list(design = input$design, site = input$site, year = input$year,
+                       gamma = input$gamma, exclusive = input$exclusive,
+                       rule = input$rule %||% "published", p6 = input$p6 %||% 5,
+                       fsm = isTRUE(input$fsm %||% TRUE),
+                       targeted = isTRUE(input$targeted %||% FALSE))
+      writexl::write_xlsx(
+        scenario_export(inp, sim(), met(), input$preset, settings, w_now(), pan_now()),
+        file)
+    })
 
   # ---- Headline strip ------------------------------------------------
   kpi <- function(value, label, detail = NULL, colour = INK)
