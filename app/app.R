@@ -37,6 +37,14 @@ source(file.path(APP, "R", "outcomes.R"))
 inp <- readRDS(file.path(APP, "data", "sim_inputs.rds"))
 CITY <- inp$schools %>% filter(city) %>% arrange(short)
 
+# Total places, moved in classes of 30. The slider's grid is laid out from
+# whatever the total currently is, so any sum the ten admission numbers
+# can reach is a point on it and a hand edit never snaps to a neighbour.
+TOTAL_NOW <- sum(CITY$pan)
+total_grid <- function(total) list(
+  min = total - 30 * floor(max(0, total - 0.5 * TOTAL_NOW) / 30),
+  max = total + 30 * floor(max(0, 1.3 * TOTAL_NOW - total) / 30))
+
 OK <- "#1baf7a"; BAD <- "#d03b3b"; WARN <- "#eda100"; INK <- "#1f3b57"
 
 
@@ -90,7 +98,7 @@ ui <- page_sidebar(
 
   sidebar = sidebar(
     width = 372,
-    selectInput("preset", "Start from", choices = names(inp$presets)),
+    selectInput("preset", "Scenarios", choices = names(inp$presets)),
     div(class = "note", textOutput("preset_note")),
     hr(),
     selectInput("design", "Catchment map", choices = names(inp$designs)),
@@ -125,9 +133,16 @@ ui <- page_sidebar(
     div(strong("Per school"), span(class = "note", " — attractiveness ×, and admission number")),
     div(style = "margin-top:8px", lapply(seq_len(nrow(CITY)),
                                          function(i) school_row(CITY[i, ]))),
-    div(style = "margin-top:16px", uiOutput("pan_total")),
+    div(style = "margin-top:16px",
+        sliderInput("total_pan", "Total places in the city",
+                    min = total_grid(TOTAL_NOW)$min, max = total_grid(TOTAL_NOW)$max,
+                    value = TOTAL_NOW, step = 30, sep = ",", ticks = FALSE,
+                    width = "100%")),
+    div(class = "note", style = "margin-top:-6px",
+        "Moves a class of 30 at a time, and shares the change across every school in proportion to its admission number. Edit a school directly and the total follows. A city needs some places to spare: children arrive during the year, families move house and change schools, and preference only works if there is room to be offered something. Planning usually allows a margin of a few per cent over the cohort, often put at around 5%. Every place beyond that is one the city pays for and does not fill."),
+    div(style = "margin-top:10px", uiOutput("pan_total")),
     div(style = "margin-top:12px",
-        actionButton("reset", "Reset to the preset", class = "btn-sm btn-outline-secondary")),
+        actionButton("reset", "Reset to the scenario", class = "btn-sm btn-outline-secondary")),
     hr(),
     selectInput("solve_for", "How attractive would a school have to be to fill?",
                 choices = c("—", CITY$short)),
@@ -182,6 +197,57 @@ ui <- page_sidebar(
 
 server <- function(input, output, session) {
 
+  # ---- Total places and the ten admission numbers ---------------------
+  # Two ways in, one set of numbers. Moving the total rescales every school
+  # from a BASE, in proportion. Editing a school directly makes the numbers
+  # on screen the new base and moves the total to match, so the next move
+  # of the slider starts from the edit. Every update the server makes comes
+  # back to it as an input event, so the numbers being pushed are held in
+  # `pending` and events that are only the echo of them are ignored -
+  # otherwise the half-applied set would be taken for a hand edit.
+  pans_rv <- reactiveValues(base = setNames(CITY$pan, CITY$name), pending = NULL)
+
+  set_total <- function(total) {
+    g <- total_grid(total)
+    updateSliderInput(session, "total_pan", min = g$min, max = g$max, value = total)
+  }
+  push_pans <- function(p) {
+    cur <- isolate(pan_now())
+    changed <- names(p)[!is.finite(cur[names(p)]) | abs(cur[names(p)] - p) > 0.5]
+    pans_rv$pending <- if (length(changed)) p else NULL
+    for (nm in changed)
+      updateNumericInput(session, paste0("pan_", CITY$urn[CITY$name == nm]),
+                         value = unname(p[nm]))
+  }
+  set_pans <- function(base, final = NULL) {
+    if (is.null(final)) final <- base
+    pans_rv$base <- base
+    push_pans(final)
+    set_total(sum(final))
+  }
+
+  observeEvent(input$total_pan, {
+    tot <- input$total_pan
+    cur <- if (!is.null(pans_rv$pending)) sum(pans_rv$pending) else sum(pan_now())
+    if (!is.finite(cur) || abs(tot - cur) < 0.5) return()
+    push_pans(scale_pans(pans_rv$base, tot))
+  }, ignoreInit = TRUE)
+
+  observe({
+    p <- pan_now()
+    req(all(is.finite(p)))
+    pend <- isolate(pans_rv$pending)
+    if (!is.null(pend)) {
+      if (all(abs(p[names(pend)] - pend) < 0.5)) pans_rv$pending <- NULL
+      return()
+    }
+    tot <- isolate(input$total_pan)
+    if (is.null(tot) || abs(sum(p) - tot) >= 0.5) {
+      pans_rv$base <- p
+      set_total(sum(p))
+    }
+  })
+
   apply_preset <- function(p) {
     s <- inp$presets[[p]]
     updateSelectInput(session, "design", selected = s$design)
@@ -202,10 +268,13 @@ server <- function(input, output, session) {
       updateSliderInput(session, paste0("w_", urn),
                         value = if (!is.null(s$w) && nm %in% names(s$w))
                           round(unname(s$w[nm]), 2) else 1)
-      updateNumericInput(session, paste0("pan_", urn),
-                         value = if (!is.null(s$pan) && nm %in% names(s$pan))
-                           unname(s$pan[nm]) else CITY$pan[i])
     }
+    # Admission numbers: the published ones, any the scenario names, and
+    # then - where a scenario sets a city total - shared out to that total,
+    # exactly as moving the slider would.
+    base <- setNames(CITY$pan, CITY$name)
+    if (!is.null(s$pan)) base[names(s$pan)] <- s$pan
+    set_pans(base, if (is.null(s$total)) NULL else scale_pans(base, s$total))
   }
   observeEvent(input$preset, apply_preset(input$preset))
   observeEvent(input$reset, apply_preset(input$preset))

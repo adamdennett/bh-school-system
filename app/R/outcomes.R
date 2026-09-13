@@ -268,6 +268,22 @@ absence_for <- function(inp, absence_now, att8_now, att8_target)
 absence_percentile <- function(inp, rate)
   100 * inp$attain$absence$national$ecdf(rate)
 
+#' Share a city total of places out across schools, in proportion
+#'
+#' Largest remainder, so every school gets whole places and the parts add
+#' up to the total exactly rather than to within rounding. The total
+#' slider and the scenarios both go through this.
+scale_pans <- function(base, total) {
+  raw <- base * total / sum(base)
+  out <- floor(raw)
+  short <- round(total - sum(out))
+  if (short > 0) {
+    top <- order(raw - out, decreasing = TRUE)[seq_len(short)]
+    out[top] <- out[top] + 1
+  }
+  setNames(out, names(base))
+}
+
 #' Where a score sits in the national distribution, as a percentile
 att8_percentile <- function(inp, score) 100 * inp$attain$national$ecdf(score)
 

@@ -439,6 +439,13 @@ message(sprintf("  %d design outlines as GeoJSON (%.0f KB), %d school dots proje
 # than a blank form. Each is a list of overrides the app applies on top
 # of the baseline.
 
+# The shrink scenario sets a city total rather than hand-picked numbers,
+# so it is reproduced by moving the total-places slider: the 2035 cohort
+# plus a 5% margin, in whole classes of 30.
+COHORT_2035 <- demand$cohort[demand$year == 2035]
+SHRINK_TOTAL <- 30 * round(COHORT_2035 * 1.05 / 30)
+stopifnot(length(SHRINK_TOTAL) == 1, is.finite(SHRINK_TOTAL))
+
 presets <- list(
   `Today` = list(
     note = "The city as it stands: today's admission numbers, today's catchments, Longhill at Ovingdean.",
@@ -457,14 +464,10 @@ presets <- list(
     design = "Power diagram", site = "now", year = 2030,
     pan = NULL, w = NULL),
   `Shrink the system to fit` = list(
-    note = "Admission numbers cut roughly in proportion to the fall in the cohort, so the city is not carrying empty places.",
+    note = sprintf("Total places cut to %s, about 5%% above the 2035 cohort of %s, and shared out in proportion to today's admission numbers. Move the total or any school from there.",
+                   fmt_n(SHRINK_TOTAL), fmt_n(COHORT_2035)),
     design = "Current catchments", site = "now", year = 2035,
-    pan = c(`Longhill High School` = 120,
-            `Brighton Aldridge Community Academy` = 120,
-            `Hove Park School` = 150,
-            `Patcham High School` = 180,
-            `Portslade Aldridge Community Academy` = 180),
-    w = NULL),
+    total = SHRINK_TOTAL, pan = NULL, w = NULL),
   `Make the catchment count` = list(
     note = "Everything as it is, but living in a catchment weighs far more heavily on the choice than families currently behave as though it does. This is the other way to fill a school, and it needs nothing from the school itself.",
     design = "Current catchments", site = "now", year = 2026,

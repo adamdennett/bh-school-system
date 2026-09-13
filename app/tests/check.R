@@ -116,7 +116,10 @@ if (tight$displaced_share <= cd$displaced_share)
 for (p in names(inp$presets)) {
   s <- inp$presets[[p]]
   ok <- tryCatch({
-    rr <- run_sim(inp, w_mult = s$w, pans = s$pan, site = s$site,
+    base_p <- setNames(inp$schools$pan[inp$schools$city], inp$schools$name[inp$schools$city])
+    if (!is.null(s$pan)) base_p[names(s$pan)] <- s$pan
+    pans_s <- if (is.null(s$total)) s$pan else scale_pans(base_p, s$total)
+    rr <- run_sim(inp, w_mult = s$w, pans = pans_s, site = s$site,
                   design = s$design, year = s$year, gamma = s$gamma,
                   rules = if (is.null(s$rule)) NULL else
                     list(rule = s$rule, p6_share = (s$p6 %||% 5) / 100,
@@ -283,6 +286,20 @@ note(sprintf("Stringer/Varndean displaced under the priorities: %.1f with only-o
              sv_d(ex_on), sv_d(ex_off)))
 if (sv_d(ex_on) < sv_d(ex_off) - 1e-6)
   fail <- c(fail, "families who would take only one of a pair do not raise displacement")
+
+# ---- Sharing a city total across the schools ---------------------------
+bp <- setNames(inp$schools$pan[inp$schools$city], inp$schools$name[inp$schools$city])
+for (tot in c(sum(bp) - 600, sum(bp) + 300)) {
+  sp <- scale_pans(bp, tot)
+  if (sum(sp) != tot || max(abs(sp - bp * tot / sum(bp))) >= 1)
+    fail <- c(fail, sprintf("scale_pans does not share %d places out exactly and in proportion", tot))
+}
+shr <- inp$presets[["Shrink the system to fit"]]
+c35 <- inp$demand$cohort[inp$demand$year == 2035]
+note(sprintf("shrink scenario: %s places for a 2035 cohort of %.0f (%.0f%%)",
+             format(shr$total), c35, 100 * shr$total / c35))
+if (is.null(shr$total) || shr$total %% 30 != 0)
+  fail <- c(fail, "the shrink scenario does not set a total in classes of 30")
 
 if (length(fail)) {
   message("\nFAILED:")
