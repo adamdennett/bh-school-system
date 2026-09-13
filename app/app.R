@@ -565,7 +565,7 @@ server <- function(input, output, session) {
   # leafletProxy() used to arrange.
   observe({
     s <- sim()
-    sch <- s$schools %>%
+    sch <- s$schools %>% filter(city) %>%
       inner_join(inp$schools %>% select(name, lon, lat, elm_lon, elm_lat),
                  by = "name")
     elm <- identical(input$site, "elm")
@@ -693,7 +693,8 @@ server <- function(input, output, session) {
   CATCH_COL <- c(`Their own catchment`          = "#2a78d6",
                  `Left for a faith school`      = "#7d8793",
                  `Left for another city school` = "#b9c1c9",
-                 `Left the city (estimate)`     = "#d6c29b",
+                 `Left the city: East Sussex schools` = "#c4a064",
+                 `Left the city: elsewhere (estimate)` = "#e8dcc2",
                  `Through priority 6`           = "#7b61c9",
                  `Displaced`                    = "#eb6834")
 
@@ -735,8 +736,8 @@ server <- function(input, output, session) {
     catch_plot(met()$catchment$by_catch,
                "Who has to leave their catchment, and why",
                paste(strwrap(paste(
-                 "Dark grey chose a faith school, light grey another city school, and sand",
-                 "took a place outside the city (an estimate from published counts);",
+                 "Dark grey chose a faith school, light grey another city school; sand went to",
+                 "Priory, Peacehaven, Seahaven or Seaford Head, pale sand elsewhere outside the city (an estimate);",
                  "purple was placed under priority 6; orange was pushed out of a full",
                  "catchment school. Only the orange is a place the system could not provide."),
                  width = 84), collapse = "\n"))
@@ -764,7 +765,8 @@ server <- function(input, output, session) {
                 `Place at home` = fmt_n(at(label, "Their own catchment")),
                 `To a faith school` = fmt_n(at(label, "Left for a faith school")),
                 `To another city school` = fmt_n(at(label, "Left for another city school")),
-                `Outside the city (est.)` = fmt_n(at(label, "Left the city (estimate)")),
+                `East Sussex schools` = fmt_n(at(label, "Left the city: East Sussex schools")),
+                `Elsewhere outside (est.)` = fmt_n(at(label, "Left the city: elsewhere (estimate)")),
                 `Through priority 6` = fmt_n(at(label, "Through priority 6")),
                 `Displaced` = fmt_n(at(label, "Displaced")),
                 `Outside` = sprintf("%.0f%%", 100 * outside_share),
@@ -780,10 +782,12 @@ server <- function(input, output, session) {
       "%.0f%% of the cohort — is children who preferred an out-of-catchment ",
       "school and got it, their own catchment school having had room: ",
       "%.0f%% of the cohort at the two faith schools, which have no catchment ",
-      "at all, %.0f%% at another city school, and about %s children offered a ",
-      "place outside Brighton & Hove. That last figure is not modelled: it is ",
-      "the adjudicator's published count for each catchment, scaled with the ",
-      "cohort. Only %.0f%% were displaced: they would have taken a place at ",
+      "at all, %.0f%% at another city school, about %s children at the four East ",
+      "Sussex schools the model includes - Priory in Lewes above all - and about ",
+      "%s more offered a place elsewhere outside the city. That last figure is ",
+      "not modelled: it is the adjudicator's published count for each catchment, ",
+      "less what the model places in East Sussex, scaled with the cohort. ",
+      "Only %.0f%% were displaced: they would have taken a place at ",
       "home and the capacity ceiling did not have one.</p>",
       "<p><b>Displacement only happens where the schools fill.</b> %s loses ",
       "%.0f%% of its children and displaces none of them, because its schools ",
@@ -796,7 +800,8 @@ server <- function(input, output, session) {
       "still cannot take them. The number that measures a system failing ",
       "its families is the orange one, not the total.</p>"),
       100 * m$outside_share, 100 * m$chose_share,
-      100 * m$faith_choice_share, 100 * m$other_city_share, fmt_n(m$left_city),
+      100 * m$faith_choice_share, 100 * m$other_city_share, fmt_n(m$left_es),
+      fmt_n(m$left_other),
       100 * m$displaced_share, m$worst, 100 * m$worst_share,
       m$worst_displaced, 100 * m$worst_displaced_share))
   })
@@ -1154,19 +1159,23 @@ server <- function(input, output, session) {
     "says 'suppose families wanted this school this much more'. It does not ",
     "say how that would be achieved, how long it would take, or whether it is ",
     "possible. The scale is preferences per place, weighted across three ranks.</p>",
-    "<p><b>Some children do leave the city</b> - to schools such as Priory ",
-    "School in Lewes, to Peacehaven and to independent schools - about 70 a ",
-    "year, most of them from Longhill's catchment. The model's destinations ",
-    "are the city schools, so it does not send those children to a school ",
-    "outside it, and every city school's intake is slightly high. The ",
-    "Catchments tab shows them instead, as an estimate: the Schools Adjudicator's ",
-    "published count for each catchment, averaged over three rounds and scaled ",
-    "with the cohort, and it does not respond to anything you change here. A ",
-    "school that became much less attractive would lose more children to ",
-    "Peacehaven, to private schools and to moving away than it shows. The ",
-    "split of children who leave their catchment by choice - to a faith ",
-    "school, to another city school, or out of the city - inherits both ",
-    "limits.</p>",
+    "<p><b>Some children do leave the city, and most of them are modelled.</b> ",
+    "Four East Sussex schools are destinations: Priory School in Lewes, ",
+    "Peacehaven, Seahaven and Seaford Head. Each has an attractiveness of its ",
+    "own, fitted with one distance decay to the council's published answer to ",
+    "a Freedom of Information request, which gives the 2024 offers by home ",
+    "catchment and school - Longhill's catchment sent 38 children to Priory, ",
+    "and fewer than five each to Peacehaven and Seahaven. They are chosen on ",
+    "straight-line distance, because the bus network has no Woodingdean to ",
+    "Lewes service and the routed journey goes through Brighton. They respond ",
+    "to Longhill's site and attractiveness, but they are not rationed and ",
+    "cannot be adjusted, and one year of suppressed counts is a thin basis. ",
+    "Children offered places in West Sussex or London, a handful a year from ",
+    "Hove, Portslade and Stringer / Varndean, are not modelled: the Catchments ",
+    "tab shows them as an estimate, the Schools Adjudicator's published count ",
+    "less what the model places in East Sussex. Children who go to independent ",
+    "schools or move away are in neither, so every city school's intake is ",
+    "still slightly high.</p>",
     "<p><b>Where a refused child goes is an average, not an allocation.</b> ",
     "When a school is full, the children it turns away are re-offered a place ",
     "only at schools with room: in the two paired catchments, the other school ",

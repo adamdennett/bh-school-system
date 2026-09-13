@@ -87,7 +87,7 @@ note(sprintf("catchments: outside %.0f%% = chose %.0f%% + displaced %.0f%%; shar
              100 * cd$displaced_share, min(sums$s), max(sums$s)))
 if (max(abs(sums$s - 1)) > 1e-6)
   fail <- c(fail, "a catchment's three shares do not sum to one")
-if (abs(sum(cd$outside$living) - m$intake) > 1)
+if (abs(sum(cd$outside$living) - (m$intake + m$out_of_city)) > 1)
   fail <- c(fail, "the children living in the catchments do not sum to the cohort")
 if (abs(cd$chose_share + cd$p6_share + cd$displaced_share - cd$outside_share) > 1e-9)
   fail <- c(fail, "choosing and displacement do not add up to being outside")
@@ -238,7 +238,7 @@ o2 <- rp$flows %>% group_by(zone) %>% summarise(s = sum(flow), .groups = "drop")
   inner_join(inp$zones %>% select(zone, Oi), by = "zone")
 if (max(abs(o2$s - o2$Oi)) > 1)
   fail <- c(fail, "priorities: children are being lost or invented")
-if (any(rp$schools$intake - rp$schools$pan > 1e-3))
+if (any(rp$schools$intake - rp$schools$pan > 1e-3, na.rm = TRUE))
   fail <- c(fail, "priorities: a school is over its admission number")
 if (any(tp$p6 > 0.05 * rp$cap[tp$name] + 1e-6))
   fail <- c(fail, "priority 6 exceeds its share of the admission number")
@@ -306,8 +306,32 @@ if (is.null(shr$total) || shr$total %% 30 != 0)
 c3 <- outcomes(inp, run_sim(inp, year = 2026))$catchment
 if (abs(c3$faith_choice_share + c3$other_city_share + c3$left_city_share - c3$chose_share) > 1e-9)
   fail <- c(fail, "faith, other city and outside the city do not add up to choice")
-note(sprintf("choice, 2026: %.0f%% faith school, %.0f%% another city school, %.0f children outside the city",
-             100 * c3$faith_choice_share, 100 * c3$other_city_share, c3$left_city))
+note(sprintf("choice, 2026: %.0f%% faith school, %.0f%% another city school, %.1f children at East Sussex schools, %.1f elsewhere outside the city",
+             100 * c3$faith_choice_share, 100 * c3$other_city_share, c3$left_es, c3$left_other))
+# Hove and Portslade's out-of-city offers are to West Sussex, which the
+# model does not reach, so the published remainder must show up.
+if (is.null(names(inp$outflow_other)) || sum(inp$outflow_other) < 5 || c3$left_other < 5)
+  fail <- c(fail, "the out-of-city remainder the model does not reach has gone missing")
+
+# ---- The East Sussex schools agree with M5 ------------------------------
+r_out <- r$flows %>% filter(name %in% inp$out_of_city) %>%
+  group_by(catchment, name) %>% summarise(app = sum(flow), .groups = "drop") %>%
+  full_join(mt$calibrated$outside$by_catchment, by = c("catchment", "name")) %>%
+  mutate(app = coalesce(app, 0), children = coalesce(children, 0))
+note(sprintf("outside the city: %d catchment x school cells, largest difference from M5 %.2f; Longhill to Priory %.1f",
+             nrow(r_out), max(abs(r_out$app - r_out$children)),
+             r_out$app[r_out$catchment == "Longhill" & r_out$name == "Priory School"]))
+if (max(abs(r_out$app - r_out$children)) > 0.5)
+  fail <- c(fail, "the app's out-of-city flows differ from M5's")
+lh_pr <- r_out$app[r_out$catchment == "Longhill" & r_out$name == "Priory School"]
+if (length(lh_pr) != 1 || lh_pr < 20 || lh_pr > 60)
+  fail <- c(fail, "Longhill's catchment no longer sends a plausible number to Priory")
+lh_far <- run_sim(inp, year = 2026, site = "elm")$flows %>%
+  filter(name %in% inp$out_of_city, catchment == "Longhill") %>% summarise(n = sum(flow)) %>% pull(n)
+note(sprintf("Longhill to Elm Grove: its catchment's out-of-city flow %.1f, against %.1f at Ovingdean",
+             lh_far, sum(r_out$app[r_out$catchment == "Longhill"])))
+if (lh_far <= sum(r_out$app[r_out$catchment == "Longhill"]) - 1e-6)
+  fail <- c(fail, "moving Longhill away from its catchment does not send more of it out of the city")
 
 # ---- A family that would take either school is never displaced ----------
 # ... while the other school of its pair has room. That was the

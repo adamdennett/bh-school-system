@@ -144,8 +144,10 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     "Share who left by choice" = cm$chose_share,
     "  of which to a faith school (share of cohort)" = cm$faith_choice_share,
     "  of which to another city school (share of cohort)" = cm$other_city_share,
-    "  of which outside the city (share of cohort)" = cm$left_city_share,
-    "Children outside the city" = cm$left_city,
+    "  of which to East Sussex schools, modelled (share of cohort)" = cm$left_es_share,
+    "  of which elsewhere outside the city, estimate (share of cohort)" = cm$left_other_share,
+    "Children at East Sussex schools (modelled)" = cm$left_es,
+    "Children elsewhere outside the city (estimate)" = cm$left_other,
     "Share placed through priority 6" = cm$p6_share,
     "Children displaced from their catchment" = cm$displaced,
     "Share displaced from their catchment" = cm$displaced_share)
@@ -153,7 +155,20 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
                      Value = vapply(out, function(x) as.numeric(val(x)), numeric(1)),
                      stringsAsFactors = FALSE)
 
+  ext <- r$schools[!r$schools$city, ]
+  outside <- data.frame(School = ext$name, `Children offered a place` = round(ext$intake, 2),
+                        check.names = FALSE)
+  if (!is.null(prm$outside))
+    fixed <- rbind(fixed,
+      data.frame(Parameter = "Out-of-city attractiveness", Group = names(prm$outside$W),
+                 Fitted = unname(prm$outside$W), `Multiplier used` = NA_real_,
+                 `Value used` = unname(prm$outside$W), check.names = FALSE),
+      data.frame(Parameter = "Out-of-city decay on straight-line km", Group = "",
+                 Fitted = prm$outside$decay, `Multiplier used` = NA_real_,
+                 `Value used` = prm$outside$decay, check.names = FALSE))
+
   wb <- list(README = readme, Scenario = scen, Schools = schools,
+             `Outside the city` = outside,
              Catchments = catch, Flows = flows, Outcomes = outc,
              Money = as.data.frame(m$by_school), `Fixed parameters` = fixed)
   if (!is.null(r$tiers)) wb$Priorities <- as.data.frame(r$tiers)

@@ -5945,6 +5945,49 @@ substitutes, so the real overlap is above what independent naming would
 produce, and the share of exclusive families below it. The simulator lets
 it be scaled.
 
+#### Children who leave the city
+
+Every rung up to here sends every child to one of the ten city schools.
+Some go elsewhere, and for Longhill that is most of the question. The
+council's answer to a Freedom of Information request,
+[published on WhatDoTheyKnow](https://www.whatdotheyknow.com/request/schools_admissions_breakdowns_fo),
+gives every school each catchment's children were offered a place at in
+the 2024 round, including schools outside the city: Longhill's catchment
+was offered 38 places at Priory School in Lewes, and fewer than five each
+at Peacehaven and Seahaven.
+
+So M5 carries four East Sussex schools --- Priory, Peacehaven, Seahaven
+and Seaford Head --- as destinations, each with an attractiveness of its
+own and one decay on **straight-line distance**, fitted to each
+catchment's share of those offers. Straight-line rather than routed,
+because the bus network has no Woodingdean to Lewes service: the router
+sends those families through Brighton, 71 to 95 minutes, and a model on
+that cost sends Longhill's leavers to Peacehaven instead of Priory.
+Counts the council suppressed enter the fit as the interval they are.
+The fitted decay is steep, `r sprintf("%.1f", cal$outside$decay)`: a
+school outside the city draws from the neighbourhoods nearest it and
+from almost nowhere else.
+
+```{r tbl-m5-outside}
+#| tbl-cap: "Offers at the four East Sussex schools in the 2024 round, published and modelled. Modelled at the 2024 scale: M5's share of each catchment's children, times the children that catchment was offered places. Rows where neither is above half a child are left out."
+if (!is.null(cal$outside)) {
+  cal$outside$fit %>%
+    filter(published != "0" | expected_2024 >= 0.5) %>%
+    transmute(Catchment = dplyr::coalesce(unname(catch_lab[catchment]), catchment),
+              School = name, `Published, 2024` = published,
+              `Modelled` = sprintf("%.1f", expected_2024)) %>%
+    knitr::kable(align = "llrr")
+}
+```
+
+In 2026 M5 sends
+`r if (!is.null(cal$outside)) fmt_n(sum(cal$outside$by_catchment$children[cal$outside$by_catchment$catchment == "Longhill"]), 0) else ""`
+children from Longhill's catchment to these schools,
+`r if (!is.null(cal$outside)) fmt_n(cal$outside$by_catchment$children[cal$outside$by_catchment$catchment == "Longhill" & cal$outside$by_catchment$name == "Priory School"], 0) else ""`
+of them to Priory. Children offered places in West Sussex or London ---
+a handful a year from Hove, Portslade and Stringer / Varndean --- are not
+modelled, nor are those who go to independent schools.
+
 #### Where refused children go
 
 M2's ceiling cuts every applicant to a full school back by the same share
@@ -6061,7 +6104,8 @@ place. "Set" means chosen and stated rather than estimated.
 | Component | What is used | Where it comes from | Why, and what else was tried |
 |:---|:---|:---|:---|
 | What a flow is | Preferences, not offers | --- | Offers are rationed. A model fitted to them learns the admission numbers, which is what happened to $\gamma$ in M3. |
-| Who is modelled | Brighton & Hove children, and the ten city schools as destinations | Cohort estimates from section 3 | Some children do leave the city --- to schools such as Priory School in Lewes, as well as to Peacehaven and independent schools --- about 70 a year, three in four of them from Longhill's catchment. The model's destinations are the city schools, so those children are not routed to a school outside it and every city school's intake is slightly high. The simulator shows them beside the model instead: the adjudicator's published count of children offered a place outside the city, by catchment, a three-round mean scaled with the cohort, taken out of the children the model places at another city school. |
+| Who is modelled | Brighton & Hove children; the ten city schools and four East Sussex schools as destinations | Cohort estimates from section 3 | Children do leave the city, about 70 a year, three in four of them from Longhill's catchment and most of those for Priory School in Lewes. Priory, Peacehaven, Seahaven and Seaford Head are destinations. West Sussex and London schools, a handful a year, are not; the simulator shows them as an estimate, the adjudicator's published count less what the model places in East Sussex. Children who go to independent schools or move away are in neither, so every city school's intake is slightly high. |
+| Schools outside the city | An attractiveness for each, one decay on straight-line km, no catchment term, not rationed | The council's FOI response on WhatDoTheyKnow: 2024 offers by catchment and school | Routed walk and bus time was tried and sends Longhill's leavers to Peacehaven: there is no Woodingdean to Lewes bus in the network. The adjudicator's catchment totals alone get the numbers right and the destinations wrong. |
 | Journey cost | Routed walk and bus minutes, $c_{ij}^{-\beta}$ | r5r over OpenStreetMap and bus timetables | Straight-line distance sends families across hills and water no bus crosses. |
 | Distance decay | $\beta$ = `r sprintf("%.1f", mt$beta)` | Set | Not identifiable from catchment-level data. It is the value the accessibility work settles on, inside the open model's swept range. |
 | School attractiveness | $W_j$ balanced so demand matches each school's share of first preferences | Catchment preference table, school totals | Weighted preferences per place (M1 to M4) left Cardinal Newman short of its demand and gave Hove Park more than twice its own. Balancing to weighted preferences filled Hove Park, which does not fill. |
@@ -7482,8 +7526,9 @@ families near Elm Grove it moves towards --- and they are the most
 attached to their own schools of any in the city.
 
 - **Moving on its own costs Longhill about `r fmt_n(abs(me("move_only", 2030)))` children a year.** It draws `r fmt_n(m5n("A", 2030))` at Ovingdean in 2030 and `r fmt_n(m5n("C", 2030))` at Elm Grove behind today's catchments.
-- **Moving with redrawn catchments roughly breaks even**: `r fmt_n(m5n("E", 2030))` in 2030 against `r fmt_n(m5n("B", 2030))` staying put. The redraw wins back what the move lost.
+- **Moving with redrawn catchments gains a few children**: `r fmt_n(m5n("E", 2030))` in 2030 against `r fmt_n(m5n("B", 2030))` staying put. The redraw wins back what the move lost and a little more.
 - **Redrawing without moving costs children too**, `r fmt_n(m5n("F", 2030))` in 2030, because the designed map passes some of Longhill's hinterland to its neighbours.
+- **A move sends more of Longhill's own catchment out of the city**: `r fmt_n(rl5$central$left_city_longhill[rl5$central$id == "A" & rl5$central$entry_year == 2030])` to the East Sussex schools in 2030 at Ovingdean, most of them to Priory, against `r fmt_n(rl5$central$left_city_longhill[rl5$central$id == "C" & rl5$central$entry_year == 2030])` at Elm Grove behind today's catchments.
 - **Nothing draws 150 children after 2026.** By 2035 the best option draws `r fmt_n(max(rl5$central$natural[rl5$central$entry_year == 2035]))`.
 
 ```{r tbl-longhill-m5-sens}

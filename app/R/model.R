@@ -289,13 +289,15 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     capped = TRUE, gamma = NULL, rules = NULL,
                     exclusive = NULL) {
 
-  # City schools only, which is what section 7 models. Peacehaven is in
-  # the cost matrix and in the bundle, but the published model does not
-  # let children leave the city and neither does this: including it as a
-  # destination drains children from every Brighton school and the two
-  # models stop agreeing. The limitation is real and is stated in the
-  # app's notes rather than quietly fixed here.
+  # The ten city schools, and the four East Sussex schools M5 fits as
+  # destinations: children do leave the city, most of them from Longhill's
+  # catchment for Priory School in Lewes. Those four have an attractiveness
+  # each and a decay on straight-line km, no catchment and no competition
+  # term, and they are not rationed. Nothing about them is adjustable.
   sch <- inp$schools[inp$schools$city, ]
+  outside <- inp$params$outside
+  ext_names <- if (is.null(outside)) character(0) else names(outside$W)
+  ext_sch <- inp$schools[inp$schools$name %in% ext_names, ]
   W <- setNames(sch$W, sch$name)
   if (!is.null(w_mult)) {
     stopifnot(all(names(w_mult) %in% names(W)))
@@ -308,6 +310,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     stopifnot(all(names(pans) %in% names(cap)))
     cap[names(pans)] <- pans
   }
+  cap_all <- c(cap, setNames(rep(1e6, length(ext_names)), ext_names))
 
   # The cohort shrinks; where it lives does not move. Section 3 projects
   # the city, not the neighbourhood.
@@ -320,7 +323,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   stopifnot(!is.null(dsg))
 
   d <- inp$cost[[site]] %>%
-    dplyr::filter(name %in% sch$name) %>%
+    dplyr::filter(name %in% c(sch$name, ext_names)) %>%
     dplyr::inner_join(z, by = "zone") %>%
     dplyr::filter(Oi > 0, is.finite(cij), cij > 0)
 
@@ -370,6 +373,9 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
 
   util <- d$Wj * d$cij^(-inp$params$beta) *
     exp(g_mult * g * d$in_catch + inp$params$delta * log(d$Cj))
+  is_ext <- d$name %in% ext_names
+  if (any(is_ext))
+    util[is_ext] <- unname(outside$W[d$name[is_ext]]) * d$km[is_ext]^(-outside$decay)
 
   # Production-constrained: every population in every neighbourhood places
   # its own children.
@@ -404,9 +410,9 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
 
   if (capped && rule$rule == "published")
     d$flow <- if (is.null(kern))
-      as.numeric(ipf_cap(d$flow, d$orig, d$name, o_pop, cap))
+      as.numeric(ipf_cap(d$flow, d$orig, d$name, o_pop, cap_all))
     else as.numeric(cascade_cap(d$flow, d$orig, d$name, d$catchment, d$pop,
-                                kern, partner, cap))
+                                kern, partner, cap_all))
 
   if (capped && rule$rule == "priorities") {
     stopifnot(!is.null(rl), "fsm" %in% names(z))
@@ -427,7 +433,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     share_z <- setNames(share, z$zone)
     share_o <- setNames(unname(share_z[sub("#.*$", "", names(o_pop))]), names(o_pop))
     stopifnot(!is.null(kern))
-    res <- ipf_priorities(d$flow, d$orig, d$name, cap, cap, share_o,
+    res <- ipf_priorities(d$flow, d$orig, d$name, cap_all, cap_all, share_o,
                           in_c, s6, com, rule$p6_share, rl$fsm_cap_share,
                           d$catchment, d$pop, kern, partner)
     d$flow <- res$flow
@@ -442,7 +448,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                      mean_min = stats::weighted.mean(cij, flow),
                      mean_km = stats::weighted.mean(km, flow),
                      .groups = "drop") %>%
-    dplyr::right_join(sch %>% dplyr::select(name, short, urn, faith, city),
+    dplyr::right_join(rbind(sch, ext_sch) %>% dplyr::select(name, short, urn, faith, city),
                       by = "name") %>%
     dplyr::mutate(intake = dplyr::coalesce(intake, 0),
                   pan = unname(cap[name]),

@@ -58,7 +58,11 @@ outcomes <- function(inp, r, shed = 0.75) {
   # ---- Travel --------------------------------------------------------
   # Weighted by children, and split by whether the child lives in one of
   # the neighbourhoods in the three most deprived deciles nationally.
+  # Journeys to the city's schools. The routed times to the East Sussex
+  # schools go by bus through Brighton, which is not how those families
+  # travel, so they are left out rather than inflating every journey figure.
   f <- r$flows %>%
+    dplyr::filter(name %in% inp$city) %>%
     dplyr::left_join(inp$idaci %>% dplyr::select(lsoa, dep3), by = "lsoa") %>%
     dplyr::mutate(dep3 = dplyr::coalesce(dep3, 0))
 
@@ -113,6 +117,7 @@ outcomes <- function(inp, r, shed = 0.75) {
                   at_home = !is.na(dest_grp) & dest_grp == home,
                   where = dplyr::case_when(
                     name %in% faith_names ~ "A faith school",
+                    name %in% inp$out_of_city ~ "Outside the city",
                     at_home ~ "Their own catchment",
                     TRUE ~ "Another catchment"))
 
@@ -139,6 +144,7 @@ outcomes <- function(inp, r, shed = 0.75) {
                      got_home = sum(flow[at_home]),
                      want_home = sum(wanted[at_home]),
                      to_faith = sum(flow[where == "A faith school"]),
+                     to_out = sum(flow[where == "Outside the city"]),
                      via_p6 = sum(p6),
                      .groups = "drop") %>%
     dplyr::mutate(
@@ -154,16 +160,15 @@ outcomes <- function(inp, r, shed = 0.75) {
       through_p6 = pmin(outside - displaced, via_p6),
       chose = outside - displaced - through_p6)
 
-  # WHERE THE CHOOSERS GO. Three places, and the third is not in the
-  # model. Faith schools and other city schools are modelled flows. The
-  # model sends every child to one of the ten city schools, but some are
-  # offered a place outside Brighton & Hove - three in four of them from
-  # Longhill's catchment. The adjudicator's determination publishes those
-  # counts by home catchment (Table 11); their three-round mean, scaled
-  # with the cohort and shared across each catchment's neighbourhoods by
-  # children, is taken out of 'another city school', which is where the
-  # model has been placing those children.
-  out_mean <- inp$outflow
+  # WHERE THE CHOOSERS GO. Four places, and the last is not in the model.
+  # Faith schools, other city schools and the four East Sussex schools
+  # (Priory, Peacehaven, Seahaven, Seaford Head) are modelled flows. A few
+  # children are also offered places in West Sussex, London and elsewhere
+  # the model does not go: the adjudicator's Table 11 count for each
+  # catchment, less what the model places in East Sussex, scaled with the
+  # cohort and shared across the catchment's neighbourhoods by children,
+  # is taken out of 'another city school', where the model places them.
+  out_mean <- inp$outflow_other
   if (is.null(out_mean)) out_mean <- stats::setNames(numeric(0), character(0))
   own_living <- tapply(by_zone$living, by_zone$own, sum)
   by_zone <- by_zone %>%
@@ -171,16 +176,18 @@ outcomes <- function(inp, r, shed = 0.75) {
       out_est = dplyr::coalesce(unname(out_mean[own]), 0) * r$index *
         living / unname(own_living[own]),
       to_faith_school = pmin(chose, to_faith),
-      other = chose - to_faith_school,
-      left_city = pmin(other, out_est),
-      other_city = other - left_city)
+      left_es = pmin(chose - to_faith_school, to_out),
+      other = chose - to_faith_school - left_es,
+      left_other = pmin(other, out_est),
+      other_city = other - left_other)
 
   wide <- by_zone %>%
     dplyr::group_by(home) %>%
     dplyr::summarise(living = sum(living), `Their own catchment` = sum(got_home),
                      `Left for a faith school` = sum(to_faith_school),
                      `Left for another city school` = sum(other_city),
-                     `Left the city (estimate)` = sum(left_city),
+                     `Left the city: East Sussex schools` = sum(left_es),
+                     `Left the city: elsewhere (estimate)` = sum(left_other),
                      `Through priority 6` = sum(through_p6),
                      `Displaced` = sum(displaced),
                      to_faith = sum(to_faith), .groups = "drop")
@@ -189,7 +196,8 @@ outcomes <- function(inp, r, shed = 0.75) {
   # tidyr::pivot_longer; stacking three named columns does not justify
   # shipping tidyr with the app.
   WHERE <- c("Their own catchment", "Left for a faith school",
-             "Left for another city school", "Left the city (estimate)",
+             "Left for another city school", "Left the city: East Sussex schools",
+             "Left the city: elsewhere (estimate)",
              "Through priority 6", "Displaced")
   by_catch <- dplyr::bind_rows(lapply(WHERE, function(w)
     dplyr::mutate(wide[, setdiff(names(wide), WHERE), drop = FALSE],
@@ -216,8 +224,12 @@ outcomes <- function(inp, r, shed = 0.75) {
     chose_share = sum(by_zone$chose) / tot,
     faith_choice_share = sum(by_zone$to_faith_school) / tot,
     other_city_share = sum(by_zone$other_city) / tot,
-    left_city = sum(by_zone$left_city),
-    left_city_share = sum(by_zone$left_city) / tot,
+    left_city = sum(by_zone$left_es + by_zone$left_other),
+    left_city_share = sum(by_zone$left_es + by_zone$left_other) / tot,
+    left_es = sum(by_zone$left_es),
+    left_es_share = sum(by_zone$left_es) / tot,
+    left_other = sum(by_zone$left_other),
+    left_other_share = sum(by_zone$left_other) / tot,
     p6 = sum(by_zone$through_p6),
     p6_share = sum(by_zone$through_p6) / tot,
     worst = outside$label[which.max(outside$outside_share)],

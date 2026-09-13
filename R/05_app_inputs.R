@@ -38,7 +38,18 @@ dir.create(file.path(APP_DIR, "data"), showWarnings = FALSE, recursive = TRUE)
 # the city, and it is not something the app lets you adjust.
 
 CITY <- oi$schools$name[oi$schools$name != "Peacehaven Community School"]
-OUT_OF_CITY <- setdiff(oi$schools$name, CITY)
+
+# Four East Sussex schools are destinations too: children do leave the
+# city, most of them from Longhill's catchment for Priory School in Lewes.
+# M5 fits them to the council's published FOI table of 2024 offers by
+# catchment and school (section 7.6). They take children; nothing about
+# them is adjustable in the app.
+OUTSIDE <- mt$calibrated$outside
+stopifnot(!is.null(OUTSIDE), length(OUTSIDE$W) == 4, is.finite(OUTSIDE$decay))
+OUT_OF_CITY <- OUTSIDE$schools$name
+OUT_SHORT <- c(`Priory School` = "Priory (Lewes)", `Peacehaven Community School` = "Peacehaven",
+               `Seahaven Academy` = "Seahaven", `Seaford Head School` = "Seaford Head")
+stopifnot(all(OUT_OF_CITY %in% names(OUT_SHORT)))
 
 # The six schools the council is the admission authority for, and so the
 # only ones its oversubscription priorities apply to.
@@ -57,7 +68,15 @@ schools <- oi$schools %>%
     purrr::imap_dfr(oi$catchment_schools, ~ tibble(name = .x, group = .y)),
     by = "name")
 
-stopifnot(!any(is.na(schools$W)), !any(is.na(schools$pan)))
+schools <- bind_rows(
+  schools %>% filter(city),
+  OUTSIDE$schools %>%
+    transmute(name, short = unname(OUT_SHORT[name]), urn = as.character(urn),
+              easting, northing, faith = FALSE, pan = NA_real_,
+              city = FALSE, community = FALSE,
+              W = unname(OUTSIDE$W[name]), group = NA_character_))
+
+stopifnot(!any(is.na(schools$W)), !any(is.na(schools$pan[schools$city])))
 
 # The Elm Grove site is a different point on the map, so the dot has to
 # move when the user moves the school.
@@ -86,11 +105,15 @@ zones <- oi$zones %>%
 stopifnot(!any(is.na(zones$idaci_score)))
 zones <- zones
 
+# The East Sussex schools' costs come from M5: straight-line km, which is
+# what they are chosen on, and routed minutes for reporting. Moving
+# Longhill does not move them.
+ext_cost <- OUTSIDE$costs %>% filter(zone %in% zones$zone) %>% select(zone, name, cij, km)
 cost <- list(
-  now = oi$costs_now %>% filter(zone %in% zones$zone) %>%
-    select(zone, name, cij, km),
-  elm = oi$costs_elm %>% filter(zone %in% zones$zone) %>%
-    select(zone, name, cij, km))
+  now = bind_rows(oi$costs_now %>% filter(zone %in% zones$zone, name %in% CITY) %>%
+                    select(zone, name, cij, km), ext_cost),
+  elm = bind_rows(oi$costs_elm %>% filter(zone %in% zones$zone, name %in% CITY) %>%
+                    select(zone, name, cij, km), ext_cost))
 
 stopifnot(all(vapply(cost, function(x) all(is.finite(x$cij)), logical(1))))
 
@@ -159,7 +182,9 @@ params <- list(beta = cal$beta, sigma = cal$sigma, delta = cal$delta,
                  select(catchment, school, share, share_lo, share_hi),
                # Where refused children go: each home catchment's second
                # preferences, as shares.
-               overflow = with(cal$overflow, setNames(share, paste(catchment, school))))
+               overflow = with(cal$overflow, setNames(share, paste(catchment, school))),
+               # The East Sussex schools: attractiveness each, decay on km.
+               outside = list(W = OUTSIDE$W, decay = OUTSIDE$decay))
 stopifnot(length(params$overflow) > 0, all(is.finite(params$overflow)))
 message(sprintf("  beta %.2f, delta %.2f, sigma %.0f; catchment terms %s",
                 params$beta, params$delta, params$sigma,
@@ -432,7 +457,7 @@ schools$lon <- xy[, 1]; schools$lat <- xy[, 2]
 xy <- to_ll(schools$elm_easting, schools$elm_northing)
 schools$elm_lon <- xy[, 1]; schools$elm_lat <- xy[, 2]
 stopifnot(all(is.finite(schools$lon)), all(is.finite(schools$elm_lat)),
-          all(schools$lon > -0.4 & schools$lon < 0.1),
+          all(schools$lon > -0.4 & schools$lon < 0.2),
           all(schools$lat > 50.7 & schools$lat < 51.0))
 
 message(sprintf("  %d design outlines as GeoJSON (%.0f KB), %d school dots projected",
@@ -557,19 +582,28 @@ RULES$fsm_city <- weighted.mean(zones$fsm, zones$Oi)
 message(sprintf("  FSM take-up %.3f x IDACI: %.0f FSM-priority places at the three rationing schools (published %d); %.1f%% of the city's children",
                 hi, fsm_places(hi), fsm_target, 100 * RULES$fsm_city))
 
-# Children offered a place outside Brighton & Hove, by home catchment: the
-# adjudicator's determination, Table 11, mean of its three rounds. The app
-# shows these beside the model's flows; it does not simulate them.
-outflow <- bh_data("adjudicator.rds")$outside %>%
+# Children offered a place outside Brighton & Hove somewhere the model does
+# not go - West Sussex, London, and anything else the four East Sussex
+# schools do not account for. The adjudicator's Table 11 gives all
+# out-of-city offers by home catchment (mean of three rounds); what M5
+# places at the East Sussex schools in 2026 is taken off it. The app shows
+# the remainder beside the model's flows; it does not simulate it.
+adj_out <- bh_data("adjudicator.rds")$outside %>%
   group_by(catchment) %>% summarise(children = mean(children), .groups = "drop")
-outflow <- with(outflow, setNames(children, catchment))
-stopifnot(length(outflow) == 6, all(is.finite(outflow)))
-message(sprintf("  offered a place outside the city, mean of three rounds: %s",
-                paste(sprintf("%s %.0f", names(outflow), outflow), collapse = ", ")))
+adj_out <- with(adj_out, setNames(children, catchment))
+ext_mod <- tapply(OUTSIDE$by_catchment$children, OUTSIDE$by_catchment$catchment, sum)
+ext_mod <- setNames(dplyr::coalesce(as.numeric(ext_mod[names(adj_out)]), 0), names(adj_out))
+# Named vector first: pmax takes its names from the first argument.
+outflow_other <- pmax(adj_out - ext_mod, 0)
+stopifnot(identical(names(outflow_other), names(adj_out)))
+stopifnot(length(outflow_other) == 6, all(is.finite(outflow_other)))
+message(sprintf("  outside the city, 2026: modelled at East Sussex schools %s; elsewhere (published less modelled) %s",
+                paste(sprintf("%s %.1f", names(ext_mod), ext_mod), collapse = ", "),
+                paste(sprintf("%s %.1f", names(outflow_other), outflow_other), collapse = ", ")))
 
 saveRDS(list(
   schools = schools, zones = zones, cost = cost, designs = DESIGNS,
-  rules = RULES, outflow = outflow,
+  rules = RULES, outflow_other = outflow_other,
   attain = attain,
   params = params, demand = demand, cohort = cohort, finance = finance,
   seed_intakes = seed_intakes, idaci = idaci,
