@@ -1167,9 +1167,9 @@ server <- function(input, output, session) {
   }, striped = TRUE, width = "100%")
 
   output$att_note <- renderUI(HTML(sprintf(
-    paste0("<p>Attainment 8 explains %.0f%% of the variation in weighted ",
-           "preferences per place across the city's %d schools, and a point ",
-           "is worth about %.0f%% more preferences. That fit is what converts ",
+    paste0("<p>Attainment 8 explains %.0f%% of the variation in the model's ",
+           "attractiveness (M5) across the city's %d schools, on a log scale, and a point ",
+           "is worth about %.0f%% more attractiveness. That fit is what converts ",
            "the attractiveness slider into points here.</p>",
            "<p><b>It is an association, not a lever.</b> Attainment 8 is ",
            "largely set by the intake a school receives — section 2 of the ",
@@ -1234,7 +1234,9 @@ server <- function(input, output, session) {
     "<p><b>Attractiveness is a single number per school.</b> Moving the slider ",
     "says 'suppose families wanted this school this much more'. It does not ",
     "say how that would be achieved, how long it would take, or whether it is ",
-    "possible. The scale is preferences per place, weighted across three ranks.</p>",
+    "possible. The scale is the model's attractiveness (M5), balanced so the ",
+    "model's demand for each school matches its share of first preferences ",
+    "once distance and the catchment are accounted for; 1× is the school as it is.</p>",
     "<p><b>Some children do leave the city, and most of them are modelled.</b> ",
     "Four East Sussex schools are destinations: Priory School in Lewes, ",
     "Peacehaven, Seahaven and Seaford Head. Each has an attractiveness of its ",

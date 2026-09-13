@@ -197,16 +197,22 @@ stopifnot(!any(is.na(schools$W)))
 
 # ---- 4b. What attractiveness means in Attainment 8 ------------------
 # Section 5.4 finds that the published number families respond to is
-# headline Attainment 8, and fits log(weighted preferences per place)
-# against it. The app needs that fit the other way round: given a
-# multiplier on attractiveness, how many Attainment 8 points is that?
+# headline Attainment 8. The app needs that relationship the other way
+# round: given a multiplier on attractiveness, how many Attainment 8
+# points is that?
 #
-# The response is logged, so the slope is a constant proportional effect
-# per point and the inversion is just log(m) / b. Fitted here on the ten
-# city schools, the same rows section 5.4 uses.
+# The sliders multiply M5's balanced attractiveness, so the fit is on
+# that, not on weighted preferences per place: a multiplier has to be
+# converted on the scale it is applied to. Section 5.4 shows the log scale
+# is the right one for it (a straight line fits far worse), so the slope
+# is a constant proportional effect per point and the inversion is just
+# log(m) / b. Fitted on the ten city schools. It is a looser fit than
+# preferences per place, largely because the two faith schools have no
+# catchment term and so carry high M5 attractiveness.
 
-att_fit <- lm(log(W_wprefs) ~ att8,
-              data = oi$attract %>% filter(name %in% CITY))
+att_fit <- lm(log(W5) ~ att8,
+              data = oi$attract %>% filter(name %in% CITY) %>%
+                mutate(W5 = unname(cal$W[name])))
 ATT_B <- unname(coef(att_fit)[["att8"]])
 
 stopifnot(ATT_B > 0, summary(att_fit)$r.squared > 0.5)
@@ -217,7 +223,7 @@ attain <- list(
   n = nobs(att_fit),
   se = unname(summary(att_fit)$coefficients["att8", "Std. Error"]),
   # A point of Attainment 8 is worth this much on the attractiveness
-  # scale: about 7% more weighted preferences per place.
+  # scale: about 12% more M5 attractiveness.
   per_point = exp(ATT_B) - 1)
 
 # The national distribution, so the app can say where a required score

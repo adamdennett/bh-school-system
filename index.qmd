@@ -96,9 +96,18 @@ ch_prefs <- fp$factsheets %>%
 stopifnot(nrow(ch_prefs) == 10)
 
 CH_MEASURES <- c("Weighted (ranks 1-3)", "First preferences",
-                 "Second preferences", "Third preferences")
-CH_BUTTONS  <- c("Weighted", "First", "Second", "Third")
+                 "Second preferences", "Third preferences",
+                 "M5 attractiveness")
+CH_BUTTONS  <- c("Weighted", "First", "Second", "Third", "M5")
 CH_DEFAULT  <- "Weighted (ranks 1-3)"
+
+# The full model's attractiveness (section 7.6): balanced so that, once
+# distance, the catchment term and competition have done their work, the
+# model's demand for each school matches its share of first preferences.
+# It is what the simulator's sliders multiply. On a city mean of one, so
+# it sits on the same log axis as the preference measures.
+mt <- bh_data("model_terms.rds")
+ch_w5 <- mt$calibrated$W / mean(mt$calibrated$W)
 
 cd <- os$choice %>%
   select(urn, school, pan, att8, va) %>%
@@ -108,7 +117,8 @@ cd <- os$choice %>%
          `Weighted (ranks 1-3)` = (p1 + DECAY_A * p2 + DECAY_A^2 * p3) / pan,
          `First preferences`    = p1 / pan,
          `Second preferences`   = p2 / pan,
-         `Third preferences`    = p3 / pan)
+         `Third preferences`    = p3 / pan,
+         `M5 attractiveness`    = unname(ch_w5[oi$attract$name[match(urn, oi$attract$urn)]]))
 # All four measures must be strictly positive, or the log response fails.
 stopifnot(nrow(cd) == 10, min(as.matrix(cd[CH_MEASURES])) > 0)
 
@@ -137,6 +147,18 @@ ch_r2  <- function(m, p) ch_one(m, p)$r2
 ch_combined    <- lm(log(cd[[CH_DEFAULT]]) ~ att8 + va, data = cd)
 ch_combined_r2 <- summary(ch_combined)$r.squared
 ch_combined_va <- coef(ch_combined)[["va"]]
+
+# M5's attractiveness: is the log scale the right one, does one school
+# carry it, and how much do the two faith schools - which have no
+# catchment term to carry their demand - drive it?
+ch_w5_lin   <- summary(lm(`M5 attractiveness` ~ att8, data = cd))$r.squared
+ch_w5_slope <- ch_one("M5 attractiveness", "att8")$slope
+ch_w5_loo   <- vapply(seq_len(nrow(cd)), function(i)
+  summary(lm(log(`M5 attractiveness`) ~ att8, data = cd[-i, ]))$r.squared,
+  numeric(1))
+ch_w5_8 <- summary(lm(log(`M5 attractiveness`) ~ att8,
+                      data = cd %>% filter(!urn %in% oi$schools$urn[oi$schools$faith])))$r.squared
+ch_w5_of <- function(s) cd$`M5 attractiveness`[cd$short == s]
 
 # Which admissions round the open model's own regression is fitted to.
 # Derived rather than assumed: its first-preference counts match exactly
@@ -3462,7 +3484,7 @@ The council's admissions guide points families at published performance
 data. It is worth asking which published number they respond to.
 
 ```{r fig-choice}
-#| fig-cap: "Preferences per place against headline attainment and against value added, for the ten Brighton & Hove secondary schools. Use the buttons to change which preference rank is counted. Five-year means; the vertical scale is logarithmic and the dashed line is the fitted log-linear relationship."
+#| fig-cap: "Preferences per place against headline attainment and against value added, for the ten Brighton & Hove secondary schools. Use the buttons to change which preference rank is counted, or switch to the full model's attractiveness (M5). Five-year means; the vertical scale is logarithmic and the dashed line is the fitted log-linear relationship."
 #| fig-height: 5.4
 #| column: page
 
@@ -3560,7 +3582,10 @@ ch_panel <- function(pred, show_ylab) {
         marker = list(size = 9, line = list(color = "white", width = 1)),
         customdata = cd$school,
         hovertemplate = paste0("<b>%{customdata}</b><br>", CH_PRED[[pred]],
-                               ": %{x:.1f}<br>%{y:.2f} preferences per place",
+                               ": %{x:.1f}<br>%{y:.2f} ",
+                               if (m == "M5 attractiveness")
+                                 "attractiveness (M5, city mean 1)"
+                               else "preferences per place",
                                "<extra></extra>"))
   }
 
@@ -3573,9 +3598,9 @@ ch_panel <- function(pred, show_ylab) {
                    text = if (show_ylab) "Preferences per place" else "",
                    font = list(size = 11.5)),
                  type = "log", zeroline = FALSE, gridcolor = "#eeeeee",
-                 tickvals = c(0.1, 0.15, 0.25, 0.4, 0.6, 1, 1.5, 2.5),
+                 tickvals = c(0.1, 0.15, 0.25, 0.4, 0.6, 1, 1.5, 2.5, 4),
                  ticktext = c("0.1", "0.15", "0.25", "0.4", "0.6",
-                              "1.0", "1.5", "2.5")))
+                              "1.0", "1.5", "2.5", "4.0")))
 }
 
 ch_ann <- function(m) list(
@@ -3594,14 +3619,19 @@ ch_ann <- function(m) list(
        text = sprintf("<b>Value added · R² = %.2f</b>",
                       ch_r2(m, "va"))))
 
+# Each panel holds a fit line and a point trace per measure, so the
+# second panel's block starts after 2 x the number of measures.
 ch_btn <- function(i) {
-  vis <- rep(FALSE, 16)
-  vis[c((2 * i - 1):(2 * i), 8 + (2 * i - 1):(2 * i))] <- TRUE
+  n <- length(CH_MEASURES)
+  vis <- rep(FALSE, 4 * n)
+  vis[c((2 * i - 1):(2 * i), 2 * n + (2 * i - 1):(2 * i))] <- TRUE
   rg <- ch_range(cd[[CH_MEASURES[i]]])
   list(method = "update", label = CH_BUTTONS[i],
        args = list(list(visible = vis),
                    list(annotations = ch_ann(CH_MEASURES[i]),
-                        yaxis.range = rg, yaxis2.range = rg)))
+                        yaxis.range = rg, yaxis2.range = rg,
+                        yaxis.title.text = if (CH_MEASURES[i] == "M5 attractiveness")
+                          "Attractiveness, M5 (city mean 1)" else "Preferences per place")))
 }
 
 plotly::subplot(ch_panel("att8", TRUE), ch_panel("va", FALSE),
@@ -3625,7 +3655,7 @@ plotly::subplot(ch_panel("att8", TRUE), ch_panel("va", FALSE),
 ```
 
 ```{r tbl-choice}
-#| tbl-cap: "How much of each preference measure the two attainment measures explain. Log-linear fits on ten schools, so these are descriptive rather than inferential."
+#| tbl-cap: "How much of each preference measure, and of the full model's attractiveness, the two attainment measures explain. Log-linear fits on ten schools, so these are descriptive rather than inferential."
 
 CH_FITS %>%
   mutate(r2 = sprintf("%.2f", r2),
@@ -3660,6 +3690,41 @@ because the authority publishes the guide.
 These are the same figures the open Brightopia model publishes, on the
 same specification and the same five-round window; the render fails if
 the two ever drift apart.
+
+**The same question, asked of the full model's attractiveness.** Section
+7 builds a different measure of how much families want each school: the
+attractiveness M5 balances so that, once distance, the catchment term and
+competition between schools have done their work, the model's demand for
+each school matches its share of the city's first preferences
+(@sec-m5-w). It is the number the simulator's attractiveness sliders
+multiply, and the **M5** button on the chart above shows it against the
+same two scores.
+
+On a log scale it follows headline attainment, R²
+`r sprintf("%.2f", ch_r2("M5 attractiveness", "att8"))`, and value added
+not at all, `r sprintf("%.2f", ch_r2("M5 attractiveness", "va"))`. The
+log scale is the right one. A straight line explains only
+`r sprintf("%.2f", ch_w5_lin)`, and on the log scale each point of
+Attainment 8 goes with about
+`r sprintf("%.0f", 100 * (exp(ch_w5_slope) - 1))`% more attractiveness ---
+a constant proportion, as with preferences per place, rather than a fixed
+amount. Refitting without each school in turn gives R² between
+`r sprintf("%.2f", min(ch_w5_loo))` and `r sprintf("%.2f", max(ch_w5_loo))`.
+The simulator converts its attractiveness sliders into Attainment 8
+points on this fit.
+
+It is a looser fit than preferences per place, and the reason is worth
+seeing. M5's attractiveness is what is left once geography and the
+catchment term have been accounted for, so the two faith schools, which
+have no catchment term to carry their demand, sit far above the rest ---
+Cardinal Newman at `r sprintf("%.1f", ch_w5_of("Cardinal Newman"))` times
+the city mean and King's at `r sprintf("%.1f", ch_w5_of("King's"))` ---
+while Dorothy Stringer, at `r sprintf("%.2f", ch_w5_of("Dorothy Stringer"))`,
+and Hove Park, at `r sprintf("%.2f", ch_w5_of("Hove Park"))`, sit low
+because the catchment term already explains most of their demand. Across
+the eight catchment schools alone, attainment explains
+`r sprintf("%.2f", ch_w5_8)`. Either way the finding stands: families ask
+for the headline score, not for what a school adds.
 
 ::: {.callout-note appearance="simple"}
 ## One round is not enough to carry a sign
@@ -5885,7 +5950,7 @@ is between `r sprintf("%.0f", exp(min(cal$gamma)))` and
 living in its catchment as to one outside it. **Catchment is the
 strongest behavioural term in the model, not the weakest.**
 
-#### Attractiveness balanced to what families ask for
+#### Attractiveness balanced to what families ask for {#sec-m5-w}
 
 In M1 to M4, $W_j$ is weighted preferences per place. Once distance,
 the catchment term and competing destinations act on it, the demand the
