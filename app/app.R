@@ -101,9 +101,13 @@ ui <- page_sidebar(
                 max = max(inp$demand$year), value = 2026, step = 1, sep = "",
                 ticks = FALSE),
     sliderInput("gamma", "How much living in the catchment counts",
-                min = 0, max = 3, value = inp$params$gamma, step = 0.1,
+                min = 0, max = 2, value = 1, step = 0.05, post = "×",
                 ticks = FALSE),
     div(class = "note", textOutput("gamma_note")),
+    sliderInput("exclusive", "Paired-catchment families who would take only one of the two",
+                min = 0, max = 2, value = 1, step = 0.1, post = "×",
+                ticks = FALSE),
+    div(class = "note", textOutput("exclusive_note")),
     hr(),
     radioButtons("rule", "When a school is full",
                  choices = c("Everyone has the same chance (the published model)" = "published",
@@ -185,8 +189,8 @@ server <- function(input, output, session) {
     updateSliderInput(session, "year", value = s$year)
     # A preset that does not name a catchment strength means the fitted
     # one, not "leave whatever the last preset set".
-    updateSliderInput(session, "gamma",
-                      value = s$gamma %||% inp$params$gamma)
+    updateSliderInput(session, "gamma", value = s$gamma %||% 1)
+    updateSliderInput(session, "exclusive", value = s$exclusive %||% 1)
     # Likewise a preset that says nothing about the admission rules means
     # the published model, not whatever the last preset left.
     updateRadioButtons(session, "rule", selected = s$rule %||% "published")
@@ -208,17 +212,31 @@ server <- function(input, output, session) {
 
   output$preset_note <- renderText(inp$presets[[input$preset]]$note)
 
+  CATCH_NAME <- c(PACA = "Portslade Aldridge", Hove_Blatch = "Hove Park / Blatchington",
+                  Patcham = "Patcham", DS_Varndean = "Stringer / Varndean",
+                  BACA = "Brighton Aldridge", Longhill = "Longhill")
+
   output$gamma_note <- renderText({
     req(input$gamma)
     s <- sim()
-    fitted <- inp$params$gamma
-    base <- sprintf("%.0f%% of children are modelled as going to a school in their own catchment. ",
-                    100 * s$in_catch_share)
-    paste0(base, if (abs(input$gamma - fitted) < 0.05)
-      sprintf("%.1f is the value fitted on the real preferences — a nudge, which is why changing the map moves so few children. Turn it up to see what a binding catchment would do.", fitted)
-      else sprintf("The fitted value is %.1f; this is %s.", fitted,
-                   if (input$gamma > fitted) "a stronger catchment than families actually behave as though they face"
-                   else "a weaker one"))
+    g <- inp$params$gamma
+    paste0(
+      sprintf("%.0f%% of children are modelled as going to a school in their own catchment. ",
+              100 * s$in_catch_share),
+      sprintf("The catchment term is fitted catchment by catchment on the first preferences families actually give, from %.1f in %s to %.1f in %s. ",
+              min(g), CATCH_NAME[names(which.min(g))], max(g), CATCH_NAME[names(which.max(g))]),
+      if (abs(input$gamma - 1) < 0.03) "At ×1 the app uses those fitted values."
+      else sprintf("At ×%.2f every catchment counts %s than families behave as though it does.",
+                   input$gamma, if (input$gamma > 1) "more" else "less"))
+  })
+
+  output$exclusive_note <- renderText({
+    req(input$exclusive)
+    ex <- inp$params$exclusive
+    sh <- function(h, s) 100 * ex$share[ex$catchment == h & grepl(s, ex$school)] * input$exclusive
+    sprintf("Families who would not take the other school if refused at their choice: %.0f%% of Stringer / Varndean families would take only Varndean and %.0f%% only Stringer; %.0f%% of Hove Park / Blatchington families only Blatchington Mill and %.0f%% only Hove Park. The council's table bounds these rather than pinning them, so they can be scaled.",
+            sh("DS_Varndean", "Varndean"), sh("DS_Varndean", "Stringer"),
+            sh("Hove_Blatch", "Blatchington"), sh("Hove_Blatch", "Hove Park"))
   })
 
   w_now <- reactive({
@@ -244,7 +262,7 @@ server <- function(input, output, session) {
     req(all(is.finite(w)), all(is.finite(p)))
     run_sim(inp, w_mult = w, pans = p, site = input$site,
             design = input$design, year = input$year, gamma = input$gamma,
-            rules = rule_args())
+            exclusive = input$exclusive, rules = rule_args())
   })
   met <- reactive(outcomes(inp, sim()))
 
@@ -296,7 +314,8 @@ server <- function(input, output, session) {
     regrouped <- sum(z[names(base)] != base, na.rm = TRUE)
     now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
                    design = "Current catchments", year = input$year,
-                   gamma = input$gamma, rules = rule_args())
+                   gamma = input$gamma, exclusive = input$exclusive,
+                   rules = rule_args())
     moved <- sum(pmax(0, sim()$schools$intake - now$schools$intake))
     if (regrouped == 0)
       sprintf("This is the map in force. %.0f%% of children are modelled as attending a school in their own catchment.",
@@ -835,7 +854,8 @@ server <- function(input, output, session) {
     bind_rows(lapply(seq_len(nrow(CITY)), function(i) {
       nm <- CITY$name[i]
       s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w, pans = p,
-                           rules = rule_args(),
+                           rules = rule_args(), gamma = input$gamma,
+                           exclusive = input$exclusive,
                            site = input$site, design = input$design,
                            year = input$year)
       data.frame(
@@ -922,7 +942,8 @@ server <- function(input, output, session) {
     # The other schools stay where the user has set them: the question
     # is what THIS school needs given everything else on the screen.
     s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w_now(), pans = p,
-                           rules = rule_args(),
+                           rules = rule_args(), gamma = input$gamma,
+                           exclusive = input$exclusive,
                          site = input$site, design = input$design,
                          year = input$year)
     if (is.infinite(s$multiplier))
@@ -946,10 +967,13 @@ server <- function(input, output, session) {
   })
 
   output$caveats <- renderUI(HTML(paste0(
-    "<p><b>This is a model, and an uncalibrated one.</b> The flows come from ",
-    "the spatial interaction model in section 7 of the strategic view, fitted ",
-    "on published preference and offer counts. It has never seen a real ",
-    "application. Every number here moves with its assumptions.</p>",
+    "<p><b>This is a model, calibrated at catchment level and no finer.</b> ",
+    "The flows come from the full model in section 7 of the strategic view ",
+    "(M5). Its catchment terms, school attractiveness and paired-catchment ",
+    "exclusivity are fitted to the council's catchment-level preference table ",
+    "from its evidence to the Schools Adjudicator; distance decay is set, not ",
+    "fitted. It has never seen an individual application, and every number ",
+    "here moves with its assumptions.</p>",
     "<p><b>Attractiveness is a single number per school.</b> Moving the slider ",
     "says 'suppose families wanted this school this much more'. It does not ",
     "say how that would be achieved, how long it would take, or whether it is ",
@@ -977,8 +1001,14 @@ server <- function(input, output, session) {
     "makes the mean longer than the figure in section 8, which assigns each ",
     "child to one school. Compare configurations with each other here; do not ",
     "read the level against the document.</p>",
-    "<p><b>The catchment term is a nudge, not a rule.</b> Living in a ",
-    "catchment raises the odds of choosing that school; it does not guarantee ",
+    "<p><b>The catchment term describes families, not the rules.</b> It is ",
+    "fitted catchment by catchment to what families ask for, and it is strong: ",
+    "four in five first preferences from the Stringer / Varndean catchment go ",
+    "to one of its two schools. It follows the neighbourhood when the map is ",
+    "redrawn, because it describes how those families choose; whether families ",
+    "would follow a new boundary as closely as the old one is not something ",
+    "the data can say. Living in a catchment raises the odds of choosing that ",
+    "school; it does not guarantee ",
     "a place. The published model gives every applicant to a full school the ",
     "same chance. Switch 'When a school is full' to run the council's ",
     "oversubscription priorities instead; the Catchments tab says how, and ",

@@ -236,11 +236,17 @@ ex_wf_recomp  <- ex_lev$workforce[ex_lev$who == "All pupils"]
 ```
 
 ::: {.callout-note appearance="simple"}
-## Everything here is built from published data
+## No pupil-level data is used here
 
-No pupil-level record is used anywhere in this document. Every figure
-comes from data the council, the DfE or the ONS has already published,
-or from a model built on top of it. Where a question can only be
+No pupil-level record is used anywhere in this document. Almost every
+figure comes from data the council, the DfE or the ONS has already
+published, or from a model built on top of it. The one exception is a
+table the council gave the Schools Adjudicator in the 2026/27 case: how
+many first, second and third preferences each catchment's children gave
+each school, over three rounds (item 8.1 of its evidence). It was
+received as a party to that case rather than published; it is aggregated
+to catchment and identifies no one; and the full model in section 7 is
+calibrated to it (@sec-m5). Where a question can only be
 answered with data the council holds but has not released, that is said
 plainly rather than glossed over --- and section 9 lists what those
 releases would be.
@@ -4995,7 +5001,7 @@ fm <- bh_data("flow_map.rds")
 
 FM_LABELS <- c(M0 = "Brightopia · Wj = 1",
                M1 = "With demand · Wj = weighted preferences",
-               M4 = "Full model · capacity, catchment, competition")
+               M5 = "Full model · calibrated to catchment preferences")
 
 LH_NAME <- "Longhill High School"
 
@@ -5111,8 +5117,8 @@ Brightopia, with every school equally attractive, it draws
 catchment --- the model has it reaching deep into Kemptown, Whitehawk
 and beyond. Add what families actually ask for and the total falls to
 `r fmt_n(g_of("M1", "total"))`; add the capacity ceiling and the other
-terms and it settles at `r fmt_n(g_of("M4", "total"))` children,
-**`r fmt_pct(100 * g_of("M4", "share"), 0)`** of them from the Longhill
+terms and it settles at `r fmt_n(g_of("M5", "total"))` children,
+**`r fmt_pct(100 * g_of("M5", "share"), 0)`** of them from the Longhill
 catchment.
 
 ```{r tbl-flow-origin}
@@ -5123,7 +5129,7 @@ lh_catch %>%
          flow = round(flow)) %>%
   select(catchment, model, flow) %>%
   pivot_wider(names_from = model, values_from = flow, values_fill = 0) %>%
-  arrange(desc(.data[[FM_LABELS[["M4"]]]])) %>%
+  arrange(desc(.data[[FM_LABELS[["M5"]]]])) %>%
   rename(`Home catchment of the neighbourhood` = catchment) %>%
   knitr::kable(align = "lrrr")
 ```
@@ -5358,6 +5364,11 @@ slightly **worse**, `r fmt_n(mt_get("M2","mae_free"))` to
 `r fmt_n(mt_get("M3","mae_free"))`. Once children are held to real
 capacities in a city nine miles across, the catchment rule has little
 left to do that proximity was not already doing.
+
+That is a finding about *offers*, and it does not survive being asked
+about preferences instead. Fitted to what each catchment's children ask
+for, the catchment term is the strongest behavioural term in the model
+(@sec-m5).
 
 **The competing-destinations term helps a little, with the wrong sign.**
 
@@ -5641,7 +5652,8 @@ mt_table("M3", "M2") %>% knitr::kable(align = "lrrrrrc")
 ```
 
 `r mt_line("M3")` The term moves almost nothing, and what it moves it
-moves in both directions. This is the rung that fails.
+moves in both directions. Against offers, this is the rung that fails;
+against preferences it is the one that matters most (@sec-m5).
 
 ### M4 --- adding competing destinations {#sec-m4}
 
@@ -5753,6 +5765,10 @@ after a capacity constraint has already absorbed most of the variance
 should be read as "this term has little left to do", not as a
 measurement of agglomeration.
 
+M5 below does estimate the catchment term, from a different target: the
+catchment-level preference table, which has sixty cells rather than ten
+totals and is not already fixed by the admission numbers.
+
 **Adding terms until the fit improves is not validation.** Each rung
 here has more freedom than the last, so some improvement is guaranteed.
 The reason the capacity result is worth stating is that it is not a
@@ -5768,13 +5784,244 @@ published second-preference profile hurts against total offers. Both
 targets are real, and no single specification here is best at both.
 :::
 
+### M5 --- calibrated to what each catchment asks for {#sec-m5}
+
+```{r m5-load}
+#| include: false
+cal <- mt$calibrated
+catch_lab <- c(PACA = "Portslade Aldridge", Hove_Blatch = "Hove Park / Blatchington",
+               Patcham = "Patcham", DS_Varndean = "Stringer / Varndean",
+               BACA = "Brighton Aldridge", Longhill = "Longhill")
+own_of <- function(h, col) cal$own[[col]][cal$own$home == h]
+fit_of <- function(m, col) cal$fit[[col]][cal$fit$model == m]
+w_of   <- function(n) cal$wanted$wanted[cal$wanted$name == n]
+pan26_of <- function(n) oi$schools$pan2026[oi$schools$name == n]
+g_hi <- names(which.max(cal$gamma)); g_lo <- names(which.min(cal$gamma))
+CN <- "Cardinal Newman Catholic School"; HP <- "Hove Park School"
+```
+
+Every rung so far is scored against the offers the council made, and from
+M2 onwards most of those offers are admission numbers the model has been
+told. That is why the catchment term came out at
+$\gamma$ = `r sprintf("%.1f", mt$gamma_hat)`: it was asked what is left for
+catchment to explain once capacity has done its work. That is not the
+question a catchment policy turns on. The question is **how strongly
+families follow the map when they choose**, and it has an answer in data.
+
+The council's evidence to the Schools Adjudicator includes, for each
+catchment and each of the `r length(cal$rounds)` rounds from
+`r min(cal$rounds)` to `r max(cal$rounds)`, how many first, second and
+third preferences its children gave each school. It is a flow matrix at
+catchment level --- sixty cells, where the offers are ten totals, and not
+already fixed by the admission numbers --- and it shows something M4 gets
+badly wrong.
+
+```{r tbl-m5-own}
+#| tbl-cap: "Share of each catchment's first preferences going to its own catchment school or schools: what families did, where M4 sends that catchment's demand, and M5. Pooled over three rounds."
+cal$own %>%
+  arrange(desc(observed)) %>%
+  transmute(Catchment = unname(catch_lab[home]),
+            `Families' first preferences` = fmt_pct(100 * observed, 0),
+            M4 = fmt_pct(100 * M4, 0),
+            M5 = fmt_pct(100 * M5, 0)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+**Families follow their catchment far more closely than M4 allows.**
+`r fmt_pct(100 * own_of("DS_Varndean", "observed"), 0)` of first
+preferences from the Stringer / Varndean catchment go to one of its two
+schools; M4 sends `r fmt_pct(100 * own_of("DS_Varndean", "M4"), 0)` of that
+catchment's demand there and spreads the rest across the city. With the
+demand spread thin, the pressure that makes Varndean turn catchment
+children away never builds in the model --- and Hove Park, next to the
+densest part of Hove, collects the demand Stringer and Varndean should
+have.
+
+M5 fits three things to the table, all on **uncapped** demand --- what
+families ask for --- and then applies the capacity ceiling exactly as M2
+does.
+
+#### A catchment term for each catchment
+
+$$
+T_{ij} \;=\; A_i\, O_i\; W_j\; C_j^{\delta}\; e^{\gamma_{h(i)} \kappa_{ij}}\; c_{ij}^{-\beta}
+$$
+
+where $h(i)$ is the catchment neighbourhood $i$ lies in. The six
+$\gamma_h$ are fitted by multinomial deviance: how likely the first
+preferences each catchment's children actually gave are, under the shares
+the model gives them. The fit uses the pre-2024 map the preferences were
+made under.
+
+```{r tbl-m5-gamma}
+#| tbl-cap: "The catchment term, fitted for each catchment. e to the gamma is how many times more attractive a school is to a family living in its catchment than to an otherwise identical family outside it."
+tibble(home = names(cal$gamma), gamma = unname(cal$gamma)) %>%
+  arrange(desc(gamma)) %>%
+  transmute(Catchment = unname(catch_lab[home]),
+            `γ` = sprintf("%.1f", gamma),
+            `Pull of the catchment school` = sprintf("×%.1f", exp(gamma))) %>%
+  knitr::kable(align = "lrr")
+```
+
+The terms run from `r sprintf("%.1f", min(cal$gamma))` in
+`r catch_lab[g_lo]` to `r sprintf("%.1f", max(cal$gamma))` in
+`r catch_lab[g_hi]`, against the single
+`r sprintf("%.1f", mt$gamma_hat)` fitted to offers. A catchment school
+is between `r sprintf("%.0f", exp(min(cal$gamma)))` and
+`r sprintf("%.0f", exp(max(cal$gamma)))` times as attractive to a family
+living in its catchment as to one outside it. **Catchment is the
+strongest behavioural term in the model, not the weakest.**
+
+#### Attractiveness balanced to what families ask for
+
+In M1 to M4, $W_j$ is weighted preferences per place. Once distance,
+the catchment term and competing destinations act on it, the demand the
+model generates no longer matches the demand it was built from. M5
+re-balances $W_j$ so the model's uncapped demand for each school is that
+school's share of the city's first preferences in the same table.
+
+```{r tbl-m5-w}
+#| tbl-cap: "Attractiveness before and after balancing, both scaled to a mean of one across the city's ten schools, and the demand M5 puts on each school before the capacity ceiling, for the 2026 cohort."
+tibble(name = names(cal$W),
+       W4 = unname(cal$W_wprefs[names(cal$W)]), W5 = unname(cal$W)) %>%
+  mutate(W4 = W4 / mean(W4), W5 = W5 / mean(W5)) %>%
+  left_join(cal$wanted, by = "name") %>%
+  left_join(oi$schools %>% select(name, pan2026), by = "name") %>%
+  arrange(desc(wanted / pan2026)) %>%
+  transmute(School = short_sch(name),
+            `W, M1 to M4` = sprintf("%.2f", W4),
+            `W, M5` = sprintf("%.2f", W5),
+            `Demand before the ceiling` = fmt_n(wanted),
+            PAN = fmt_n(pan2026),
+            `Demand per place` = sprintf("%.2f", wanted / pan2026)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+Two schools move most. **Cardinal Newman** was under-weighted: families
+ask for it city-wide and it gets no catchment term, so a weight built
+from preferences per place left the model wanting fewer places there than
+it has. M5 puts `r fmt_n(w_of(CN))` children's demand on its
+`r fmt_n(pan26_of(CN))` places, and it fills --- as it always does.
+**Hove Park** was the opposite, and now draws `r fmt_n(w_of(HP))` against
+`r fmt_n(pan26_of(HP))` places, which is why it no longer fills in the
+model. It does not fill in reality either.
+
+Balancing to *weighted* preferences instead of first preferences was
+tried. It fills Hove Park, which does not fill, so first preferences are
+used: they are also one unit per child, which is what the model's flows
+are.
+
+#### Families who would take only one of the pair
+
+Every model up to M4 treats a child in a paired catchment as equally
+content with either school: refused at Varndean, the child falls back on
+Stringer. Some families would not. A child who names Varndean and not
+Stringer, and is refused at Varndean, is placed somewhere else --- and
+that child is exactly who is displaced from the catchment. M5 carries
+those families as populations of their own, whose choice sets leave the
+other school out.
+
+```{r tbl-m5-excl}
+#| tbl-cap: "Families in the two paired catchments who would accept only one school of the pair. The table counts how many children named each school at any rank, not who named both, so the share is bounded rather than observed. The share used sits midway between the most overlap the counts allow and what independent naming would give."
+cal$exclusive %>%
+  transmute(Catchment = unname(catch_lab[catchment]),
+            `Would take only` = short_sch(school),
+            `Named it, three rounds` = fmt_n(named),
+            `Share used` = fmt_pct(100 * share, 1),
+            Bounds = sprintf("%s to %s", fmt_pct(100 * share_lo, 1),
+                             fmt_pct(100 * share_hi, 1))) %>%
+  knitr::kable(align = "llrrr")
+```
+
+The default is not taken to either end. Families treat a pair as
+substitutes, so the real overlap is above what independent naming would
+produce, and the share of exclusive families below it. The simulator lets
+it be scaled.
+
+#### What M5 changes
+
+```{r tbl-m5-fit}
+#| tbl-cap: "Fit to the catchment preference table: multinomial deviance, and the root-mean-square gap between modelled and observed shares across the sixty catchment by school cells."
+cal$fit %>%
+  transmute(Model = model, Deviance = fmt_n(deviance),
+            `Cell RMSE, percentage points` = sprintf("%.1f", cell_rmse_pp)) %>%
+  knitr::kable(align = "lrr")
+```
+
+Against what families ask for, the deviance falls from
+`r fmt_n(fit_of("M4", "deviance"))` to `r fmt_n(fit_of("M5", "deviance"))`
+and the typical gap in a catchment's share for a school from
+`r sprintf("%.1f", fit_of("M4", "cell_rmse_pp"))` percentage points to
+`r sprintf("%.1f", fit_of("M5", "cell_rmse_pp"))`.
+
+```{r tbl-m5}
+#| tbl-cap: "M5 against the offers made. The change column is against M4. M5 is not fitted to these numbers, so this is a test it was not built to pass."
+mt_table("M5", "M4") %>% knitr::kable(align = "lrrrrrc")
+```
+
+`r mt_line("M5")` Against the offers it is not built to reproduce, M5
+lands close to M4 overall; the difference is in *which* schools the
+ceiling binds on. Cardinal Newman fills and Hove Park does not, as in
+the real rounds, and the Stringer / Varndean split is
+`r fmt_pct(100 * sv$mod_share[sv$model == "M5"], 0)` to Varndean against
+an observed `r fmt_pct(100 * sv$obs_share[1], 0)`.
+
+::: {.callout-note appearance="simple"}
+## What M5 still does not do
+
+**Distance decay is set, not fitted.** A catchment-level table cannot
+separate how far families will travel within a catchment from how
+strongly they follow it. $\beta$ stays at
+`r sprintf("%.1f", mt$beta)`, the decay the accessibility work settles
+on.
+
+**The catchment terms are fitted to one map.** They describe how
+families in each neighbourhood chose under the boundaries they had.
+Carried to a redrawn map, they assume families would follow a new
+boundary as closely as the old one, which no data here can confirm.
+
+**Two catchments are still under-fitted.** Longhill's children put
+Longhill first `r fmt_pct(100 * own_of("Longhill", "observed"), 0)` of
+the time and M5 gives it `r fmt_pct(100 * own_of("Longhill", "M5"), 0)`;
+Portslade Aldridge `r fmt_pct(100 * own_of("PACA", "observed"), 0)`
+against `r fmt_pct(100 * own_of("PACA", "M5"), 0)`. With one distance
+decay for the whole city, the model cannot make eastern and western
+families both follow their catchment this closely and travel as far as
+they do.
+
+**The exclusive families are a bounded assumption.** The share is taken
+from inside the bounds the table allows, not measured.
+:::
+
+### The modelling choices, and why {#sec-model-choices}
+
+Every modelling decision behind the full model and the simulator, in one
+place. "Set" means chosen and stated rather than estimated.
+
+| Component | What is used | Where it comes from | Why, and what else was tried |
+|:---|:---|:---|:---|
+| What a flow is | Preferences, not offers | --- | Offers are rationed. A model fitted to them learns the admission numbers, which is what happened to $\gamma$ in M3. |
+| Who is modelled | Brighton & Hove children, and the ten city schools as destinations | Cohort estimates from section 3 | Children leaving for Peacehaven, independent schools or elsewhere are not modelled, so every school's intake is slightly high. |
+| Journey cost | Routed walk and bus minutes, $c_{ij}^{-\beta}$ | r5r over OpenStreetMap and bus timetables | Straight-line distance sends families across hills and water no bus crosses. |
+| Distance decay | $\beta$ = `r sprintf("%.1f", mt$beta)` | Set | Not identifiable from catchment-level data. It is the value the accessibility work settles on, inside the open model's swept range. |
+| School attractiveness | $W_j$ balanced so demand matches each school's share of first preferences | Catchment preference table, school totals | Weighted preferences per place (M1 to M4) left Cardinal Newman short of its demand and gave Hove Park more than twice its own. Balancing to weighted preferences filled Hove Park, which does not fill. |
+| Catchment | A term for each catchment, $e^{\gamma_h}$, by where a family lives | Catchment preference table, by deviance | One city-wide term fitted to offers came out at `r sprintf("%.1f", mt$gamma_hat)`. Fitted to preferences the terms run from `r sprintf("%.1f", min(cal$gamma))` to `r sprintf("%.1f", max(cal$gamma))`. Fitted on the pre-2024 map the preferences were made under; run on the map in force. Under a redrawn map the term stays with the neighbourhood. |
+| Paired catchments | A share of families who would take only one school of the pair | Bounded by the same table; set midway | The table counts who named each school, not who named both. Without it, a child refused at one school of the pair always falls back on the other, and displacement from those catchments is understated. |
+| Competing destinations | $C_j^{\delta}$, $\delta$ = `r sprintf("%+.1f", cal$delta)` | Fitted in the ladder, against offers | Kept at its ladder value and not re-fitted. It is a small term; @sec-m4 sets out why its sign should not be read as a finding. |
+| Faith schools | Open to every family | --- | Holding half the city ineligible fits the second-preference profile better but stops Cardinal Newman filling, and it fills. |
+| Capacity | A one-sided ceiling by iterative proportional fitting | Admission numbers in force | Applicants to a full school are cut back in proportion, which is what a random tie-break averages to --- and the council breaks ties at random. |
+| Admission rules (simulator only) | Optionally, the council's 2026/27 priorities as a tiered ceiling at the six community schools | Admissions guide 2027--28 | FSM eligibility is the IDACI score scaled by one take-up constant, set so FSM-priority offers at the three schools that ration match the 192 made in September 2026. Priority-6 places are not fitted. |
+| Offer day, not September | Every comparison is with national offer day | --- | Six months of appeals and movement follow offer day, so September rolls are not what an allocation produces. |
+
+
 
 ## Every school, under the full model {#sec-flow-all}
 
 @sec-flow-map showed Longhill under each rung of the ladder. This is the
-other nine, all under the full model --- capacity ceiling, catchment
-term and competing-destinations term in place, the specification the
-tables above land on.
+other nine, all under the full model, M5 (@sec-m5) --- attractiveness
+balanced to first preferences, a catchment term for each catchment,
+competing destinations, the paired-catchment families who would take
+only one of the two schools, and the capacity ceiling.
 
 ```{r flow-all-data}
 #| include: false

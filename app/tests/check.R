@@ -28,18 +28,18 @@ mt  <- readRDS(file.path(ROOT, "data", "model_terms.rds"))
 fail <- character(0)
 note <- function(...) message("  ", ...)
 
-# ---- M4, the full model, at the published settings -------------------
+# ---- M5, the full model, at the published settings -------------------
 r <- run_sim(inp, site = "now", design = "Current catchments",
              year = 2026, capped = TRUE)
 
-pub <- mt$runs[["M4"]] %>% select(name, published = modelled)
+pub <- mt$runs[["M5"]] %>% select(name, published = modelled)
 cmp <- r$schools %>%
   filter(city | name %in% inp$out_of_city) %>%
   select(name, app = intake) %>%
   inner_join(pub, by = "name") %>%
   mutate(diff = app - published)
 
-note(sprintf("M4: %d schools compared, largest difference %.2f children",
+note(sprintf("M5: %d schools compared, largest difference %.2f children",
              nrow(cmp), max(abs(cmp$diff))))
 print(as.data.frame(cmp %>% arrange(desc(abs(diff))) %>%
   transmute(name = substr(name, 1, 30), app = round(app, 1),
@@ -51,7 +51,7 @@ if (nrow(cmp) < 10)
 # A tenth of a child is well inside the tolerance of the capacity
 # balancer; anything larger means the two models differ.
 if (max(abs(cmp$diff)) > 0.5)
-  fail <- c(fail, sprintf("M4 differs from the published run by up to %.2f children",
+  fail <- c(fail, sprintf("M5 differs from the published run by up to %.2f children",
                           max(abs(cmp$diff))))
 
 # ---- The constraints the model claims to satisfy ---------------------
@@ -104,8 +104,8 @@ if (length(lh_disp) != 1 || lh_disp > 1)
 # Turning the catchment up keeps more children local overall, and turns
 # what is left from choosing into displacement.
 tight <- outcomes(inp, run_sim(inp, site = "now", design = "Current catchments",
-                               year = 2026, gamma = 3))$catchment
-note(sprintf("catchment strength 3: outside %.0f%%, of which displaced %.0f%%",
+                               year = 2026, gamma = 1.6))$catchment
+note(sprintf("catchment terms x1.6: outside %.0f%%, of which displaced %.0f%%",
              100 * tight$outside_share, 100 * tight$displaced_share))
 if (tight$outside_share >= cd$outside_share)
   fail <- c(fail, "a stronger catchment does not keep more children local")
@@ -271,6 +271,18 @@ if (sum(off$flows$p6) > 1e-9 || sum(off$tiers$p45_in + off$tiers$p45_out) > 1e-9
 one <- run_sim(inp, year = 2026, design = "Flow regions, one per school", rules = pr())
 note(sprintf("one region per school: %.1f priority-6 places at the community schools",
              sum(one$tiers$p6)))
+
+# ---- Families who would take only one of a pair ----------------------
+# Switching them off must not raise displacement in Stringer/Varndean: a
+# child who will not take the other school is the one the priorities
+# cannot place at home.
+ex_on  <- outcomes(inp, run_sim(inp, year = 2026, rules = pr()))$catchment$outside
+ex_off <- outcomes(inp, run_sim(inp, year = 2026, exclusive = 0, rules = pr()))$catchment$outside
+sv_d <- function(o) o$displaced[grepl("Stringer", o$label)]
+note(sprintf("Stringer/Varndean displaced under the priorities: %.1f with only-one-of-the-pair families, %.1f without",
+             sv_d(ex_on), sv_d(ex_off)))
+if (sv_d(ex_on) < sv_d(ex_off) - 1e-6)
+  fail <- c(fail, "families who would take only one of a pair do not raise displacement")
 
 if (length(fail)) {
   message("\nFAILED:")

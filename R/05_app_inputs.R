@@ -147,10 +147,24 @@ message(sprintf("  %d catchment designs, all covering every neighbourhood",
 
 # ---- 4. Fitted parameters -------------------------------------------
 
-params <- list(beta = mt$beta, sigma = mt$sigma,
-               gamma = mt$gamma_hat, delta = mt$delta_hat)
-message(sprintf("  beta %.2f, gamma %.2f, delta %.2f, sigma %.0f",
-                params$beta, params$gamma, params$delta, params$sigma))
+# M5, the open model's calibrated rung: a catchment term per catchment and
+# the paired-catchment exclusivity, both fitted to the council's
+# catchment x school preference matrix, and attractiveness balanced to
+# first preferences. See section 7.6 of the document.
+cal <- mt$calibrated
+stopifnot(!is.null(cal), length(cal$gamma) == 6, all(is.finite(cal$W)))
+params <- list(beta = cal$beta, sigma = cal$sigma, delta = cal$delta,
+               gamma = cal$gamma, gamma_m4 = cal$gamma_m4,
+               exclusive = cal$exclusive %>%
+                 select(catchment, school, share, share_lo, share_hi))
+message(sprintf("  beta %.2f, delta %.2f, sigma %.0f; catchment terms %s",
+                params$beta, params$delta, params$sigma,
+                paste(sprintf("%s %.1f", names(params$gamma), params$gamma), collapse = ", ")))
+
+# Attractiveness is M5's balanced W for the city schools. Peacehaven is not
+# modelled as a destination and keeps its published-preference value.
+schools$W[schools$city] <- unname(cal$W[schools$name[schools$city]])
+stopifnot(!any(is.na(schools$W)))
 
 # ---- 4b. What attractiveness means in Attainment 8 ------------------
 # Section 5.4 finds that the published number families respond to is
@@ -454,7 +468,7 @@ presets <- list(
   `Make the catchment count` = list(
     note = "Everything as it is, but living in a catchment weighs far more heavily on the choice than families currently behave as though it does. This is the other way to fill a school, and it needs nothing from the school itself.",
     design = "Current catchments", site = "now", year = 2026,
-    gamma = 3, pan = NULL, w = NULL),
+    gamma = 1.6, pan = NULL, w = NULL),
   `Make Longhill wanted` = list(
     note = "Longhill's attractiveness lifted to Dorothy Stringer's, everything else unchanged. The question is what it takes, and who loses the children.",
     design = "Current catchments", site = "now", year = 2026,

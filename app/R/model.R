@@ -1,13 +1,15 @@
 # app/R/model.R — the spatial interaction model, run live
 # ======================================================================
 # This is the same model as section 7 of the strategic view, at its
-# fullest rung (M4): weighted preferences, a capacity ceiling, a
-# catchment term and competing destinations. It is reimplemented here
+# fullest rung (M5): attractiveness balanced to first preferences, a
+# catchment term fitted for each catchment, competing destinations, the
+# families in the paired catchments who would take only one of the two
+# schools, and a capacity ceiling. It is reimplemented here
 # rather than imported because the app has to run it on every slider
 # move, with attractiveness and admission numbers that no precomputed
 # run contains.
 #
-# It is checked against the published M4 figures in app/tests/check.R. If
+# It is checked against the published M5 figures in app/tests/check.R. If
 # this file and the document ever disagree, that check fails.
 # ======================================================================
 
@@ -176,12 +178,17 @@ ipf_priorities <- function(flow, zone, name, o_target, cap, pan, fsm_share,
 #' @param design a name from inp$designs
 #' @param year an entry year; scales the cohort, not its geography
 #' @param capped whether the admission numbers bind
+#' @param gamma NULL for the fitted catchment terms, or a multiplier on all
+#'   of them together
+#' @param exclusive NULL for the fitted shares of paired-catchment families
+#'   who would take only one of the two schools, or a multiplier on them
 #' @param rules NULL for the published model's proportional ceiling, or a
 #'   list(rule = "priorities", p6_share, fsm, targeted) for the council's
 #'   oversubscription priorities
 run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
-                    capped = TRUE, gamma = NULL, rules = NULL) {
+                    capped = TRUE, gamma = NULL, rules = NULL,
+                    exclusive = NULL) {
 
   # City schools only, which is what section 7 models. Peacehaven is in
   # the cost matrix and in the bundle, but the published model does not
@@ -224,18 +231,51 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     !is.na(dsg$school[d$name]) &
       dsg$school[d$name] == dsg$zone[d$zone])
 
-  # How much living in a catchment counts. The fitted value is a nudge,
-  # not a rule - which is why changing the map moves so few children -
-  # and the app lets it be turned up so that can be seen rather than
-  # taken on trust.
-  g <- if (is.null(gamma)) inp$params$gamma else gamma
+  # In the two paired catchments some families would take only one of
+  # the two schools. They are carried as populations of their own whose
+  # choice sets leave the other school out, so a child refused at
+  # Varndean who would not take Stringer looks elsewhere instead of
+  # falling back on it. A trait of where they live, so it follows the
+  # zone's own catchment whatever map is in force.
+  ex_mult <- if (is.null(exclusive)) 1 else exclusive
+  ex <- inp$params$exclusive
+  pops <- if (is.null(ex) || !nrow(ex))
+    data.frame(catchment = character(0), pop = character(0),
+               pop_share = numeric(0), excluded = character(0))
+  else dplyr::bind_rows(lapply(split(ex, ex$catchment), function(e) {
+    s <- pmin(e$share * ex_mult, 0.49)
+    data.frame(catchment = e$catchment[1],
+               pop = c("either", paste("only", e$school)),
+               pop_share = c(1 - sum(s), s),
+               excluded = c(NA_character_, rev(e$school)),
+               stringsAsFactors = FALSE)
+  }))
+  d <- d %>%
+    dplyr::left_join(pops, by = "catchment", relationship = "many-to-many") %>%
+    dplyr::mutate(pop = dplyr::coalesce(pop, "either"),
+                  pop_share = dplyr::coalesce(pop_share, 1)) %>%
+    dplyr::filter(pop_share > 0, is.na(excluded) | name != excluded) %>%
+    dplyr::mutate(orig = paste(zone, pop, sep = "#"), Oi_pop = Oi * pop_share)
+  o_pop <- tapply(d$Oi_pop, d$orig, function(v) v[1])
+
+  # How much living in a catchment counts, catchment by catchment. Fitted
+  # in the open model's M5 to the first preferences each catchment's
+  # children actually give each school, and far from uniform: a
+  # moderate pull in some catchments, a strong one in Stringer/Varndean.
+  # Like the paired-school trait it follows the zone's own catchment; the
+  # slider scales all of them together.
+  g_mult <- if (is.null(gamma)) 1 else gamma
+  g_fit <- inp$params$gamma
+  g <- if (is.null(names(g_fit))) rep(g_fit, nrow(d)) else unname(g_fit[d$catchment])
+  g[is.na(g)] <- 0
 
   util <- d$Wj * d$cij^(-inp$params$beta) *
-    exp(g * d$in_catch + inp$params$delta * log(d$Cj))
+    exp(g_mult * g * d$in_catch + inp$params$delta * log(d$Cj))
 
-  # Production-constrained: every neighbourhood places its own children.
-  A <- tapply(util, d$zone, sum)
-  d$flow <- util * (z$Oi[match(d$zone, z$zone)] / A[d$zone])
+  # Production-constrained: every population in every neighbourhood places
+  # its own children.
+  A <- tapply(util, d$orig, sum)
+  d$flow <- util * d$Oi_pop / A[d$orig]
 
   # Keep what the model wanted before the ceiling bit. The difference
   # between this and the capped flow is the whole of the displacement, and
@@ -258,8 +298,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   tiers <- NULL
 
   if (capped && rule$rule == "published")
-    d$flow <- as.numeric(ipf_cap(d$flow, d$zone, d$name,
-                                 setNames(z$Oi, z$zone), cap))
+    d$flow <- as.numeric(ipf_cap(d$flow, d$orig, d$name, o_pop, cap))
 
   if (capped && rule$rule == "priorities") {
     stopifnot(!is.null(rl), "fsm" %in% names(z))
@@ -277,8 +316,10 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     s6 <- unname(dsg$zone[d$zone]) %in% single & !in_c
     com <- d$name %in% rl$community
 
-    res <- ipf_priorities(d$flow, d$zone, d$name, setNames(z$Oi, z$zone),
-                          cap, cap, setNames(share, z$zone),
+    share_z <- setNames(share, z$zone)
+    share_o <- setNames(unname(share_z[sub("#.*$", "", names(o_pop))]), names(o_pop))
+    res <- ipf_priorities(d$flow, d$orig, d$name, o_pop,
+                          cap, cap, share_o,
                           in_c, s6, com, rule$p6_share, rl$fsm_cap_share)
     d$flow <- res$flow
     d$fsm_flow <- res$fsm
@@ -301,6 +342,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
 
   list(flows = d, schools = by_school, W = W, cap = cap,
        rule = rule$rule, rules = rule, tiers = tiers,
-       year = year, site = site, design = design, index = idx, gamma = g,
+       year = year, site = site, design = design, index = idx,
+       gamma = g_mult, exclusive = ex_mult,
        in_catch_share = sum(d$flow[d$in_catch == 1]) / sum(d$flow))
 }

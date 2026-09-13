@@ -105,6 +105,7 @@ outcomes <- function(inp, r, shed = 0.75) {
 
   flows <- r$flows
   if (!"p6" %in% names(flows)) flows$p6 <- 0
+  if (!"orig" %in% names(flows)) flows$orig <- flows$zone
 
   f2 <- flows %>%
     dplyr::mutate(home = unname(dsg$zone[zone]),
@@ -129,8 +130,11 @@ outcomes <- function(inp, r, shed = 0.75) {
   # The uncapped flow says what they wanted; the capped flow says what
   # they got. The shortfall between the two, at the home catchment, is
   # the displacement. Everything else outside is choice.
+  # Per population, not per zone: a Varndean-only family's shortfall at
+  # home must not be netted against a flexible family in the same
+  # neighbourhood picking up the Stringer place they gave up.
   by_zone <- f2 %>%
-    dplyr::group_by(zone, home) %>%
+    dplyr::group_by(orig, zone, home) %>%
     dplyr::summarise(living = sum(flow),
                      got_home = sum(flow[at_home]),
                      want_home = sum(wanted[at_home]),
