@@ -477,7 +477,7 @@ stopifnot(length(SHRINK_TOTAL) == 1, is.finite(SHRINK_TOTAL))
 
 presets <- list(
   `Today` = list(
-    note = "The city as it stands: today's admission numbers, today's catchments, Longhill at Ovingdean.",
+    note = "The city as it stands: today's admission numbers, today's catchments, Longhill at Ovingdean, and the council's 2026/27 admission priorities.",
     design = "Current catchments", site = "now", year = 2026,
     pan = NULL, w = NULL),
   `Do nothing until 2035` = list(
@@ -508,10 +508,12 @@ presets <- list(
     w = c(`Longhill High School` =
             schools$W[schools$name == "Dorothy Stringer School"] /
             schools$W[schools$name == "Longhill High School"])),
-  `The 2026/27 admission rules` = list(
-    note = "Today's city under the council's own oversubscription priorities: FSM children first up to 30% of places, then 5% for children from the four single-school catchments, then the catchment. Compare the Catchments tab with the published model.",
+  # The app starts from the council's 2026/27 priorities, so the scenario
+  # worth one click is the other rule: the model section 7 publishes.
+  `Everyone has the same chance` = list(
+    note = "Today's city with no oversubscription priorities: every applicant to a full school has the same chance, which is the model section 7 of the strategic view publishes. Compare the Catchments and Fairness tabs with Today, which runs the council's 2026/27 priorities.",
     design = "Current catchments", site = "now", year = 2026,
-    pan = NULL, w = NULL, rule = "priorities", p6 = 5, fsm = TRUE, targeted = FALSE),
+    pan = NULL, w = NULL, rule = "published"),
   `The council's first proposal: 20% open` = list(
     note = "The open-admissions priority as the council first consulted on it, at 20% of places rather than the 5% it settled on after objections from the six community schools. Watch displacement in the two dual catchments.",
     design = "Current catchments", site = "now", year = 2026,
@@ -614,3 +616,60 @@ saveRDS(list(
 
 message(sprintf("\nSaved app/data/sim_inputs.rds (%.1f MB)",
                 file.size(file.path(APP_DIR, "data", "sim_inputs.rds")) / 1e6))
+
+# ---- 11. What priority 6 does to the social mix of intakes -----------
+# Moving the priority-6 slider in the app turned up something the policy
+# does not intend: under the council's priorities, a larger share of
+# places for children from single-school catchments makes the city's
+# intakes MORE segregated on Gorard's index, not less. The strategic view
+# reports it (section 8), so the numbers are made here, from the same
+# model the app runs, and saved for the document rather than typed into it.
+source(file.path(APP_DIR, "R", "outcomes.R"))
+inp_s <- readRDS(file.path(APP_DIR, "data", "sim_inputs.rds"))
+P6_GRID <- c(0, 5, 10, 15, 20, 25, 30, 40)
+CATCH8 <- setdiff(inp_s$city, inp_s$schools$name[inp_s$schools$faith])
+gorard_8 <- function(mix) { k <- mix$name %in% CATCH8; gorard_index(mix$n[k], mix$dep_n[k]) }
+run_p6 <- function(p, year = 2026, fsm = TRUE)
+  run_sim(inp_s, year = year, rules = list(rule = "priorities", p6_share = p / 100, fsm = fsm))
+mix_of <- function(r) {
+  mix <- outcomes(inp_s, r)$mix %>% filter(name %in% inp_s$city)
+  mix %>% mutate(contrib = 0.5 * abs(dep_n / sum(dep_n) - n / sum(n)))
+}
+
+p6_sweep <- tidyr::expand_grid(year = c(2026, 2030), fsm = c(TRUE, FALSE), p6 = P6_GRID) %>%
+  purrr::pmap_dfr(function(year, fsm, p6) {
+    r <- run_p6(p6, year, fsm); m <- outcomes(inp_s, r)
+    tibble(year, fsm, p6, gorard = m$gorard, gorard_8 = gorard_8(m$mix),
+           p6_places = sum(r$flows$p6), displaced = m$catchment$displaced)
+  })
+p6_published <- purrr::map_dfr(c(2026, 2030), function(y) {
+  m <- outcomes(inp_s, run_sim(inp_s, year = y))
+  tibble(year = y, gorard = m$gorard, gorard_8 = gorard_8(m$mix))
+})
+
+P6_AT <- 15
+m0 <- mix_of(run_p6(0)); m1 <- mix_of(run_p6(P6_AT))
+p6_schools <- m0 %>% select(name, n_0 = n, dep_0 = dep_share, contrib_0 = contrib) %>%
+  inner_join(m1 %>% select(name, n_at = n, dep_at = dep_share, contrib_at = contrib), by = "name") %>%
+  left_join(inp_s$schools %>% select(name, short, faith), by = "name")
+
+r1 <- run_p6(P6_AT)
+fl1 <- r1$flows %>% left_join(inp_s$idaci %>% select(lsoa, dep3), by = "lsoa") %>%
+  mutate(dep3 = coalesce(dep3, 0))
+p6_winners <- fl1 %>% group_by(catchment) %>%
+  summarise(children = sum(flow), dep_all = sum(flow * dep3) / sum(flow),
+            # dep_p6 before p6: inside summarise, a column once summed
+            # is the sum in every later expression.
+            dep_p6 = sum(p6 * dep3) / pmax(sum(p6), 1e-9), p6 = sum(p6), .groups = "drop") %>%
+  filter(p6 > 0.5)
+p6_to <- fl1 %>% filter(p6 > 0) %>% group_by(catchment, name) %>%
+  summarise(dep_p6 = sum(p6 * dep3) / sum(p6), p6 = sum(p6), .groups = "drop")
+
+saveRDS(list(sweep = p6_sweep, published = p6_published, at = P6_AT,
+             schools = p6_schools, winners = p6_winners, to = p6_to,
+             city_dep = sum(m0$dep_n) / sum(m0$n), built_at = Sys.time()),
+        file.path(DATA, "priority6_sweep.rds"))
+s26 <- p6_sweep %>% filter(year == 2026, fsm)
+message(sprintf("  priority 6 and Gorard, 2026: %s",
+                paste(sprintf("%d%% %.3f", s26$p6, s26$gorard), collapse = ", ")))
+message("Saved data/priority6_sweep.rds")

@@ -178,7 +178,7 @@ ui <- page_sidebar(
     radioButtons("rule", "When a school is full",
                  choices = c("Everyone has the same chance (the published model)" = "published",
                              "The council's priorities (2026/27 arrangements)" = "priorities"),
-                 selected = "published"),
+                 selected = "priorities"),
     conditionalPanel(
       "input.rule == 'priorities'",
       sliderInput("p6", "Places for single-school catchments (priority 6)",
@@ -188,7 +188,18 @@ ui <- page_sidebar(
       checkboxInput("targeted", "Narrowed to Targeted FSM (2027/28)", value = FALSE),
       div(class = "note", textOutput("rule_note"))),
     hr(),
-    div(strong("Per school"), span(class = "note", " — attractiveness ×, and admission number")),
+    div(strong("Per school")),
+    div(class = "note", style = "margin-top:2px",
+        "Each school has two controls. ",
+        tags$b("Drag its slider"), " to make the school more or less attractive to families: ",
+        "1× is how attractive it is now, 2× twice as attractive, 0.5× half as attractive. ",
+        tags$b("Type in the box on the right"), ", or use its arrows, to change that school's ",
+        "admission number (PAN), the number of Year 7 places it offers. ",
+        "The total-places slider below changes every school's number at once."),
+    div(class = "sch-row", style = "margin:8px 0 -6px;font-size:11px;color:#666",
+        div(class = "sch-name", "School"),
+        div(class = "sch-w", "Attractiveness (× now)"),
+        div(class = "sch-pan", "Places (PAN)")),
     div(style = "margin-top:8px", lapply(seq_len(nrow(CITY)),
                                          function(i) school_row(CITY[i, ]))),
     div(style = "margin-top:16px",
@@ -324,7 +335,7 @@ server <- function(input, output, session) {
     updateSliderInput(session, "exclusive", value = s$exclusive %||% 1)
     # Likewise a preset that says nothing about the admission rules means
     # the published model, not whatever the last preset left.
-    updateRadioButtons(session, "rule", selected = s$rule %||% "published")
+    updateRadioButtons(session, "rule", selected = s$rule %||% "priorities")
     updateSliderInput(session, "p6", value = s$p6 %||% 5)
     updateCheckboxInput(session, "fsm", value = s$fsm %||% TRUE)
     updateCheckboxInput(session, "targeted", value = s$targeted %||% FALSE)
@@ -385,7 +396,7 @@ server <- function(input, output, session) {
 
   # The admission rules in force, in the shape run_sim() takes.
   rule_args <- reactive(list(
-    rule = input$rule %||% "published",
+    rule = input$rule %||% "priorities",
     p6_share = (input$p6 %||% 5) / 100,
     fsm = isTRUE(input$fsm %||% TRUE),
     targeted = isTRUE(input$targeted %||% FALSE)))
@@ -409,7 +420,7 @@ server <- function(input, output, session) {
     content = function(file) {
       settings <- list(design = input$design, site = input$site, year = input$year,
                        gamma = input$gamma, exclusive = input$exclusive,
-                       rule = input$rule %||% "published", p6 = input$p6 %||% 5,
+                       rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
                        fsm = isTRUE(input$fsm %||% TRUE),
                        targeted = isTRUE(input$targeted %||% FALSE))
       writexl::write_xlsx(
@@ -1263,10 +1274,11 @@ server <- function(input, output, session) {
     "would follow a new boundary as closely as the old one is not something ",
     "the data can say. Living in a catchment raises the odds of choosing that ",
     "school; it does not guarantee ",
-    "a place. The published model gives every applicant to a full school the ",
-    "same chance. Switch 'When a school is full' to run the council's ",
-    "oversubscription priorities instead; the Catchments tab says how, and ",
-    "what that switch cannot see. Priority-6 places above the council's 5% ",
+    "a place. The app starts from the council's 2026/27 oversubscription ",
+    "priorities; the Catchments tab says how they are run, and what they ",
+    "cannot see. Switch 'When a school is full' to 'Everyone has the same ",
+    "chance' for the model section 7 of the document publishes, which gives ",
+    "every applicant to a full school the same chance. Priority-6 places above the council's 5% ",
     "are outside anything observed, so the slider's upper range is for ",
     "exploring, not forecasting.</p>",
     "<p><b>Total places and the map colours are simple rules.</b> Moving the ",

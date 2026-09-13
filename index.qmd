@@ -3311,6 +3311,12 @@ the other `r n_open` they are decoration. Debate about admissions
 criteria is, in practice, debate about a minority of the city's schools
 --- and never about the schools with the most spare capacity.
 
+Since 2026/27 one more criterion sits in the list: priority 6, a share
+of places at the community schools for children from the four
+single-school catchments, set at 5% after a first proposal of 20%. It is
+meant to widen access. @sec-fr-p6 finds that, in the full model, the
+larger that share, the *more* segregated the city's intakes become.
+
 ## Sixteen years of demand {#sec-demand-history}
 
 ```{r fig-demand-history}
@@ -6829,6 +6835,134 @@ is in where families live, not in where the lines are. What a map can do
 is stop amplifying it, and the distance between the best and worst
 curves is the size of that amplification.
 
+### Opening places to single-school catchments {#sec-fr-p6}
+
+The 2026/27 arrangements added **priority 6**: a share of places at each
+community school for children living in the four single-school
+catchments --- Brighton Aldridge, Longhill, Patcham and Portslade --- who
+apply outside them. The council first consulted on 20% and settled on
+5%. The case for it is access: families in catchments with one school,
+one of them the most deprived in the city, get a route into the
+popular schools of the two paired catchments.
+
+The simulator runs the council's priorities as a tiered ceiling on the
+full model of section 7 (@sec-m5): free school meals first, up to 30% of
+places, then priority 6 up to its share, then the catchment. Moving the
+priority-6 share shows something the policy does not intend.
+
+```{r p6-prep}
+#| include: false
+p6s <- bh_data("priority6_sweep.rds")
+p6_26 <- p6s$sweep %>% filter(year == 2026, fsm)
+p6_g <- function(p, y = 2026, f = TRUE)
+  p6s$sweep$gorard[p6s$sweep$p6 == p & p6s$sweep$year == y & p6s$sweep$fsm == f]
+p6_n <- function(p) p6_26$p6_places[p6_26$p6 == p]
+# The share past which there is no more demand for the places.
+p6_sat <- min(p6_26$p6[p6_26$p6_places >= 0.98 * max(p6_26$p6_places)])
+p6_sch <- p6s$schools %>% filter(!faith) %>%
+  mutate(d_dep = dep_at - dep_0, d_con = contrib_at - contrib_0)
+p6_up <- p6_sch %>% slice_max(d_con, n = 1)
+# Schools already below the city average that become less deprived still.
+p6_below <- p6_sch %>% filter(dep_0 < p6s$city_dep, dep_at < dep_0, d_con > 0.0005) %>%
+  arrange(desc(d_con))
+p6_below_short <- vapply(p6_below$name, short_sch, character(1), USE.NAMES = FALSE)
+p6_top_to <- function(h) {
+  x <- p6s$to %>% filter(catchment == h) %>% slice_max(p6, n = 1)
+  short_sch(x$name)
+}
+p6_w <- function(h, col) p6s$winners[[col]][p6s$winners$catchment == h]
+```
+
+```{r fig-p6-gorard}
+#| fig-cap: "Gorard's segregation index across the ten city schools' modelled intakes, under the council's priorities, as the priority-6 share rises. Solid lines keep the free school meals priority; dashed lines switch it off. Full model (M5) with the tiered ceiling the simulator runs. The index here is across all ten city schools, so its level is not comparable with the eight-school figures above; the direction is the point."
+#| fig-height: 4.2
+P6_COL <- c(`2026` = "#0d366b", `2030` = "#c2701c")
+p6s$sweep %>%
+  mutate(year = factor(year), fsm = if_else(fsm, "With the FSM priority", "Without it")) %>%
+  ggplot(aes(p6, gorard, colour = year, linetype = fsm)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  scale_colour_manual(values = P6_COL, name = NULL) +
+  scale_linetype_manual(values = c(`With the FSM priority` = "solid", `Without it` = "22"), name = NULL) +
+  scale_x_continuous(breaks = unique(p6s$sweep$p6), labels = function(x) paste0(x, "%")) +
+  labs(x = "Priority-6 share of each community school's places", y = "Gorard's segregation index",
+       title = "More places for single-school catchments, more segregated intakes",
+       subtitle = "Further up is more segregated. The lines flatten once nobody else wants the places.",
+       caption = "Sources: modelled intakes (M5); IMD 2019 IDACI; ONS postcode household counts.") +
+  theme_bh(11) +
+  theme(legend.position = "top")
+```
+
+**The larger the priority-6 share, the more segregated the intakes.** In
+2026 the index is `r sprintf("%.3f", p6_g(0))` with priority 6 switched
+off, `r sprintf("%.3f", p6_g(5))` at the 5% in force,
+`r sprintf("%.3f", p6_g(15))` at 15% and `r sprintf("%.3f", p6_g(20))`
+at 20%, where the first proposal would have put it. Past about
+`r p6_sat`% it stops moving, because there are no more families in the
+single-school catchments who want the places: `r fmt_n(p6_n(p6_sat))`
+children at `r p6_sat`%, `r fmt_n(p6_n(40))` at 40%. It rises the same
+way with the free school meals priority switched off, and in 2030. The
+rise is modest --- about `r sprintf("%.0f", 100 * (p6_g(15) / p6_g(0) - 1))`%
+of the index between none and 15% --- but it runs in the wrong direction
+for a policy about access.
+
+```{r tbl-p6-schools}
+#| tbl-cap: "Each school's modelled intake, with priority 6 off and at 15% of places, under the council's priorities in 2026: the share from the three most deprived deciles, and the school's contribution to Gorard's index (half the absolute gap between its share of the city's deprived children and its share of all children). Ordered by how much the school adds to the index."
+p6s$schools %>%
+  mutate(d_con = contrib_at - contrib_0) %>%
+  arrange(desc(d_con)) %>%
+  transmute(School = short_sch(name),
+            `Deprived share, off` = fmt_pct(100 * dep_0, 1),
+            `At 15%` = fmt_pct(100 * dep_at, 1),
+            `Change, points` = sprintf("%+.1f", 100 * (dep_at - dep_0)),
+            `Contribution to the index, change` = sprintf("%+.4f", d_con)) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+Two things in the model drive it.
+
+**The children who use it still go to the popular school nearest them.**
+Priority 6 lets a child cross a catchment boundary; it does not change
+how far a family will travel. `r if (p6_top_to("BACA") == p6_top_to("Longhill")) paste0("Brighton Aldridge's and Longhill's catchments send most of their priority-6 children to ", p6_top_to("BACA"), ".") else paste0("Brighton Aldridge's catchment sends most of its priority-6 children to ", p6_top_to("BACA"), ", and Longhill's to ", p6_top_to("Longhill"), ".")` `r short_sch(p6_up$name)` is the school that
+moves the index most: its intake was already
+`r fmt_pct(100 * p6_up$dep_0, 0)` deprived against a city average of
+`r fmt_pct(100 * p6s$city_dep, 0)`, and at 15% it is
+`r fmt_pct(100 * p6_up$dep_at, 0)`, while the catchment children it
+turns away move next door. Portslade's catchment sends its priority-6
+children to `r p6_top_to("PACA")`, and at the other end the schools
+already below the city average become less deprived still:
+`r paste(sprintf("%s from %s to %s", p6_below_short, fmt_pct(100 * p6_below$dep_0, 1), fmt_pct(100 * p6_below$dep_at, 1)), collapse = "; ")`. A school above the average moves
+further above it and one below further below, which is exactly what
+Gorard's index measures.
+
+**The families who use it are the better-off ones in their catchment.**
+The priority-6 places won from Brighton Aldridge's catchment go to
+neighbourhoods `r fmt_pct(100 * p6_w("BACA", "dep_p6"), 0)` deprived,
+where the catchment as a whole is
+`r fmt_pct(100 * p6_w("BACA", "dep_all"), 0)`; from Portslade's,
+`r fmt_pct(100 * p6_w("PACA", "dep_p6"), 0)` against
+`r fmt_pct(100 * p6_w("PACA", "dep_all"), 0)`. A lottery within the
+priority does not change that. Who wins a place is set by who applies
+out of catchment, and in the model that follows how strongly each
+neighbourhood is drawn to each school.
+
+::: {.callout-warning appearance="simple"}
+## How far to take this
+
+The effect is small beside what a catchment redesign does, and it is a
+model result, not an observed one: the council has published the
+priority-6 offers by school for 2026 but not which neighbourhoods they
+went to. Deprivation here is a neighbourhood measure, so a better-off
+family in a deprived neighbourhood counts as deprived and the second
+mechanism may be understated or overstated. And segregation is one
+objective among several. Priority 6 may still widen access for the
+children who use it --- the `r fmt_n(p6_n(5))` or so a year at 5% ---
+and that may be judged worth a small rise in the index. What it does not
+do, on this evidence, is even out the intakes, and a larger share makes
+that worse rather than better. The simulator shows the same comparison
+live in its Fairness tab for any setting.
+:::
+
 ## And if Longhill moves {#sec-fr-elm}
 
 The last two designs re-run everything with **Longhill at the top of
@@ -7614,6 +7748,12 @@ already holds.
    Hove Park / Blatchington Mill was `r abs(hb26$council_err)` places
    under. The second has a candidate explanation in the neighbouring
    PACA over-forecast; the first does not.
+2. **Which neighbourhoods did the priority-6 places go to, and what did
+   they do to the social mix of the community schools' intakes?**
+   (@sec-fr-p6) In the full model a larger priority-6 share makes intakes
+   more segregated, because the families who use it are the better-off
+   ones in their catchments and they go to the popular school nearest
+   them. The council holds the offers and the home postcodes to test it.
 
 ## Data the council could simply publish {#sec-data-asks}
 
