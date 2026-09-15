@@ -287,7 +287,7 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
 run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
                     capped = TRUE, gamma = NULL, rules = NULL,
-                    exclusive = NULL) {
+                    exclusive = NULL, comart = NULL) {
 
   # The ten city schools, and the four East Sussex schools M5 fits as
   # destinations: children do leave the city, most of them from Longhill's
@@ -298,6 +298,24 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   outside <- inp$params$outside
   ext_names <- if (is.null(outside)) character(0) else names(outside$W)
   ext_sch <- inp$schools[inp$schools$name %in% ext_names, ]
+
+  # CoMArt, the East Brighton school closed in 2005, when a scenario opens
+  # it again: a small community school on its old site, sharing Longhill's
+  # catchment in whatever map is in force. `comart` is list(pan, w) - its
+  # places, and a multiplier on the attractiveness it starts from. It is
+  # routed on the same network as every other school and competes with
+  # them like any other; what it lacks is preferences, so its starting
+  # attractiveness is borrowed (R/05_app_inputs.R says from where).
+  cm <- inp$comart
+  cm_on <- !is.null(comart) && !is.null(cm)
+  if (cm_on) {
+    cm_row <- inp$schools[inp$schools$name == cm$name, ]
+    stopifnot(nrow(cm_row) == 1)
+    cm_row$city <- TRUE
+    if (!is.null(comart$pan)) cm_row$pan <- comart$pan
+    if (!is.null(comart$w)) cm_row$W <- cm_row$W * comart$w
+    sch <- rbind(sch, cm_row)
+  }
   W <- setNames(sch$W, sch$name)
   if (!is.null(w_mult)) {
     stopifnot(all(names(w_mult) %in% names(W)))
@@ -321,6 +339,9 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
 
   dsg <- inp$designs[[design]]
   stopifnot(!is.null(dsg))
+  # CoMArt joins Longhill's catchment, so that catchment has two schools.
+  if (cm_on && is.na(dsg$school[cm$name]))
+    dsg$school[cm$name] <- unname(dsg$school[cm$joins])
 
   d <- inp$cost[[site]] %>%
     dplyr::filter(name %in% c(sch$name, ext_names)) %>%
@@ -428,7 +449,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     single <- names(n_sch)[n_sch == 1]
     in_c <- d$in_catch == 1
     s6 <- unname(dsg$zone[d$zone]) %in% single & !in_c
-    com <- d$name %in% rl$community
+    com <- d$name %in% c(rl$community, if (cm_on) cm$name)
 
     share_z <- setNames(share, z$zone)
     share_o <- setNames(unname(share_z[sub("#.*$", "", names(o_pop))]), names(o_pop))
@@ -456,6 +477,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                   at_pan = fill >= 0.995)
 
   list(flows = d, schools = by_school, W = W, cap = cap,
+       design_map = dsg, comart = cm_on,
        rule = rule$rule, rules = rule, tiers = tiers,
        year = year, site = site, design = design, index = idx,
        gamma = g_mult, exclusive = ex_mult,

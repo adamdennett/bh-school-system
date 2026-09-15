@@ -76,6 +76,8 @@ DATASETS <- tibble::tribble(
   "catchments_current.geojson",   "Catchments in force",                   c("bhcc_catch"),                                          "published boundary file",
   "lsoa.geojson",                 "LSOA boundaries",                       c("onspd"),                                               "published boundary file",
 
+  "comart_scenarios.rds",         "CoMArt re-opened: the scenario runs",   c("osm", "bods", "bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd"), "this repository, R/05_app_inputs.R",
+  "comart_costs.rds",             "Routed journeys to CoMArt's site",     c("osm", "bods", "onspd"),                            "open Brightopia bundle",
   "priority6_sweep.rds",          "Priority 6 and the social mix of intakes", c("bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "osm", "bods"), "this repository, R/05_app_inputs.R",
   "route_geometries.rds",         "One journey, leg by leg",               c("osm", "bods"),                                         "open Brightopia bundle")
 
@@ -108,6 +110,7 @@ QMD_VARS <- tibble::tribble(
   "lev",    "school_leverage.rds",        FALSE,
 
   "p6s",    "priority6_sweep.rds",        FALSE,
+  "cms",    "comart_scenarios.rds",       FALSE,
   "rg",     "route_geometries.rds",       FALSE,
   "council24", "council_forecast_oct24.csv", TRUE,
   "pcd",    "postcode_children.csv",      TRUE,

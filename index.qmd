@@ -7770,6 +7770,152 @@ that decides relocation, and no published data answers it. Nothing in
 this section is a prediction of a roll.
 :::
 
+## Re-opening CoMArt {#sec-comart}
+
+```{r comart-prep}
+#| include: false
+cms <- bh_data("comart_scenarios.rds")
+cm_v <- function(id, col, y = 2026, rule = "priorities")
+  cms$runs[[col]][cms$runs$id == id & cms$runs$year == y & cms$runs$rule == rule]
+cm_s <- function(id, school, col)
+  cms$schools[[col]][cms$schools$id == id & cms$schools$name == school]
+cm_city_dep <- with(cms$schools %>% filter(id == "today"), sum(intake * dep_share) / sum(intake))
+cm_sens <- function(variant, col, y = 2026)
+  cms$sens[[col]][cms$sens$variant == variant & cms$sens$year == y]
+```
+
+CoMArt closed in 2005, and the city's catchment system is partly the
+shape of that closure (@sec-system). The east of Brighton now has two
+secondary schools, Longhill at Ovingdean and Brighton Aldridge on the
+Lewes Road, both well short of their admission numbers. A different
+answer to the east's problem from moving or shrinking Longhill is to put
+a school back where CoMArt stood: three small schools in the east rather
+than two half-empty ones.
+
+The scenario, run on the full model (@sec-m5) under the council's 2026/27
+priorities: **CoMArt open again on its East Brighton site with 150
+places**, sharing Longhill's catchment --- the site is inside it on the
+map in force and on the one before it --- with Longhill staying at
+Ovingdean, and **Brighton Aldridge and Longhill both cut to 150**.
+CoMArt's journeys are routed on the same walk and bus network as every
+other school, on the same day and settings; re-routing Brighton Aldridge
+the same way reproduces its existing times to within
+`r sprintf("%.1f", cms$routing_check$median_abs_diff)` minutes. There
+are no preferences for a school that does not exist, so CoMArt starts as
+attractive as Brighton Aldridge, the nearest thing to it.
+
+```{r tbl-comart}
+#| tbl-cap: "The scenarios, under the council's priorities in 2026. Gorard's index is across the city's schools' modelled intakes; journeys are to city schools. Stringer's intake is shown against its admission number in that scenario."
+cms$runs %>%
+  filter(year == 2026, rule == "priorities") %>%
+  mutate(id = factor(id, names(cms$configs))) %>%
+  arrange(id) %>%
+  transmute(Scenario = label,
+            Gorard = sprintf("%.3f", gorard),
+            `Mean journey` = sprintf("%.1f min", mean_min),
+            `Deprived children's journey` = sprintf("%.1f min", dep_min),
+            `Gap to other children` = sprintf("%.1f min", dep_gap),
+            CoMArt = ifelse(is.na(intake_comart), "---", fmt_n(intake_comart)),
+            Longhill = fmt_n(intake_lh), `Brighton Aldridge` = fmt_n(intake_baca),
+            Stringer = sprintf("%s / %s", fmt_n(intake_ds), fmt_n(pan_ds)),
+            `Empty places` = fmt_n(empty)) %>%
+  knitr::kable(align = "lrrrrrrrrr")
+```
+
+**Shrinking the two eastern schools on its own does nothing.** Neither
+fills, so cutting Brighton Aldridge and Longhill to 150 leaves every
+child where they were and only removes empty places.
+
+**Opening CoMArt shortens the journeys, and most for the children who
+travel furthest.** The mean journey falls from
+`r sprintf("%.1f", cm_v("today", "mean_min"))` to
+`r sprintf("%.1f", cm_v("comart", "mean_min"))` minutes. For children
+from the three most deprived deciles it falls from
+`r sprintf("%.1f", cm_v("today", "dep_min"))` to
+`r sprintf("%.1f", cm_v("comart", "dep_min"))`, and the gap between them
+and everyone else closes from
+`r sprintf("%.1f", cm_v("today", "dep_gap"))` minutes to
+`r sprintf("%.1f", cm_v("comart", "dep_gap"))`. CoMArt fills its
+`r fmt_n(cm_s("comart", "CoMArt", "pan"))` places. Fewer children leave the city:
+`r fmt_n(cm_v("comart", "left_es"))` go to the East Sussex schools,
+against `r fmt_n(cm_v("today", "left_es"))` today, most of them from
+Longhill's catchment.
+
+**But it makes the intakes more segregated, not less.** Gorard's index
+rises from `r sprintf("%.3f", cm_v("today", "gorard"))` to
+`r sprintf("%.3f", cm_v("comart", "gorard"))`. A school that recruits
+locally takes its neighbourhood with it, and CoMArt's neighbourhood is a
+deprived one:
+`r fmt_pct(100 * cm_s("comart", "CoMArt", "dep_share"), 0)` of its
+intake is from the three most deprived deciles, against
+`r fmt_pct(100 * cm_city_dep, 0)` across the city. Those children now
+stay in the east instead of spreading into Stringer, Varndean and the
+schools further out, most of whose intakes become slightly less deprived.
+Brighton Aldridge, already the most deprived intake, does not gain from
+it: it goes from `r fmt_pct(100 * cm_s("today", "Brighton Aldridge Community Academy", "dep_share"), 0)`
+to `r fmt_pct(100 * cm_s("comart", "Brighton Aldridge Community Academy", "dep_share"), 0)`.
+It is the same trade that runs through section 8: **a system that
+shortens deprived children's journeys by giving them a school nearby
+concentrates them in it**.
+
+```{r tbl-comart-schools}
+#| tbl-cap: "Each school's modelled intake and its share from the three most deprived deciles, today and with CoMArt open at 150 (Brighton Aldridge and Longhill at 150), council priorities, 2026."
+cms$schools %>%
+  filter(id %in% c("today", "comart")) %>%
+  select(id, short, pan, intake, dep_share) %>%
+  tidyr::pivot_wider(names_from = id, values_from = c(pan, intake, dep_share)) %>%
+  arrange(desc(dep_share_comart)) %>%
+  transmute(School = short,
+            `Places today` = ifelse(is.na(pan_today), "---", fmt_n(pan_today)),
+            `Intake today` = ifelse(is.na(intake_today), "---", fmt_n(intake_today)),
+            `With CoMArt` = sprintf("%s / %s", fmt_n(intake_comart), fmt_n(pan_comart)),
+            `Deprived share today` = ifelse(is.na(dep_share_today), "---", fmt_pct(100 * dep_share_today, 0)),
+            `With CoMArt ` = fmt_pct(100 * dep_share_comart, 0)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+**It would let Dorothy Stringer shrink.** Today Stringer fills its
+`r fmt_n(cm_v("today", "pan_ds"))` places. With CoMArt open it takes
+`r fmt_n(cm_v("comart", "intake_ds"))`, because some of the East Brighton
+families who went there now go to CoMArt. Cut to 300 it takes
+`r fmt_n(cm_v("ds300", "intake_ds"))`, and cut to 270 it fills. Varndean
+still fills. So the central school that would like fewer places could
+have them without the city being short: Stringer's lost places are more
+than covered by CoMArt's. By 2030 the question answers itself either way
+--- with CoMArt open, Stringer takes
+`r fmt_n(cm_v("comart", "intake_ds", 2030))` children at 330 places.
+
+**Longhill is the school that pays.** At 150 places it takes
+`r fmt_n(cm_v("comart", "intake_lh"))` children in 2026, against
+`r fmt_n(cm_v("today", "intake_lh"))` today, and
+`r fmt_n(cm_v("comart", "intake_lh", 2030))` in 2030. CoMArt sits between
+Longhill and the rest of the city, in Longhill's own catchment, and takes
+families Longhill would otherwise draw. Three small schools in the east
+is, on this model, CoMArt full, Brighton Aldridge
+`r fmt_pct(100 * cm_v("comart", "intake_baca") / 150, 0)` full and Longhill
+`r fmt_pct(100 * cm_v("comart", "intake_lh") / 150, 0)` full.
+
+::: {.callout-warning appearance="simple"}
+## What this scenario borrows
+
+**CoMArt's attractiveness is assumed.** Given Longhill's instead of
+Brighton Aldridge's, CoMArt takes only
+`r fmt_n(cm_sens("As Longhill", "intake_comart"))` children, Longhill
+`r fmt_n(cm_sens("As Longhill", "intake_lh"))`, and Gorard's index is
+`r sprintf("%.3f", cm_sens("As Longhill", "gorard"))` --- still above
+today. At the city median it fills and the index is
+`r sprintf("%.3f", cm_sens("The city median", "gorard"))`. The direction
+does not depend on the assumption; the size does.
+
+**So is the catchment term.** Families in Longhill's catchment are
+assumed to follow a catchment with two schools in it as closely as they
+follow the one they have. CoMArt is run as a community school under the
+council's priorities, which makes Longhill's catchment a two-school one
+and takes priority 6 away from its children. It has no finance or
+attainment figures, so it is not in @sec-money. The same scenario, at
+any places, attractiveness or map, is in the simulator.
+:::
+
 # What the council needs to do {#sec-council}
 
 ## Decisions {#sec-decisions}

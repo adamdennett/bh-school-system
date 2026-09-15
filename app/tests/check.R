@@ -122,6 +122,7 @@ for (p in names(inp$presets)) {
     pans_s <- if (is.null(s$total)) s$pan else scale_pans(base_p, s$total)
     rr <- run_sim(inp, w_mult = s$w, pans = pans_s, site = s$site,
                   design = s$design, year = s$year, gamma = s$gamma,
+                  comart = s$comart,
                   rules = if (is.null(s$rule)) NULL else
                     list(rule = s$rule, p6_share = (s$p6 %||% 5) / 100,
                          fsm = s$fsm %||% TRUE, targeted = s$targeted %||% FALSE))
@@ -351,6 +352,34 @@ for (yr in c(2026, 2027, 2030)) for (rl_ in list(NULL, pr())) {
   }
 }
 note("either-school families: never displaced while their pair has room (2026, 2027, 2030; both rules)")
+
+# ---- CoMArt re-opened -----------------------------------------------------
+cm_p <- c(`Brighton Aldridge Community Academy` = 150, `Longhill High School` = 150)
+rc <- run_sim(inp, year = 2026, pans = cm_p, comart = list(pan = 150, w = 1))
+oc <- rc$flows %>% group_by(zone) %>% summarise(s = sum(flow), .groups = "drop") %>%
+  inner_join(inp$zones %>% select(zone, Oi), by = "zone")
+cm_int <- rc$schools$intake[rc$schools$name == inp$comart$name]
+mc <- outcomes(inp, rc)
+note(sprintf("CoMArt at 150, Brighton Aldridge and Longhill at 150: CoMArt %.0f, Longhill %.0f, Brighton Aldridge %.0f; Gorard %.3f, mean journey %.1f min",
+             cm_int, rc$schools$intake[rc$schools$name == "Longhill High School"],
+             rc$schools$intake[rc$schools$name == "Brighton Aldridge Community Academy"],
+             mc$gorard, mc$mean_min))
+if (max(abs(oc$s - oc$Oi)) > 1) fail <- c(fail, "CoMArt: children are being lost or invented")
+if (any(rc$schools$intake - rc$schools$pan > 1e-3, na.rm = TRUE))
+  fail <- c(fail, "CoMArt: a school is over its admission number")
+if (length(cm_int) != 1 || !(cm_int > 0))
+  fail <- c(fail, "CoMArt takes no children")
+if (!identical(unname(rc$design_map$school[inp$comart$name]),
+               unname(rc$design_map$school["Longhill High School"])))
+  fail <- c(fail, "CoMArt is not in Longhill's catchment")
+rcp <- run_sim(inp, year = 2026, pans = cm_p, comart = list(pan = 150, w = 1), rules = pr())
+lh_p6 <- sum(rcp$flows$p6[rcp$flows$catchment == "Longhill"])
+note(sprintf("CoMArt under the priorities: %.1f priority-6 places to Longhill's catchment, which now has two schools", lh_p6))
+if (lh_p6 > 1e-6)
+  fail <- c(fail, "Longhill's catchment keeps priority 6 with two schools in it")
+r_off <- run_sim(inp, year = 2026)
+if (inp$comart$name %in% r_off$schools$name || !is.na(r_off$design_map$school[inp$comart$name]))
+  fail <- c(fail, "CoMArt appears when it has not been opened")
 
 # ---- The download: a workbook that reproduces the run ---------------
 st <- list(design = "Current catchments", site = "now", year = 2027, gamma = 1.2,

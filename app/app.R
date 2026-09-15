@@ -169,6 +169,22 @@ ui <- page_sidebar(
     selectInput("site", "Longhill's site",
                 choices = c("Ovingdean (as now)" = "now",
                             "Elm Grove (relocated)" = "elm")),
+    checkboxInput("comart", "Re-open CoMArt (closed 2005)", value = FALSE),
+    conditionalPanel(
+      "input.comart",
+      div(class = "sch-row", style = "margin:-4px 0 -6px;font-size:11px;color:#666",
+          div(class = "sch-name", ""),
+          div(class = "sch-w", "Attractiveness (×)"),
+          div(class = "sch-pan", "Places (PAN)")),
+      div(class = "sch-row",
+          div(class = "sch-name", "CoMArt"),
+          div(class = "sch-w",
+              sliderInput("comart_w", NULL, min = 0.25, max = 4, value = 1,
+                          step = 0.05, width = "100%", ticks = FALSE)),
+          div(class = "sch-pan",
+              numericInput("comart_pan", NULL, value = inp$comart$pan,
+                           min = 30, max = 400, step = 15, width = "100%"))),
+      div(class = "note", style = "margin-top:10px", textOutput("comart_note"))),
     sliderInput("year", "Entry year", min = min(inp$demand$year),
                 max = max(inp$demand$year), value = 2026, step = 1, sep = "",
                 ticks = FALSE),
@@ -353,6 +369,9 @@ server <- function(input, output, session) {
     updateSliderInput(session, "p6", value = s$p6 %||% 5)
     updateCheckboxInput(session, "fsm", value = s$fsm %||% TRUE)
     updateCheckboxInput(session, "targeted", value = s$targeted %||% FALSE)
+    updateCheckboxInput(session, "comart", value = !is.null(s$comart))
+    updateNumericInput(session, "comart_pan", value = s$comart$pan %||% inp$comart$pan)
+    updateSliderInput(session, "comart_w", value = s$comart$w %||% 1)
     for (i in seq_len(nrow(CITY))) {
       nm <- CITY$name[i]; urn <- CITY$urn[i]
       updateSliderInput(session, paste0("w_", urn),
@@ -415,13 +434,29 @@ server <- function(input, output, session) {
     fsm = isTRUE(input$fsm %||% TRUE),
     targeted = isTRUE(input$targeted %||% FALSE)))
 
+  # CoMArt, when a scenario or the user opens it again.
+  comart_arg <- reactive(
+    if (isTRUE(input$comart))
+      list(pan = input$comart_pan %||% inp$comart$pan, w = input$comart_w %||% 1)
+    else NULL)
+  comart_places <- reactive(
+    if (isTRUE(input$comart)) as.numeric(input$comart_pan %||% inp$comart$pan) else 0)
+  output$comart_note <- renderText(sprintf(paste(
+    "On its old site in East Brighton, sharing Longhill's catchment in whatever map is in force,",
+    "and run as a community school under the council's priorities - so Longhill's catchment",
+    "has two schools and its children lose priority 6. There are no preferences for a school",
+    "that does not exist, so 1× starts it as attractive as %s. Routed on the same network as",
+    "every other school. Its places count in the total below; it has no finance or attainment figures."),
+    inp$comart$w_from_short))
+
   sim <- reactive({
     req(input$design, input$site, input$year)
     w <- w_now(); p <- pan_now()
     req(all(is.finite(w)), all(is.finite(p)))
     run_sim(inp, w_mult = w, pans = p, site = input$site,
             design = input$design, year = input$year, gamma = input$gamma,
-            exclusive = input$exclusive, rules = rule_args())
+            exclusive = input$exclusive, rules = rule_args(),
+            comart = comart_arg())
   })
   met <- reactive(outcomes(inp, sim()))
 
@@ -436,7 +471,8 @@ server <- function(input, output, session) {
                        gamma = input$gamma, exclusive = input$exclusive,
                        rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
                        fsm = isTRUE(input$fsm %||% TRUE),
-                       targeted = isTRUE(input$targeted %||% FALSE))
+                       targeted = isTRUE(input$targeted %||% FALSE),
+                       comart = comart_arg())
       writexl::write_xlsx(
         scenario_export(inp, sim(), met(), input$preset, settings, w_now(), pan_now()),
         file)
@@ -491,7 +527,7 @@ server <- function(input, output, session) {
     now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
                    design = "Current catchments", year = input$year,
                    gamma = input$gamma, exclusive = input$exclusive,
-                   rules = rule_args())
+                   rules = rule_args(), comart = comart_arg())
     moved <- sum(pmax(0, sim()$schools$intake - now$schools$intake))
     if (regrouped == 0)
       sprintf("This is the map in force. %.0f%% of children are modelled as attending a school in their own catchment.",
@@ -508,7 +544,7 @@ server <- function(input, output, session) {
   # year the rest of the app is set to.
   output$pan_total <- renderUI({
     req(input$year)
-    places <- sum(pan_now())
+    places <- sum(pan_now()) + comart_places()
     kids <- inp$demand$cohort[match(input$year, inp$demand$year)]
     pct <- 100 * places / kids
     spare <- places - kids
@@ -535,7 +571,7 @@ server <- function(input, output, session) {
   # bar is the surplus, and it is the thing the whole app is about.
   output$p_cohort <- renderPlot({
     ob <- inp$cohort$observed
-    places <- sum(pan_now())
+    places <- sum(pan_now()) + comart_places()
     yr <- input$year
     kids <- inp$demand$cohort[match(yr, inp$demand$year)]
 
@@ -963,7 +999,8 @@ server <- function(input, output, session) {
       r0 <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
                     design = input$design, year = input$year, gamma = input$gamma,
                     exclusive = input$exclusive,
-                    rules = utils::modifyList(rule_args(), list(p6_share = 0)))
+                    rules = utils::modifyList(rule_args(), list(p6_share = 0)),
+                    comart = comart_arg())
       g0 <- outcomes(inp, r0)$gorard
       live <- sprintf(paste0(
         "<p><b>In this run:</b> Gorard %.3f with priority 6 at %d%% of places, ",
@@ -1110,7 +1147,7 @@ server <- function(input, output, session) {
                            rules = rule_args(), gamma = input$gamma,
                            exclusive = input$exclusive,
                            site = input$site, design = input$design,
-                           year = input$year)
+                           year = input$year, comart = comart_arg())
       data.frame(
         name = nm, short = CITY$short[i], att8 = CITY$att8[i],
         set_at = CITY$att8[i] + att8_points(inp, w[[nm]]),
@@ -1198,7 +1235,7 @@ server <- function(input, output, session) {
                            rules = rule_args(), gamma = input$gamma,
                            exclusive = input$exclusive,
                          site = input$site, design = input$design,
-                         year = input$year)
+                         year = input$year, comart = comart_arg())
     if (is.infinite(s$multiplier))
       sprintf("%s cannot fill %s places at any attractiveness: at 60 times its own it reaches %.0f%%. There are not enough children within reach.",
               input$solve_for, fmt_n(p[[nm]]), 100 * s$fill)

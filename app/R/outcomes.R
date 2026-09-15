@@ -45,6 +45,8 @@ gorard_index <- function(n, dep_n) {
 outcomes <- function(inp, r, shed = 0.75) {
 
   city <- r$schools %>% dplyr::filter(city)
+  # The schools in THIS run: CoMArt is one of them when a scenario opens it.
+  city_names <- city$name
 
   # ---- Places --------------------------------------------------------
   places <- list(
@@ -62,7 +64,7 @@ outcomes <- function(inp, r, shed = 0.75) {
   # schools go by bus through Brighton, which is not how those families
   # travel, so they are left out rather than inflating every journey figure.
   f <- r$flows %>%
-    dplyr::filter(name %in% inp$city) %>%
+    dplyr::filter(name %in% city_names) %>%
     dplyr::left_join(inp$idaci %>% dplyr::select(lsoa, dep3), by = "lsoa") %>%
     dplyr::mutate(dep3 = dplyr::coalesce(dep3, 0))
 
@@ -87,7 +89,7 @@ outcomes <- function(inp, r, shed = 0.75) {
     dplyr::summarise(n = sum(flow), dep_n = sum(dep_flow), .groups = "drop") %>%
     dplyr::mutate(dep_share = dplyr::if_else(n > 0, dep_n / n, NA_real_))
 
-  in_city <- mix$name %in% inp$city
+  in_city <- mix$name %in% city_names
   fairness <- list(
     gorard = gorard_index(mix$n[in_city], mix$dep_n[in_city]),
     intake_lo = suppressWarnings(min(mix$dep_share[in_city], na.rm = TRUE)),
@@ -104,7 +106,7 @@ outcomes <- function(inp, r, shed = 0.75) {
   # city, so children going to them are "outside" by construction rather
   # than by displacement. They are counted separately, because lumping
   # them in would make every catchment look far leakier than it is.
-  dsg <- inp$designs[[r$design]]
+  dsg <- if (!is.null(r$design_map)) r$design_map else inp$designs[[r$design]]
   faith_names <- inp$schools$name[inp$schools$faith]
 
   flows <- r$flows
@@ -121,8 +123,7 @@ outcomes <- function(inp, r, shed = 0.75) {
                     at_home ~ "Their own catchment",
                     TRUE ~ "Another catchment"))
 
-  catch_lab <- vapply(split(inp$schools$short[inp$schools$city],
-                            dsg$school[inp$schools$name[inp$schools$city]]),
+  catch_lab <- vapply(split(city$short, dsg$school[city$name]),
                       function(x) paste(sort(x), collapse = " / "), character(1))
 
   # TWO DIFFERENT PROCESSES, and conflating them was wrong. A child ends

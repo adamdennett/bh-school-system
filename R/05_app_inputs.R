@@ -51,6 +51,18 @@ OUT_SHORT <- c(`Priory School` = "Priory (Lewes)", `Peacehaven Community School`
                `Seahaven Academy` = "Seahaven", `Seaford Head School` = "Seaford Head")
 stopifnot(all(OUT_OF_CITY %in% names(OUT_SHORT)))
 
+# CoMArt, the East Brighton school closed in 2005, for the scenarios that
+# open it again. Routed like every other school in the open model (00e).
+# There are no preferences for a school that does not exist, so it starts
+# with Brighton Aldridge's attractiveness: the nearest thing to it, a small
+# community school in the east of the city. The app lets that be moved,
+# and the scenario analysis below tries two other values.
+CMC <- bh_data("comart_costs.rds")
+CM_SCEN <- list(name = "CoMArt", short = "CoMArt", joins = "Longhill High School",
+                w_from = "Brighton Aldridge Community Academy", pan = 150)
+message(sprintf("  CoMArt routing check: median |difference| %.1f min against the matrix, r = %.3f",
+                CMC$check$median_abs_diff, CMC$check$correlation))
+
 # The six schools the council is the admission authority for, and so the
 # only ones its oversubscription priorities apply to.
 COMMUNITY <- c("Blatchington Mill School", "Dorothy Stringer School",
@@ -109,11 +121,15 @@ zones <- zones
 # what they are chosen on, and routed minutes for reporting. Moving
 # Longhill does not move them.
 ext_cost <- OUTSIDE$costs %>% filter(zone %in% zones$zone) %>% select(zone, name, cij, km)
+# CoMArt's routed costs are carried always and used only when it is open.
+cm_cost <- CMC$costs %>% filter(zone %in% zones$zone) %>%
+  transmute(zone, name = CM_SCEN$name, cij, km)
+stopifnot(nrow(cm_cost) == nrow(zones))
 cost <- list(
   now = bind_rows(oi$costs_now %>% filter(zone %in% zones$zone, name %in% CITY) %>%
-                    select(zone, name, cij, km), ext_cost),
+                    select(zone, name, cij, km), ext_cost, cm_cost),
   elm = bind_rows(oi$costs_elm %>% filter(zone %in% zones$zone, name %in% CITY) %>%
-                    select(zone, name, cij, km), ext_cost))
+                    select(zone, name, cij, km), ext_cost, cm_cost))
 
 stopifnot(all(vapply(cost, function(x) all(is.finite(x$cij)), logical(1))))
 
@@ -194,6 +210,16 @@ message(sprintf("  beta %.2f, delta %.2f, sigma %.0f; catchment terms %s",
 # modelled as a destination and keeps its published-preference value.
 schools$W[schools$city] <- unname(cal$W[schools$name[schools$city]])
 stopifnot(!any(is.na(schools$W)))
+
+# CoMArt's row: not a city school unless a scenario opens it (run_sim).
+schools <- bind_rows(schools %>% mutate(hypothetical = FALSE), tibble(
+  name = CM_SCEN$name, short = CM_SCEN$short, urn = NA_character_,
+  easting = CMC$site$easting, northing = CMC$site$northing, faith = FALSE,
+  pan = CM_SCEN$pan, city = FALSE, community = FALSE,
+  W = schools$W[schools$name == CM_SCEN$w_from], group = NA_character_,
+  elm_easting = CMC$site$easting, elm_northing = CMC$site$northing,
+  hypothetical = TRUE))
+stopifnot(sum(schools$hypothetical) == 1, is.finite(schools$W[schools$hypothetical]))
 
 # ---- 4b. What attractiveness means in Attainment 8 ------------------
 # Section 5.4 finds that the published number families respond to is
@@ -527,7 +553,18 @@ presets <- list(
   `The 2027/28 rules: Targeted FSM` = list(
     note = "The 2027/28 arrangements: the FSM priority narrowed to Targeted FSM, which the council puts at about 56% of currently eligible children. Everything else as in 2026/27.",
     design = "Current catchments", site = "now", year = 2027,
-    pan = NULL, w = NULL, rule = "priorities", p6 = 5, fsm = TRUE, targeted = TRUE))
+    pan = NULL, w = NULL, rule = "priorities", p6 = 5, fsm = TRUE, targeted = TRUE),
+  `CoMArt re-opened: three small eastern schools` = list(
+    note = "CoMArt, closed in 2005, open again on its East Brighton site with 150 places, sharing Longhill's catchment, and Brighton Aldridge and Longhill both cut to 150. Watch segregation, journeys, and whether the central schools still fill.",
+    design = "Current catchments", site = "now", year = 2026,
+    pan = c(`Brighton Aldridge Community Academy` = 150, `Longhill High School` = 150),
+    w = NULL, comart = list(pan = 150, w = 1)),
+  `CoMArt re-opened, and Stringer to 300` = list(
+    note = "The same three small eastern schools, with Dorothy Stringer's admission number cut from 330 to 300. Does Stringer still fill, and where do the children go?",
+    design = "Current catchments", site = "now", year = 2026,
+    pan = c(`Brighton Aldridge Community Academy` = 150, `Longhill High School` = 150,
+            `Dorothy Stringer School` = 300),
+    w = NULL, comart = list(pan = 150, w = 1)))
 
 # ---- 10. The admission rules, and FSM take-up -----------------------
 # The app can run the council's oversubscription priorities as a tiered
@@ -612,6 +649,8 @@ message(sprintf("  outside the city, 2026: modelled at East Sussex schools %s; e
 saveRDS(list(
   schools = schools, zones = zones, cost = cost, designs = DESIGNS,
   rules = RULES, outflow_other = outflow_other,
+  comart = c(CM_SCEN, list(w_from_short = short_sch(CM_SCEN$w_from),
+                           check = CMC$check, departure = CMC$departure)),
   attain = attain,
   params = params, demand = demand, cohort = cohort, finance = finance,
   seed_intakes = seed_intakes, idaci = idaci,
@@ -679,3 +718,87 @@ s26 <- p6_sweep %>% filter(year == 2026, fsm)
 message(sprintf("  priority 6 and Gorard, 2026: %s",
                 paste(sprintf("%d%% %.3f", s26$p6, s26$gorard), collapse = ", ")))
 message("Saved data/priority6_sweep.rds")
+
+# ---- 12. CoMArt re-opened -------------------------------------------
+# The scenario the strategic view reports in section 9: CoMArt open again
+# on its site as a small school sharing Longhill's catchment, with
+# Brighton Aldridge and Longhill both at 150, and whether that lets the
+# central schools shrink. Run on the app's model and saved for the
+# document, like the priority-6 sweep above.
+BACA_N <- "Brighton Aldridge Community Academy"; LH_N <- "Longhill High School"
+DS_N <- "Dorothy Stringer School"; V_N <- "Varndean School"
+SMALL <- setNames(c(150, 150), c(BACA_N, LH_N))
+CM1 <- list(pan = 150, w = 1)
+CM_CONFIGS <- list(
+  today    = list(label = "Today", pans = NULL, comart = NULL),
+  shrink   = list(label = "Brighton Aldridge and Longhill at 150", pans = SMALL, comart = NULL),
+  comart   = list(label = "CoMArt open at 150, Brighton Aldridge and Longhill at 150", pans = SMALL, comart = CM1),
+  ds300    = list(label = "... and Dorothy Stringer at 300", pans = c(SMALL, setNames(300, DS_N)), comart = CM1),
+  ds270    = list(label = "... and Dorothy Stringer at 270", pans = c(SMALL, setNames(270, DS_N)), comart = CM1),
+  comart180 = list(label = "CoMArt open at 180, Brighton Aldridge and Longhill at 150", pans = SMALL, comart = list(pan = 180, w = 1)))
+
+dep_min <- function(r) {
+  f <- r$flows %>% filter(name %in% r$schools$name[r$schools$city]) %>%
+    left_join(inp_s$idaci %>% select(lsoa, dep3), by = "lsoa") %>% mutate(dep3 = coalesce(dep3, 0))
+  c(dep = sum(f$flow * f$dep3 * f$cij) / sum(f$flow * f$dep3),
+    rest = sum(f$flow * (1 - f$dep3) * f$cij) / sum(f$flow * (1 - f$dep3)))
+}
+cm_metrics <- function(r) {
+  m <- outcomes(inp_s, r); s <- r$schools
+  wanted <- tapply(r$flows$wanted, r$flows$name, sum)
+  k8 <- m$mix$name %in% s$name[s$city & !s$faith]
+  at <- function(nm, col) { v <- s[[col]][s$name == nm]; if (length(v)) v else NA_real_ }
+  dm <- dep_min(r)
+  tibble(gorard = m$gorard, gorard_catch = gorard_index(m$mix$n[k8], m$mix$dep_n[k8]),
+         mean_min = m$mean_min, p90_min = m$p90_min, over_40 = m$over_40,
+         dep_min = dm[["dep"]], rest_min = dm[["rest"]], dep_gap = m$dep_gap,
+         places = m$pan, fill = m$fill, below_pan = m$below_pan, empty = m$empty,
+         displaced = m$catchment$displaced, left_es = m$catchment$left_es,
+         intake_lh = at(LH_N, "intake"), intake_baca = at(BACA_N, "intake"),
+         intake_comart = at(CM_SCEN$name, "intake"),
+         intake_ds = at(DS_N, "intake"), pan_ds = at(DS_N, "pan"),
+         wanted_ds = unname(wanted[DS_N]),
+         intake_v = at(V_N, "intake"), wanted_v = unname(wanted[V_N]))
+}
+cm_run <- function(cf, year, rule, w = NULL) {
+  cm <- cf$comart; if (!is.null(cm) && !is.null(w)) cm$w <- w
+  run_sim(inp_s, year = year, pans = cf$pans, comart = cm,
+          rules = if (rule == "priorities") list(rule = "priorities") else NULL)
+}
+cm_runs <- tidyr::expand_grid(id = names(CM_CONFIGS), year = c(2026, 2030),
+                              rule = c("priorities", "published")) %>%
+  purrr::pmap_dfr(function(id, year, rule)
+    bind_cols(tibble(id, label = CM_CONFIGS[[id]]$label, year, rule),
+              cm_metrics(cm_run(CM_CONFIGS[[id]], year, rule))))
+
+# Each school, 2026, council priorities: the configurations side by side.
+cm_schools <- purrr::map_dfr(names(CM_CONFIGS), function(id) {
+  r <- cm_run(CM_CONFIGS[[id]], 2026, "priorities"); m <- outcomes(inp_s, r)
+  r$schools %>% filter(city) %>%
+    left_join(m$mix %>% select(name, dep_share), by = "name") %>%
+    transmute(id, name, short, pan, intake, fill, dep_share, mean_min)
+})
+
+# How much rests on the attractiveness CoMArt is given.
+w_cm0 <- inp_s$schools$W[inp_s$schools$name == CM_SCEN$name]
+W_city <- inp_s$schools$W[inp_s$schools$city]
+CM_W <- c(`As Brighton Aldridge (default)` = 1,
+          `As Longhill` = inp_s$schools$W[inp_s$schools$name == LH_N] / w_cm0,
+          `The city median` = stats::median(W_city) / w_cm0)
+cm_sens <- tidyr::expand_grid(variant = names(CM_W), year = c(2026, 2030)) %>%
+  purrr::pmap_dfr(function(variant, year)
+    bind_cols(tibble(variant, w = CM_W[[variant]], year),
+              cm_metrics(cm_run(CM_CONFIGS$comart, year, "priorities", w = CM_W[[variant]]))))
+
+saveRDS(list(runs = cm_runs, schools = cm_schools, sens = cm_sens,
+             configs = purrr::map(CM_CONFIGS, ~ .x[c("label", "pans", "comart")]),
+             w_from = CM_SCEN$w_from, routing_check = CMC$check,
+             built_at = Sys.time()),
+        file.path(DATA, "comart_scenarios.rds"))
+cm26 <- cm_runs %>% filter(year == 2026, rule == "priorities")
+message(sprintf("  CoMArt, 2026, council priorities: %s",
+                paste(sprintf("%s: Gorard %.3f, mean %.1f min, CoMArt %s", cm26$id, cm26$gorard,
+                              cm26$mean_min, ifelse(is.na(cm26$intake_comart), "-",
+                                                   sprintf("%.0f", cm26$intake_comart))),
+                      collapse = "; ")))
+message("Saved data/comart_scenarios.rds")

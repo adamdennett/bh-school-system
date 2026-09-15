@@ -34,7 +34,12 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
   def <- scenario_defaults(inp, preset)
   s <- def$s
   val <- function(x) if (is.null(x) || length(x) == 0) NA else x
-  chr <- function(x) if (is.logical(x)) ifelse(x, "yes", "no") else as.character(x)
+  # A setting a scenario does not have (CoMArt's places, when it is closed)
+  # is blank, not NA: an NA here made every "changed" comparison NA.
+  chr <- function(x) {
+    if (length(x) == 0 || all(is.na(x))) return("")
+    if (is.logical(x)) ifelse(x, "yes", "no") else as.character(x)
+  }
   site_lab <- c(now = "Ovingdean (as now)", elm = "Elm Grove (relocated)")
   rule_lab <- c(published = "Everyone has the same chance (the published model)",
                 priorities = "The council's priorities (2026/27 arrangements)")
@@ -49,7 +54,12 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     c("Places for single-school catchments, priority 6 (%)", s$p6 %||% 5, settings$p6),
     c("Free school meals priority (4 and 5)", chr(s$fsm %||% TRUE), chr(settings$fsm)),
     c("Narrowed to Targeted FSM", chr(s$targeted %||% FALSE), chr(settings$targeted)),
-    c("Total places in the city", sum(def$pans), sum(pans_used)))
+    c("CoMArt re-opened", chr(!is.null(s$comart)), chr(!is.null(settings$comart))),
+    c("CoMArt places", val(s$comart$pan), val(settings$comart$pan)),
+    c("CoMArt attractiveness (x)", val(s$comart$w), val(settings$comart$w)),
+    c("Total places in the city",
+      sum(def$pans) + (if (is.null(s$comart)) 0 else s$comart$pan),
+      sum(pans_used) + (if (is.null(settings$comart)) 0 else settings$comart$pan)))
   scen <- data.frame(
     Setting = vapply(rows, `[`, "", 1),
     `Scenario value` = vapply(rows, function(x) chr(x[2]), ""),
