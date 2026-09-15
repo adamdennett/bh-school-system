@@ -50,6 +50,28 @@ theme_slide <- function(base = 16)
                  plot.title = ggplot2::element_text(face = "bold", colour = INK),
                  plot.subtitle = ggplot2::element_text(colour = MUTED),
                  axis.text = ggplot2::element_text(colour = INK))
+theme_map <- function(base = 14)
+  ggplot2::theme_void(base) +
+  ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", colour = INK),
+                 plot.subtitle = ggplot2::element_text(colour = MUTED),
+                 legend.position = "right", strip.text = ggplot2::element_text(face = "bold", size = base))
+
+library(ggplot2)
+library(patchwork)
+
+oi    <- bh_data("open_inputs.rds")
+lsoa  <- bh_data("lsoa.geojson") |> sf::st_transform(4326)
+catch <- bh_data("catchments_current.geojson") |> sf::st_transform(4326)
+sch   <- schools_sf(oi$schools) |> dplyr::filter(name != "Peacehaven Community School")
+rc    <- bh_data("reception_cohort.rds")
+sfin  <- bh_data("school_finance.rds")
+os    <- bh_data("open_scenarios.rds")
+brt   <- bh_data("brightopia.rds")
+mt    <- bh_data("model_terms.rds")
+fm    <- bh_data("flow_map.rds")
+elm_pt <- sf::st_as_sf(data.frame(e = oi$elm_grove$easting, n = oi$elm_grove$northing),
+                       coords = c("e", "n"), crs = 27700) |> sf::st_transform(4326)
+CITY_X <- c(-0.25, -0.01); CITY_Y <- c(50.80, 50.885)
 ```
 
 ## Before anything else
@@ -82,6 +104,150 @@ theme_slide <- function(base = 16)
 :::
 :::
 
+## Ten schools, six catchments, and where the children are
+
+```{r fig-system-map}
+#| fig-width: 11
+#| fig-height: 6
+kids <- oi$zones |> dplyr::group_by(lsoa) |> dplyr::summarise(children = sum(Oi), .groups = "drop")
+kid_pts <- lsoa |> dplyr::inner_join(kids, by = c("lsoa21cd" = "lsoa")) |>
+  sf::st_point_on_surface() |> suppressWarnings()
+ggplot() +
+  geom_sf(data = catch, aes(fill = catchment), alpha = 0.22, colour = "grey35", linewidth = 0.35) +
+  geom_sf(data = kid_pts, aes(size = children), colour = "#1f4e79", alpha = 0.35) +
+  geom_sf(data = sch, shape = 21, fill = "white", colour = "black", size = 3.4, stroke = 1.1) +
+  ggrepel::geom_text_repel(data = sch, aes(lon, lat, label = short_sch(name)), size = 4,
+                           colour = INK, seed = 2, box.padding = 0.5, min.segment.length = 0) +
+  annotate("point", x = COMART$lon, y = COMART$lat, colour = "#b2182b", size = 3, shape = 4, stroke = 1.6) +
+  annotate("text", x = COMART$lon, y = COMART$lat - 0.004, label = "CoMArt (closed 2005)",
+           colour = "#b2182b", size = 3.4) +
+  scale_fill_manual(values = CATCH_COLOURS, labels = CATCH_LABELS, name = "Catchment") +
+  scale_size_area(max_size = 7, name = "Children per\nneighbourhood") +
+  coord_sf(xlim = CITY_X, ylim = CITY_Y) +
+  labs(title = "Most children live in the centre and west; Longhill sits at the far eastern edge",
+       subtitle = "Two catchments hold a pair of schools; four hold one. King's and Cardinal Newman admit city-wide.") +
+  theme_map()
+```
+
+## The cohort is already falling
+
+```{r fig-cohort}
+#| fig-width: 11
+#| fig-height: 5.4
+y7 <- rc$secondary_city; recp <- rc$reception_city; proj <- rc$projection
+ggplot() +
+  geom_ribbon(data = proj, aes(entry_year, ymin = lo, ymax = hi), fill = "#b2182b", alpha = 0.18) +
+  geom_line(data = recp, aes(year, rec_offers), colour = "#2c7fb8", linewidth = 1.1) +
+  geom_line(data = y7, aes(year, y7_offers), colour = INK, linewidth = 1.3) +
+  geom_line(data = proj, aes(entry_year, central), colour = "#b2182b", linewidth = 1.2, linetype = "22") +
+  annotate("text", x = min(recp$year) + 0.3, y = max(recp$rec_offers) * 1.03, label = "Reception offers",
+           colour = "#2c7fb8", hjust = 0, size = 4.4) +
+  annotate("text", x = min(y7$year) + 0.3, y = min(y7$y7_offers) * 0.93, label = "Year 7 offers",
+           colour = INK, hjust = 0, size = 4.4, fontface = "bold") +
+  annotate("text", x = max(proj$entry_year) - 0.2, y = max(proj$hi) * 1.06,
+           label = "Projected from children\nalready in primary school", colour = "#b2182b", hjust = 1, size = 4) +
+  scale_y_continuous(labels = scales::label_comma(), limits = c(0, NA)) +
+  labs(x = NULL, y = "Offers",
+       title = "Reception offers turned down first; Year 7 follows seven years later",
+       subtitle = sprintf("Year 7 demand projected to about %s by %s, from children already counted",
+                          fmt_n(proj$central[which.max(proj$entry_year)]), max(proj$entry_year))) +
+  theme_slide(15)
+```
+
+## Who can reach a school within 30 minutes
+
+```{r fig-access}
+#| fig-width: 11.5
+#| fig-height: 5.6
+acc_sf <- lsoa |>
+  dplyr::inner_join(acc$lsoa |> dplyr::select(lsoa, places_30, places_30_elm), by = c("lsoa21cd" = "lsoa")) |>
+  tidyr::pivot_longer(c(places_30, places_30_elm), names_to = "site", values_to = "places") |>
+  dplyr::mutate(site = factor(ifelse(site == "places_30", "Longhill at Ovingdean (today)", "Longhill at the top of Elm Grove"),
+                              levels = c("Longhill at Ovingdean (today)", "Longhill at the top of Elm Grove")))
+elm_lab <- sf::st_sf(site = factor("Longhill at the top of Elm Grove", levels = levels(acc_sf$site)),
+                     geometry = sf::st_geometry(elm_pt))
+lh_lab <- sch |> dplyr::filter(grepl("Longhill", name)) |>
+  dplyr::mutate(site = factor("Longhill at Ovingdean (today)", levels = levels(acc_sf$site)))
+ggplot() +
+  geom_sf(data = acc_sf, aes(fill = places), colour = NA) +
+  geom_sf(data = catch, fill = NA, colour = "white", linewidth = 0.25) +
+  geom_sf(data = lh_lab, shape = 21, fill = "white", colour = "black", size = 3.4, stroke = 1.2) +
+  geom_sf(data = elm_lab, shape = 21, fill = "white", colour = "black", size = 3.4, stroke = 1.2) +
+  facet_wrap(~ site) +
+  scale_fill_viridis_c(option = "viridis", direction = -1, labels = scales::label_comma(),
+                       name = "School places\nwithin 30 min") +
+  coord_sf(xlim = CITY_X, ylim = CITY_Y) +
+  labs(title = sprintf("%s neighbourhoods can reach no school place within 30 minutes by walk and bus", nrow(no30)),
+       subtitle = "Darker is more places in reach; yellow is few or none. The white dot is Longhill.") +
+  theme_map(14)
+```
+
+## Poor access and child poverty in the same places
+
+```{r fig-bivariate}
+#| fig-width: 11
+#| fig-height: 6
+BIV <- c("1-1" = "#3b4994", "1-2" = "#8c62aa", "1-3" = "#be64ac",
+         "2-1" = "#5698b9", "2-2" = "#a5add3", "2-3" = "#dfb0d6",
+         "3-1" = "#5ac8c8", "3-2" = "#ace4e4", "3-3" = "#e8e8e8")
+biv <- lsoa |> dplyr::inner_join(acc$bivariate |> dplyr::select(lsoa, biv_key), by = c("lsoa21cd" = "lsoa"))
+main <- ggplot() +
+  geom_sf(data = biv, aes(fill = biv_key), colour = "white", linewidth = 0.05) +
+  geom_sf(data = catch, fill = NA, colour = "grey15", linewidth = 0.4) +
+  geom_sf(data = sch, shape = 21, fill = "white", colour = "black", size = 2.4) +
+  scale_fill_manual(values = BIV, guide = "none") +
+  coord_sf(xlim = CITY_X, ylim = CITY_Y) +
+  labs(title = "Dark blue: the least reachable school places and the most child poverty, together",
+       subtitle = sprintf("Accessibility and child poverty correlate at %.2f across neighbourhoods", acc$acc_dep_spearman)) +
+  theme_map(14)
+key <- expand.grid(a = 1:3, d = 1:3) |>
+  dplyr::mutate(k = paste0(a, "-", d)) |>
+  ggplot(aes(d, a, fill = k)) + geom_tile(colour = "white") +
+  scale_fill_manual(values = BIV, guide = "none") +
+  labs(x = "Less deprived →", y = "More reachable →") + coord_fixed() +
+  theme_minimal(10) + theme(axis.text = element_blank(), panel.grid = element_blank())
+main + inset_element(key, left = 0.0, bottom = 0.02, right = 0.2, top = 0.36)
+```
+
+## Nine of the ten schools are spending their reserves
+
+```{r fig-reserves}
+#| fig-width: 12
+#| fig-height: 5.6
+fex <- sfin$exposure |> dplyr::mutate(short = short_sch(name))
+ord <- fex |> dplyr::arrange(reserve_pct) |> dplyr::pull(name)
+rp <- sfin$panel |> dplyr::mutate(school = factor(short_sch(name), short_sch(ord)), neg = pmin(reserve_pct, 0))
+ggplot(rp, aes(year, reserve_pct)) +
+  geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+  geom_ribbon(aes(ymin = neg, ymax = 0), fill = "#d03b3b", alpha = 0.3) +
+  geom_line(linewidth = 0.9, colour = INK) + geom_point(size = 1.2, colour = INK) +
+  facet_wrap(~ school, ncol = 5) +
+  scale_x_continuous(breaks = sort(unique(rp$year)),
+                     labels = function(x) paste0(substr(x, 3, 4), "/", substr(x + 1, 3, 4))) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(x = NULL, y = "Reserve as a share of income",
+       title = "Revenue reserves, worst first; red shading is a school in deficit",
+       subtitle = "DfE school income and expenditure returns") +
+  theme_slide(12) + theme(axis.text.x = element_text(size = 7))
+```
+
+## Small schools get more per pupil and still run deficits
+
+```{r fig-size-finance}
+#| fig-width: 11
+#| fig-height: 5.2
+sz <- os$size_fin |> dplyr::mutate(size_band = factor(size_band, levels = size_band))
+pa <- ggplot(sz, aes(size_band, income_pp)) + geom_col(fill = "#2166ac", width = 0.7) +
+  scale_y_continuous(labels = scales::label_dollar(prefix = "£", accuracy = 1)) +
+  labs(x = "Pupils on roll", y = NULL, subtitle = "Income per pupil") + theme_slide(14)
+pb <- ggplot(sz, aes(size_band, pct_deficit)) + geom_col(fill = "#b2182b", width = 0.7) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  labs(x = "Pupils on roll", y = NULL, subtitle = "Share of school-years in deficit") + theme_slide(14)
+(pa | pb) + plot_annotation(title = "A shrinking school is a financial problem, not just a smaller one",
+                            subtitle = "Every secondary school in England, by size",
+                            theme = theme_slide(15))
+```
+
 ## What the evidence says
 
 - **This is not mainly a school quality problem.** Most of what separates schools' headline results arrives with the children; the part a school can reach runs mostly through **attendance**.
@@ -90,20 +256,122 @@ theme_slide <- function(base = 16)
 - **Physical access is unequal, in the worst direction.** `r nrow(no30)` neighbourhoods can reach **no** school place within 30 minutes by walking and bus, and access and child poverty go together.
 - Children from the most deprived neighbourhoods travel **`r sprintf("%.1f", co("today", "dep_gap", 2026))` minutes further** each way than everyone else, under the map in force.
 
-# How it was built
+# How the model works
 
-## The steps
+## From published data to options
 
-1. **Where the children and schools are** --- census households, ONS postcodes and small areas, catchment boundaries.
-2. **How reachable schools are** --- walk-and-bus journeys routed on the real network for every neighbourhood.
-3. **How many children, and when** --- the cohort already in primary school, projected forward.
-4. **What families choose** --- sixteen years of the council's preference factsheets.
-5. **A model of the whole system** --- a ladder of spatial interaction models (M0 to M5), each adding one thing: distance, capacity, catchments, competition, and finally calibration to what each catchment's families actually ask for.
-6. **The admission rules** --- the council's 2026/27 priorities, and where refused children go next.
-7. **Children who leave the city** --- Priory, Peacehaven, Seahaven and Seaford Head, fitted to a published FOI table.
-8. **Money** --- each school's finances, and what intake changes do to them.
-9. **The simulator** --- the same model, open to any setting, with every run downloadable.
-10. **The options** --- scored on the council's three priorities at once.
+```{mermaid}
+flowchart LR
+  A["Where children live<br/>census, ONS small areas"] --> M
+  B["Journey times<br/>routed walk and bus"] --> M
+  C["What families ask for<br/>16 years of factsheets,<br/>catchment preferences"] --> M
+  D["Catchment maps"] --> M
+  M["Spatial interaction model<br/>M0 to M5"] --> R["Admission numbers and<br/>the council's priorities"]
+  R --> S["Refused children<br/>re-offered by 2nd preference"]
+  S --> O["Intakes, journeys,<br/>money, social mix"]
+  O --> P["The simulator,<br/>and the options scored"]
+```
+
+## A spatial interaction model
+
+::: {.columns}
+::: {.column width="48%"}
+$$T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma\, \text{in catchment}}\, C_j^{\delta}$$
+
+- $T_{ij}$ --- children from neighbourhood $i$ choosing school $j$
+- $O_i$ --- children living in $i$
+- $W_j$ --- how attractive school $j$ is
+- $c_{ij}$ --- walk-and-bus minutes; $\beta$ how fast demand falls with them
+- $\gamma$ --- how strongly families follow their catchment
+- $C_j$ --- rival schools nearby
+- $A_i$ --- makes every neighbourhood place all its children
+:::
+::: {.column width="52%"}
+```{mermaid}
+flowchart TB
+  N["Each neighbourhood's children"] --> Sh["Shared across schools by<br/>distance, attractiveness,<br/>catchment, competition"]
+  Sh --> Cap{"School full?"}
+  Cap -- "no" --> In["Admitted"]
+  Cap -- "yes" --> Pr["Council priorities decide<br/>who is admitted"]
+  Pr --> Re["The rest re-offered at their<br/>next choice with room"]
+  Re --> Cap
+```
+:::
+:::
+
+## The map alone: every school equally attractive
+
+```{r fig-brightopia}
+#| fig-width: 11
+#| fig-height: 5.6
+bt <- brt$geog_only_at_ref |> dplyr::mutate(fills = modelled >= pan2026)
+ggplot(bt, aes(pan2026, modelled)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey55", linetype = "31") +
+  geom_point(aes(colour = fills), size = 4.5) +
+  ggrepel::geom_text_repel(aes(label = short_sch(name)), size = 4.2, seed = 1, colour = INK) +
+  scale_colour_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b"),
+                      labels = c(`TRUE` = "Geography alone would fill it", `FALSE` = "It would not"), name = NULL) +
+  scale_x_continuous(limits = c(0, NA)) + scale_y_continuous(limits = c(0, NA)) +
+  labs(x = "Admission number, 2026", y = "Children drawn on geography alone",
+       title = "Distance alone explains much of who goes where",
+       subtitle = "Every school identical, only journey time differs. Dashed line: exactly full.") +
+  theme_slide(15) + theme(legend.position = "top")
+```
+
+## Adding one thing at a time
+
+```{r fig-ladder}
+#| fig-width: 12
+#| fig-height: 5.4
+lad <- mt$ladder |> dplyr::mutate(model = factor(model, model))
+LAD_LAB <- c(M0 = "Distance\nonly", M1 = "+ what families\nask for", M2 = "+ school\ncapacity",
+             M3 = "+ one\ncatchment term", M4 = "+ competition", M5 = "Fitted to each\ncatchment")
+p1 <- ggplot(lad, aes(model, mae_free)) +
+  geom_col(fill = INK, width = 0.62) +
+  geom_text(aes(label = round(mae_free)), vjust = -0.4, size = 4.6, colour = INK) +
+  scale_x_discrete(labels = LAD_LAB) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
+  labs(x = NULL, y = "Average error, children per school",
+       subtitle = "Error on the schools not rationing places") + theme_slide(13)
+gam <- tibble::tibble(catchment = names(mt$calibrated$gamma), gamma = unname(mt$calibrated$gamma)) |>
+  dplyr::mutate(label = unname(CATCH_LABELS[CATCH_FROM_MODEL[catchment]]),
+                label = forcats::fct_reorder(label, gamma))
+p2 <- ggplot(gam, aes(gamma, label)) +
+  geom_col(fill = ACCENT, width = 0.62) +
+  geom_text(aes(label = sprintf("%.1f", gamma)), hjust = -0.25, size = 4.6, colour = INK) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(x = "Fitted catchment term", y = NULL,
+       subtitle = "How strongly each catchment follows its map") + theme_slide(13)
+(p1 | p2) + plot_annotation(title = "Capacity does most of the work; families follow their catchment strongly",
+                            theme = theme_slide(15))
+```
+
+## Longhill's modelled catchment, as the model gets more realistic
+
+```{r fig-flows}
+#| fig-width: 12.5
+#| fig-height: 5
+FM_LABELS <- c(M0 = "Distance only", M1 = "With what families ask for", M5 = "Full model")
+FM_COL <- c(Bus = "#2166ac", Walk = "#d95f02")
+fl <- fm$net |> dplyr::filter(name == "Longhill High School") |>
+  dplyr::mutate(model = factor(model, names(FM_LABELS), FM_LABELS))
+fl_bb <- sf::st_bbox(fl)
+fm_sch <- schools_sf() |> dplyr::filter(name %in% unique(fm$net$name))
+ggplot() +
+  geom_sf(data = catch, fill = NA, colour = "grey80", linewidth = 0.3) +
+  geom_sf(data = fl |> dplyr::arrange(flow), aes(linewidth = flow, colour = leg_mode),
+          alpha = 0.75, lineend = "round") +
+  geom_sf(data = fm_sch, colour = "grey45", size = 1.3) +
+  geom_sf(data = fm_sch |> dplyr::filter(name == "Longhill High School"),
+          colour = "black", fill = "white", shape = 21, size = 3.2, stroke = 1.1) +
+  facet_wrap(~ model, nrow = 1) +
+  scale_linewidth_continuous(range = c(0.15, 2.8), guide = "none") +
+  scale_colour_manual(values = FM_COL, name = NULL) +
+  coord_sf(xlim = c(fl_bb["xmin"], fl_bb["xmax"]), ylim = c(fl_bb["ymin"], fl_bb["ymax"])) +
+  labs(title = "Routed over the real network, Longhill's draw shrinks back towards its own catchment",
+       subtitle = "Line width is modelled children on each street or bus segment. White dot: Longhill.") +
+  theme_map(13) + theme(legend.position = "top")
+```
 
 ## Checked, and corrected, along the way
 
@@ -143,7 +411,7 @@ cop$runs |>
   dplyr::arrange(id) |>
   dplyr::transmute(Option = unname(short[as.character(id)]),
                    `Longhill intake` = ifelse(is.na(lh_intake), "---", fmt_n(lh_intake)),
-                   `Deprived children's extra journey` = sprintf("%.1f min", dep_gap),
+                   `Deprived children's extra journey` = sprintf("%.1f min", ifelse(abs(dep_gap) < 0.05, 0, dep_gap)),
                    `Segregation index` = sprintf("%.3f", gorard),
                    Displaced = fmt_n(displaced),
                    `Community schools' balance` = gbp_m(comm_gap)) |>
@@ -159,7 +427,8 @@ cop$runs |>
 #| fig-height: 5.2
 gap <- cop$runs |>
   dplyr::filter(year == 2030, id %in% show) |>
-  dplyr::mutate(label = unname(short[as.character(id)]),
+  dplyr::mutate(dep_gap = ifelse(abs(dep_gap) < 0.05, 0, dep_gap),
+                label = unname(short[as.character(id)]),
                 elm = id %in% c("elm", "package_f"),
                 label = forcats::fct_reorder(label, dep_gap))
 ggplot2::ggplot(gap, ggplot2::aes(dep_gap, label)) +
@@ -183,7 +452,7 @@ ggplot2::ggplot(gap, ggplot2::aes(dep_gap, label)) +
 **What it does** (150 places, catchments redrawn)
 
 - Longhill takes **`r fmt_n(co("elm", "lh_intake", 2026))`** in 2026 and **`r fmt_n(co("elm", "lh_intake"))`** in 2030 --- against `r fmt_n(co("today", "lh_intake", 2026))` and `r fmt_n(co("today", "lh_intake"))` today.
-- Deprived children's extra journey falls from **`r sprintf("%.1f", co("today", "dep_gap"))`** to **`r sprintf("%.1f", co("elm", "dep_gap"))`** minutes.
+- Deprived children's extra journey falls from **`r sprintf("%.1f", co("today", "dep_gap"))`** to **`r sprintf("%.1f", max(0, co("elm", "dep_gap")))`** minutes.
 - Whitehawk's disadvantaged children travel **`r sprintf("%.0f", whe("elm", "minutes_disadvantaged"))`** minutes instead of **`r sprintf("%.0f", whe("today", "minutes_disadvantaged"))`**.
 - The map drawn round it puts **`r cop$elm_moves$whitehawk_to_longhill` of the `r cop$elm_moves$whitehawk_zones`** Whitehawk neighbourhoods back in Longhill's catchment --- as part of a redesign, not a reversal of the 2024 change.
 - With Cardinal Newman, King's and Brighton Aldridge taking fewer: **`r fmt_n(co("package_f", "lh_intake", 2026))`** in 2026 and **`r fmt_n(co("package_f", "lh_intake"))`** in 2030.
@@ -196,7 +465,7 @@ ggplot2::ggplot(gap, ggplot2::aes(dep_gap, label)) +
 - About **`r fmt_n(cop$elm_moves$children)`** children a year in neighbourhoods that change catchment.
 - Longer journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.
 - Longhill **still does not break even** --- about `r gbp_m(-co("elm", "lh_gap"))` a year short in 2030.
-- Two known model limits at Elm Grove, both likely to **understate** its intake, still to fix.
+- It needs families to follow a **new map** as closely as the one they have --- the assumption every redraw result rests on.
 :::
 :::
 
@@ -215,13 +484,13 @@ ggplot2::ggplot(gap, ggplot2::aes(dep_gap, label)) +
 2. **If the site cannot be had, return Whitehawk to Longhill's catchment** on its own.
 3. **Set Longhill at 150** on either site, and budget for the children it will get, not for 150.
 4. **Ask Cardinal Newman (300), King's (150) and Brighton Aldridge (150)** to take fewer, and every school to share the fall in proportion by 2030.
-5. **Trim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean**, and only with the Whitehawk redraw.
+5. **Trim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean and only with a catchment redraw.**
 6. **Publish where priority 6's places went.**
 7. **Ask the inequalities review to settle the measure** --- journeys or mixing --- and whether journey length affects attendance.
 
 ## Next steps
 
-- **Fix the two Elm Grove model limits** --- competition measured from the new site, and second preferences that follow the move --- then re-run and cost the move.
+- **Cost the Elm Grove site**, and re-run the move on the council's own records before deciding.
 - **Draw the Elm Grove catchment with Rottingdean, Saltdean and Woodingdean in the room**, before rather than after.
 - **Check the disadvantaged-intake calibration against a second year** of Year 7 offers.
 - **Release six small tables** the council already holds --- applicants' home areas, full preferences, allocations and the criterion each place was given under --- which would turn most of the ranges here into estimates.

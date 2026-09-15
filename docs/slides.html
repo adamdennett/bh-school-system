@@ -123,6 +123,9 @@
       margin-right: 0; 
     }
   </style>
+  <script src="site_libs/quarto-diagram/mermaid.min.js"></script>
+  <script src="site_libs/quarto-diagram/mermaid-init.js"></script>
+  <link href="site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
 </head>
 <body class="quarto-light">
   <div class="reveal">
@@ -187,6 +190,42 @@ Adam Dennett, UCL Centre for Advanced Spatial Analysis
 </ul>
 </div></div>
 </section>
+<section id="ten-schools-six-catchments-and-where-the-children-are" class="slide level2">
+<h2>Ten schools, six catchments, and where the children are</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-system-map-1.png" id="fig-system-map" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;1
+</p></section>
+<section id="the-cohort-is-already-falling" class="slide level2">
+<h2>The cohort is already falling</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-cohort-1.png" id="fig-cohort" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;2
+</p></section>
+<section id="who-can-reach-a-school-within-30-minutes" class="slide level2">
+<h2>Who can reach a school within 30 minutes</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-access-1.png" id="fig-access" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;3
+</p></section>
+<section id="poor-access-and-child-poverty-in-the-same-places" class="slide level2">
+<h2>Poor access and child poverty in the same places</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-bivariate-1.png" id="fig-bivariate" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;4
+</p></section>
+<section id="nine-of-the-ten-schools-are-spending-their-reserves" class="slide level2">
+<h2>Nine of the ten schools are spending their reserves</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-reserves-1.png" id="fig-reserves" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;5
+</p></section>
+<section id="small-schools-get-more-per-pupil-and-still-run-deficits" class="slide level2">
+<h2>Small schools get more per pupil and still run deficits</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-size-finance-1.png" id="fig-size-finance" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;6
+</p></section>
 <section id="what-the-evidence-says" class="slide level2">
 <h2>What the evidence says</h2>
 <ul>
@@ -198,25 +237,86 @@ Adam Dennett, UCL Centre for Advanced Spatial Analysis
 </ul>
 </section></section>
 <section>
-<section id="how-it-was-built" class="title-slide slide level1 center">
-<h1>How it was built</h1>
+<section id="how-the-model-works" class="title-slide slide level1 center">
+<h1>How the model works</h1>
 
 </section>
-<section id="the-steps" class="slide level2 scrollable">
-<h2>The steps</h2>
-<ol type="1">
-<li><strong>Where the children and schools are</strong> — census households, ONS postcodes and small areas, catchment boundaries.</li>
-<li><strong>How reachable schools are</strong> — walk-and-bus journeys routed on the real network for every neighbourhood.</li>
-<li><strong>How many children, and when</strong> — the cohort already in primary school, projected forward.</li>
-<li><strong>What families choose</strong> — sixteen years of the council’s preference factsheets.</li>
-<li><strong>A model of the whole system</strong> — a ladder of spatial interaction models (M0 to M5), each adding one thing: distance, capacity, catchments, competition, and finally calibration to what each catchment’s families actually ask for.</li>
-<li><strong>The admission rules</strong> — the council’s 2026/27 priorities, and where refused children go next.</li>
-<li><strong>Children who leave the city</strong> — Priory, Peacehaven, Seahaven and Seaford Head, fitted to a published FOI table.</li>
-<li><strong>Money</strong> — each school’s finances, and what intake changes do to them.</li>
-<li><strong>The simulator</strong> — the same model, open to any setting, with every run downloadable.</li>
-<li><strong>The options</strong> — scored on the council’s three priorities at once.</li>
-</ol>
+<section id="from-published-data-to-options" class="slide level2">
+<h2>From published data to options</h2>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart LR
+  A["Where children live&lt;br/&gt;census, ONS small areas"] --&gt; M
+  B["Journey times&lt;br/&gt;routed walk and bus"] --&gt; M
+  C["What families ask for&lt;br/&gt;16 years of factsheets,&lt;br/&gt;catchment preferences"] --&gt; M
+  D["Catchment maps"] --&gt; M
+  M["Spatial interaction model&lt;br/&gt;M0 to M5"] --&gt; R["Admission numbers and&lt;br/&gt;the council's priorities"]
+  R --&gt; S["Refused children&lt;br/&gt;re-offered by 2nd preference"]
+  S --&gt; O["Intakes, journeys,&lt;br/&gt;money, social mix"]
+  O --&gt; P["The simulator,&lt;br/&gt;and the options scored"]
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 </section>
+<section id="a-spatial-interaction-model" class="slide level2">
+<h2>A spatial interaction model</h2>
+<div class="columns">
+<div class="column" style="width:48%;">
+<p><span class="math display">\[T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma\, \text{in catchment}}\, C_j^{\delta}\]</span></p>
+<ul>
+<li><span class="math inline">\(T_{ij}\)</span> — children from neighbourhood <span class="math inline">\(i\)</span> choosing school <span class="math inline">\(j\)</span></li>
+<li><span class="math inline">\(O_i\)</span> — children living in <span class="math inline">\(i\)</span></li>
+<li><span class="math inline">\(W_j\)</span> — how attractive school <span class="math inline">\(j\)</span> is</li>
+<li><span class="math inline">\(c_{ij}\)</span> — walk-and-bus minutes; <span class="math inline">\(\beta\)</span> how fast demand falls with them</li>
+<li><span class="math inline">\(\gamma\)</span> — how strongly families follow their catchment</li>
+<li><span class="math inline">\(C_j\)</span> — rival schools nearby</li>
+<li><span class="math inline">\(A_i\)</span> — makes every neighbourhood place all its children</li>
+</ul>
+</div><div class="column" style="width:52%;">
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart TB
+  N["Each neighbourhood's children"] --&gt; Sh["Shared across schools by&lt;br/&gt;distance, attractiveness,&lt;br/&gt;catchment, competition"]
+  Sh --&gt; Cap{"School full?"}
+  Cap -- "no" --&gt; In["Admitted"]
+  Cap -- "yes" --&gt; Pr["Council priorities decide&lt;br/&gt;who is admitted"]
+  Pr --&gt; Re["The rest re-offered at their&lt;br/&gt;next choice with room"]
+  Re --&gt; Cap
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+</div></div>
+</section>
+<section id="the-map-alone-every-school-equally-attractive" class="slide level2">
+<h2>The map alone: every school equally attractive</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-brightopia-1.png" id="fig-brightopia" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;7
+</p></section>
+<section id="adding-one-thing-at-a-time" class="slide level2">
+<h2>Adding one thing at a time</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-ladder-1.png" id="fig-ladder" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;8
+</p></section>
+<section id="longhills-modelled-catchment-as-the-model-gets-more-realistic" class="slide level2">
+<h2>Longhill’s modelled catchment, as the model gets more realistic</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-flows-1.png" id="fig-flows" width="1875" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;9
+</p></section>
 <section id="checked-and-corrected-along-the-way" class="slide level2">
 <h2>Checked, and corrected, along the way</h2>
 <p>The segregation results changed as the measure was tested against published figures.</p>
@@ -336,11 +436,11 @@ Table&nbsp;2
 </tr>
 <tr class="even">
 <td style="text-align: left;">Longhill at Elm Grove (150), map redrawn</td>
-<td style="text-align: right;">94</td>
-<td style="text-align: right;">0.1 min</td>
-<td style="text-align: right;">0.149</td>
+<td style="text-align: right;">103</td>
+<td style="text-align: right;">0.0 min</td>
+<td style="text-align: right;">0.153</td>
 <td style="text-align: right;">2</td>
-<td style="text-align: right;">−£3.8m</td>
+<td style="text-align: right;">−£3.7m</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">CoMArt re-opened (not available)</td>
@@ -360,9 +460,9 @@ Table&nbsp;2
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Elm Grove package</td>
-<td style="text-align: right;">99</td>
-<td style="text-align: right;">0.3 min</td>
-<td style="text-align: right;">0.146</td>
+<td style="text-align: right;">108</td>
+<td style="text-align: right;">0.1 min</td>
+<td style="text-align: right;">0.150</td>
 <td style="text-align: right;">2</td>
 <td style="text-align: right;">−£3.1m</td>
 </tr>
@@ -387,7 +487,7 @@ Table&nbsp;2
 <h2>Only a nearer school closes the access gap</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-gap-1.png" id="fig-gap" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;1
+Figure&nbsp;10
 </p></section></section>
 <section>
 <section id="what-this-means-for-longhill" class="title-slide slide level1 center">
@@ -400,21 +500,21 @@ Figure&nbsp;1
 <div class="column" style="width:50%;">
 <p><strong>What it does</strong> (150 places, catchments redrawn)</p>
 <ul>
-<li>Longhill takes <strong>112</strong> in 2026 and <strong>94</strong> in 2030 — against 91 and 75 today.</li>
-<li>Deprived children’s extra journey falls from <strong>3.5</strong> to <strong>0.1</strong> minutes.</li>
-<li>Whitehawk’s disadvantaged children travel <strong>26</strong> minutes instead of <strong>53</strong>.</li>
+<li>Longhill takes <strong>123</strong> in 2026 and <strong>103</strong> in 2030 — against 91 and 75 today.</li>
+<li>Deprived children’s extra journey falls from <strong>3.5</strong> to <strong>0.0</strong> minutes.</li>
+<li>Whitehawk’s disadvantaged children travel <strong>24</strong> minutes instead of <strong>53</strong>.</li>
 <li>The map drawn round it puts <strong>5 of the 6</strong> Whitehawk neighbourhoods back in Longhill’s catchment — as part of a redesign, not a reversal of the 2024 change.</li>
-<li>With Cardinal Newman, King’s and Brighton Aldridge taking fewer: <strong>122</strong> in 2026 and <strong>99</strong> in 2030.</li>
+<li>With Cardinal Newman, King’s and Brighton Aldridge taking fewer: <strong>134</strong> in 2026 and <strong>108</strong> in 2030.</li>
 </ul>
 </div><div class="column" style="width:50%;">
 <p><strong>What it costs</strong></p>
 <ul>
 <li>A site — <strong>not costed</strong> in this work.</li>
-<li>Intakes more concentrated: segregation index <strong>0.149</strong> against 0.117.</li>
+<li>Intakes more concentrated: segregation index <strong>0.153</strong> against 0.117.</li>
 <li>About <strong>434</strong> children a year in neighbourhoods that change catchment.</li>
 <li>Longer journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.</li>
-<li>Longhill <strong>still does not break even</strong> — about £0.6m a year short in 2030.</li>
-<li>Two known model limits at Elm Grove, both likely to <strong>understate</strong> its intake, still to fix.</li>
+<li>Longhill <strong>still does not break even</strong> — about £0.5m a year short in 2030.</li>
+<li>It needs families to follow a <strong>new map</strong> as closely as the one they have — the assumption every redraw result rests on.</li>
 </ul>
 </div></div>
 </section>
@@ -439,7 +539,7 @@ Figure&nbsp;1
 <li><strong>If the site cannot be had, return Whitehawk to Longhill’s catchment</strong> on its own.</li>
 <li><strong>Set Longhill at 150</strong> on either site, and budget for the children it will get, not for 150.</li>
 <li><strong>Ask Cardinal Newman (300), King’s (150) and Brighton Aldridge (150)</strong> to take fewer, and every school to share the fall in proportion by 2030.</li>
-<li><strong>Trim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean</strong>, and only with the Whitehawk redraw.</li>
+<li><strong>Trim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean and only with a catchment redraw.</strong></li>
 <li><strong>Publish where priority 6’s places went.</strong></li>
 <li><strong>Ask the inequalities review to settle the measure</strong> — journeys or mixing — and whether journey length affects attendance.</li>
 </ol>
@@ -447,7 +547,7 @@ Figure&nbsp;1
 <section id="next-steps" class="slide level2">
 <h2>Next steps</h2>
 <ul>
-<li><strong>Fix the two Elm Grove model limits</strong> — competition measured from the new site, and second preferences that follow the move — then re-run and cost the move.</li>
+<li><strong>Cost the Elm Grove site</strong>, and re-run the move on the council’s own records before deciding.</li>
 <li><strong>Draw the Elm Grove catchment with Rottingdean, Saltdean and Woodingdean in the room</strong>, before rather than after.</li>
 <li><strong>Check the disadvantaged-intake calibration against a second year</strong> of Year 7 offers.</li>
 <li><strong>Release six small tables</strong> the council already holds — applicants’ home areas, full preferences, allocations and the criterion each place was given under — which would turn most of the ranges here into estimates.</li>

@@ -7736,7 +7736,7 @@ families near Elm Grove it moves towards --- and they are the most
 attached to their own schools of any in the city.
 
 - **Moving on its own costs Longhill about `r fmt_n(abs(me("move_only", 2030)))` children a year.** It draws `r fmt_n(m5n("A", 2030))` at Ovingdean in 2030 and `r fmt_n(m5n("C", 2030))` at Elm Grove behind today's catchments.
-- **Moving with redrawn catchments gains a few children**: `r fmt_n(m5n("E", 2030))` in 2030 against `r fmt_n(m5n("B", 2030))` staying put. The redraw wins back what the move lost and a little more.
+- **Moving with redrawn catchments gains children**: `r fmt_n(m5n("E", 2030))` in 2030 against `r fmt_n(m5n("B", 2030))` staying put. The redraw wins back what the move lost and a little more.
 - **Redrawing without moving costs children too**, `r fmt_n(m5n("F", 2030))` in 2030, because the designed map passes some of Longhill's hinterland to its neighbours.
 - **A move sends more of Longhill's own catchment out of the city**: `r fmt_n(rl5$central$left_city_longhill[rl5$central$id == "A" & rl5$central$entry_year == 2030])` to the East Sussex schools in 2030 at Ovingdean, most of them to Priory, against `r fmt_n(rl5$central$left_city_longhill[rl5$central$id == "C" & rl5$central$entry_year == 2030])` at Elm Grove behind today's catchments.
 - **Nothing draws 150 children after 2026.** By 2035 the best option draws `r fmt_n(max(rl5$central$natural[rl5$central$entry_year == 2035]))`.
@@ -8165,7 +8165,7 @@ cop$runs %>%
             Longhill = d_or(lh_intake, function(x) fmt_n(x)),
             `Community schools' balance` = gbp_m(comm_gap),
             Gorard = sprintf("%.3f", gorard),
-            `Deprived-journey gap` = sprintf("%.1f min", dep_gap),
+            `Deprived-journey gap` = sprintf("%.1f min", ifelse(abs(dep_gap) < 0.05, 0, dep_gap)),
             `Longest journeys (90th %ile)` = sprintf("%.0f min", p90_min),
             Displaced = fmt_n(displaced),
             `At a catchment school` = fmt_pct(100 * in_catchment, 0)) %>%
@@ -8248,7 +8248,7 @@ the other.
 else --- is improved most by putting a school where they live. With
 Longhill at Elm Grove the gap falls from
 `r sprintf("%.1f", co("today", "dep_gap"))` to
-`r sprintf("%.1f", co("elm", "dep_gap"))` minutes; with CoMArt open, to
+`r sprintf("%.1f", max(0, co("elm", "dep_gap")))` minutes; with CoMArt open, to
 `r sprintf("%.1f", co("comart", "dep_gap"))`. Nothing else in the table
 moves it by more than half a minute.
 
@@ -8592,7 +8592,7 @@ Whitehawk question as part of a redesign. So it leads.
    `r fmt_n(co("today", "lh_intake", 2026))` and
    `r fmt_n(co("today", "lh_intake"))` today; deprived children stop
    travelling further than everyone else, a gap of
-   `r sprintf("%.1f", co("elm", "dep_gap"))` minutes against
+   `r sprintf("%.1f", max(0, co("elm", "dep_gap")))` minutes against
    `r sprintf("%.1f", co("today", "dep_gap"))`; Whitehawk's disadvantaged
    children's journeys fall from
    `r sprintf("%.0f", whe("today", "minutes_disadvantaged"))` to
@@ -8630,8 +8630,9 @@ Whitehawk question as part of a redesign. So it leads.
    city giving up places in proportion by 2030. With Longhill at Elm
    Grove these asks add most to its roll.
 5. **Trim Stringer, Varndean and Blatchington Mill only if Longhill stays
-   at Ovingdean** --- to 300, 270 and 300, for the next two or three
-   rounds while they are full, and only with the Whitehawk redraw. With
+   at Ovingdean and only with a catchment redraw** --- to 300, 270 and
+   300, for the next two or three rounds while they are full, with
+   Whitehawk returned to Longhill's catchment. With
    Longhill at Elm Grove the trims add few children in the model's runs
    and raise displacement.
 6. **Publish where priority 6's places went**, so what it does to
@@ -8658,7 +8659,7 @@ that package gives Longhill
 against `r fmt_pct(100 * co("today", "in_catchment"), 0)`; and, in 2026,
 longest journeys of `r sprintf("%.0f", co(pk, "p90_min", 2026))` minutes
 against `r sprintf("%.0f", co("today", "p90_min", 2026))`; and a
-deprived-journey gap of `r sprintf("%.1f", co(pk, "dep_gap"))` minutes
+deprived-journey gap of `r sprintf("%.1f", max(0, co(pk, "dep_gap")))` minutes
 against `r sprintf("%.1f", co("today", "dep_gap"))`. It does not make
 Longhill break even; that needs a decision about money. Without the
 move, the best package tested --- Whitehawk back to Longhill, Longhill
@@ -8686,12 +8687,12 @@ Most options differ on the index by a few thousandths, which is inside
 what a change of measure has moved. And the
 academies and faith schools are modelled as responding to demand, not as
 making their own decisions about numbers.
-The Elm Grove runs carry two further limits, found while checking the
-simulator: the competition term still measures distances from Longhill's
-Ovingdean site, and children refused elsewhere are re-offered places
-using the second preferences families gave with Longhill at Ovingdean.
-Both are likely to understate how many children a school at Elm Grove
-would draw, and both should be corrected before the move is costed.
+The Elm Grove runs were corrected in this version: competition is now
+measured from the Elm Grove site, and children refused elsewhere are
+re-offered places with the second preferences families gave shifted by
+how much the move changes each neighbourhood's pull towards the school.
+Both raised Elm Grove's figures a little. The site itself, and what
+building on it would cost, are not modelled.
 The direction of each finding is more reliable than its size.
 :::
 

@@ -85,12 +85,19 @@ ipf_cap <- function(flow, orig, dest, o_target, cap,
 #'
 #' The kernel and the partner map are traits of where a family lives, so
 #' they follow the neighbourhood's own catchment under any map.
-overflow_setup <- function(flow, orig, name, home, pop, kern, partner) {
+#' When a school has moved, `ref` is the flow each row would have with
+#' every school where it stands today. The kernel records the second
+#' preferences families gave with the schools there, so each
+#' neighbourhood's weight is its pull at this site against its
+#' catchment's pull at today's: a catchment the move brings a school
+#' nearer to sends it more of its overflow. With no move it is the same
+#' flow, and nothing changes.
+overflow_setup <- function(flow, orig, name, home, pop, kern, partner, ref = NULL) {
   oid <- match(orig, unique(orig))
-  u <- flow / rowsum(flow, oid)[oid, 1]
-  u[!is.finite(u)] <- 0
+  shares <- function(f) { v <- f / rowsum(f, oid)[oid, 1]; v[!is.finite(v)] <- 0; v }
+  u <- shares(flow)
   hs <- paste(home, name)
-  ubar <- stats::ave(u, hs, FUN = mean)
+  ubar <- stats::ave(if (is.null(ref)) u else shares(ref), hs, FUN = mean)
   k <- unname(kern[hs]); k[is.na(k)] <- 0
   bw <- k * u / pmax(ubar, 1e-12)
   bw[!is.finite(bw)] <- 0
@@ -128,8 +135,8 @@ overflow_add <- function(refused, room, st) {
 }
 
 cascade_cap <- function(flow, orig, name, home, pop, kern, partner, cap,
-                        max_iter = 500, tol = 1e-6) {
-  st <- overflow_setup(flow, orig, name, home, pop, kern, partner)
+                        max_iter = 500, tol = 1e-6, ref = NULL) {
+  st <- overflow_setup(flow, orig, name, home, pop, kern, partner, ref)
   D <- flow
   for (i in seq_len(max_iter)) {
     load <- tapply(D, name, sum)
@@ -240,8 +247,8 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
 ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
                            in_c, s6, com, p6_share, fsm_cap_share,
                            home, pop, kern, partner,
-                           max_iter = 500, tol = 1e-6) {
-  st <- overflow_setup(flow, orig, name, home, pop, kern, partner)
+                           max_iter = 500, tol = 1e-6, ref = NULL) {
+  st <- overflow_setup(flow, orig, name, home, pop, kern, partner, ref)
   ff <- flow * unname(fsm_share[orig])
   fn <- flow - ff
   for (i in seq_len(max_iter)) {
@@ -363,7 +370,14 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     dplyr::filter(Oi > 0, is.finite(cij), cij > 0)
 
   d$Wj <- W[d$name]
-  d$Cj <- compete_now(sch, W, inp$params$sigma)[d$name]
+  # Competition is measured from where the schools stand in this run: with
+  # Longhill at Elm Grove, its distances to its rivals are from Elm Grove.
+  sch_xy <- sch
+  if (site == "elm" && all(c("elm_easting", "elm_northing") %in% names(sch))) {
+    sch_xy$easting <- sch$elm_easting
+    sch_xy$northing <- sch$elm_northing
+  }
+  d$Cj <- compete_now(sch_xy, W, inp$params$sigma)[d$name]
   d$in_catch <- as.integer(
     !is.na(dsg$school[d$name]) &
       dsg$school[d$name] == dsg$zone[d$zone])
@@ -417,6 +431,22 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   A <- tapply(util, d$orig, sum)
   d$flow <- util * d$Oi_pop / A[d$orig]
 
+  # The same demand with every school where it stands today: what the
+  # second preferences behind the overflow were given against. Only a
+  # moved school needs it; the map in force is kept, so it isolates the
+  # move.
+  u_ref <- NULL
+  if (site != "now") {
+    ref <- inp$cost$now
+    cij_ref <- ref$cij[match(paste(d$zone, d$name), paste(ref$zone, ref$name))]
+    cij_ref[is.na(cij_ref)] <- d$cij[is.na(cij_ref)]
+    Cj_ref <- compete_now(sch, W, inp$params$sigma)[d$name]
+    util_ref <- d$Wj * cij_ref^(-inp$params$beta) *
+      exp(g_mult * g * d$in_catch + inp$params$delta * log(Cj_ref))
+    if (any(is_ext)) util_ref[is_ext] <- util[is_ext]
+    u_ref <- util_ref * d$Oi_pop / tapply(util_ref, d$orig, sum)[d$orig]
+  }
+
   # Keep what the model wanted before the ceiling bit. The difference
   # between this and the capped flow is the whole of the displacement, and
   # without it "outside their catchment" cannot be split into children
@@ -447,7 +477,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     d$flow <- if (is.null(kern))
       as.numeric(ipf_cap(d$flow, d$orig, d$name, o_pop, cap_all))
     else as.numeric(cascade_cap(d$flow, d$orig, d$name, d$catchment, d$pop,
-                                kern, partner, cap_all))
+                                kern, partner, cap_all, ref = u_ref))
 
   if (capped && rule$rule == "priorities") {
     stopifnot(!is.null(rl), "fsm" %in% names(z))
@@ -470,7 +500,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     stopifnot(!is.null(kern))
     res <- ipf_priorities(d$flow, d$orig, d$name, cap_all, cap_all, share_o,
                           in_c, s6, com, rule$p6_share, rl$fsm_cap_share,
-                          d$catchment, d$pop, kern, partner)
+                          d$catchment, d$pop, kern, partner, ref = u_ref)
     d$flow <- res$flow
     d$fsm_flow <- res$fsm
     d$p6 <- res$p6
