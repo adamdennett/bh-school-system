@@ -684,7 +684,9 @@ server <- function(input, output, session) {
                     "Power diagram" = "Power diagram (proximity and capacity)",
                     "Flow regions, pairs kept" = "Flow regions, pairs kept",
                     "Flow regions, one per school" = "Flow regions, one per school",
-                    "Flow regions, Longhill at Elm Grove" = "Flow regions, Elm Grove, PAN 150")
+                    "Flow regions, Longhill at Elm Grove" = "Flow regions, Elm Grove, PAN 150",
+                    # Maps whose outlines are built in R/05_app_inputs.R under their own name.
+                    input$design)
     gj <- unname(inp$design_geojson[dname])
     if (is.na(gj)) gj <- NULL
 

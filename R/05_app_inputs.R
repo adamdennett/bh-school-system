@@ -172,6 +172,32 @@ DESIGNS <- list(
   `Flow regions, Longhill at Elm Grove` = design_from(fr$regions$elm$assign,
                                                       fr$groups_paired))
 
+# Two maps to judge the 2024 change by. The 2024 map moved the zones
+# around CoMArt's old site in Whitehawk out of Longhill's catchment into
+# Stringer / Varndean's, and moved others, further out, the other way. So
+# the pre-2024 map is one option, and today's map with only the Whitehawk
+# zones put back in Longhill's catchment is another, narrower one. An LSOA
+# split between catchments takes the one most of its children are in, for
+# drawing; the model itself runs on zones.
+pre_catch <- setNames(oi$zones$catch_pre2024, oi$zones$zone)[zones$zone]
+wh_catch <- ifelse(zones$catchment == "DS_Varndean" & pre_catch == "Longhill",
+                   "Longhill", zones$catchment)
+lsoa_major <- function(grp) {
+  d <- tibble(lsoa = zones$lsoa, grp = grp, Oi = zones$Oi) %>%
+    group_by(lsoa, grp) %>% summarise(Oi = sum(Oi), .groups = "drop") %>%
+    group_by(lsoa) %>% slice_max(Oi, n = 1, with_ties = FALSE) %>% ungroup()
+  setNames(d$grp, d$lsoa)
+}
+DESIGNS[["Pre-2024 catchments"]] <- list(
+  zone = setNames(unname(pre_catch), zones$zone), lsoa = lsoa_major(unname(pre_catch)),
+  school = setNames(schools$group, schools$name))
+DESIGNS[["Current catchments, Whitehawk back to Longhill"]] <- list(
+  zone = setNames(wh_catch, zones$zone), lsoa = lsoa_major(wh_catch),
+  school = setNames(schools$group, schools$name))
+stopifnot(!any(is.na(pre_catch)), sum(wh_catch != zones$catchment) > 0)
+message(sprintf("  Whitehawk back to Longhill: %d zones, %.0f children, moved from Stringer / Varndean",
+                sum(wh_catch != zones$catchment), sum(zones$Oi[wh_catch != zones$catchment])))
+
 # A design that does not cover a neighbourhood would silently switch the
 # catchment term off there, so every one is checked against the zones.
 for (d in names(DESIGNS)) {
@@ -476,6 +502,23 @@ design_geojson <- vapply(unique(design_sf$design), function(d) {
   unlink(f)
   txt
 }, character(1))
+
+# Outlines for the two maps built above, from whole LSOAs.
+lsoa_sf <- bh_data("lsoa.geojson")
+for (nm in c("Pre-2024 catchments", "Current catchments, Whitehawk back to Longhill")) {
+  g <- lsoa_sf %>%
+    mutate(grp = unname(DESIGNS[[nm]]$lsoa[lsoa21cd])) %>%
+    filter(!is.na(grp)) %>%
+    sf::st_transform(27700) %>%
+    group_by(grp) %>% summarise(.groups = "drop") %>%
+    sf::st_simplify(dTolerance = 60) %>%
+    sf::st_transform(4326)
+  f <- tempfile(fileext = ".geojson")
+  sf::st_write(g, f, quiet = TRUE, delete_dsn = TRUE,
+               layer_options = "COORDINATE_PRECISION=5")
+  design_geojson[[nm]] <- paste(readLines(f, warn = FALSE), collapse = "")
+  unlink(f)
+}
 
 # School dots, projected once. Both sites, so moving Longhill to Elm
 # Grove moves its dot without any run-time transformation.
@@ -803,3 +846,143 @@ message(sprintf("  CoMArt, 2026, council priorities: %s",
                                                    sprintf("%.0f", cm26$intake_comart))),
                       collapse = "; ")))
 message("Saved data/comart_scenarios.rds")
+
+# ---- 13. The council's options, scored on its priorities -------------
+# Section 11 of the strategic view weighs the council's priorities against
+# each other: keeping Longhill open, access and segregation for deprived
+# children, and - a parent's priority - children kept at a school in their
+# catchment and not displaced. Every option here uses only levers the
+# council holds: the six community schools' admission numbers, the
+# catchment map, Longhill's site and the admission priorities. The
+# academies and faith schools keep their numbers except where an option
+# says otherwise. Each is run under the council's priorities in 2026,
+# 2030 and 2035 on the app's model, and scored on every priority at once.
+N <- function(s) switch(s,
+  LH = "Longhill High School", DS = "Dorothy Stringer School", V = "Varndean School",
+  BMS = "Blatchington Mill School", HP = "Hove Park School", PAT = "Patcham High School",
+  BACA = "Brighton Aldridge Community Academy", PACA = "Portslade Aldridge Community Academy",
+  CN = "Cardinal Newman Catholic School", KINGS = "King's School")
+P <- function(...) { x <- c(...); setNames(unname(x), vapply(names(x), N, "")) }
+pan_city <- setNames(inp_s$schools$pan[inp_s$schools$city], inp_s$schools$name[inp_s$schools$city])
+FIXED_OTHER <- sum(pan_city[!names(pan_city) %in% COMMUNITY])
+shrink_comm <- scale_pans(pan_city[COMMUNITY], SHRINK_TOTAL - FIXED_OTHER)
+
+CO_OPTIONS <- list(
+  today        = list(group = "Baseline", label = "Today"),
+  lh150        = list(group = "Keep Longhill open", label = "Longhill cut to 150", pans = P(LH = 150)),
+  lh120        = list(group = "Keep Longhill open", label = "Longhill cut to 120", pans = P(LH = 120)),
+  lh_wanted    = list(group = "Keep Longhill open", label = "Longhill at 150, and 1.5 times as attractive",
+                      pans = P(LH = 150), w = P(LH = 1.5)),
+  central      = list(group = "Keep Longhill open",
+                      label = "Longhill 150; Stringer 300, Varndean 270, Blatchington Mill 300",
+                      pans = P(LH = 150, DS = 300, V = 270, BMS = 300)),
+  central_hard = list(group = "Keep Longhill open",
+                      label = "Longhill 150; Stringer 270, Varndean 240, Blatchington Mill 270, Hove Park 150",
+                      pans = P(LH = 150, DS = 270, V = 240, BMS = 270, HP = 150)),
+  # Whitehawk's zones back in Longhill's catchment, so children moved out
+  # of the central schools have a nearer catchment school to go to.
+  whitehawk    = list(group = "Keep Longhill open", label = "Whitehawk back in Longhill's catchment",
+                      design = "Current catchments, Whitehawk back to Longhill"),
+  whitehawk_lh150 = list(group = "Keep Longhill open",
+                      label = "Whitehawk back in Longhill's catchment; Longhill 150",
+                      design = "Current catchments, Whitehawk back to Longhill", pans = P(LH = 150)),
+  whitehawk_central = list(group = "Keep Longhill open",
+                      label = "Whitehawk back to Longhill; Longhill 150; Stringer 300, Varndean 270, Blatchington Mill 300",
+                      design = "Current catchments, Whitehawk back to Longhill",
+                      pans = P(LH = 150, DS = 300, V = 270, BMS = 300)),
+  pre2024      = list(group = "Keep Longhill open", label = "The pre-2024 catchments",
+                      design = "Pre-2024 catchments"),
+  elm          = list(group = "Keep Longhill open", label = "Longhill at Elm Grove at 150, catchments redrawn",
+                      site = "elm", design = "Flow regions, Longhill at Elm Grove", pans = P(LH = 150)),
+  shrink       = list(group = "Fit the system",
+                      label = sprintf("Community schools cut in proportion, to %s places in all by 2035", fmt_n(SHRINK_TOTAL)),
+                      pans = shrink_comm),
+  power        = list(group = "Access and segregation", label = "Power diagram catchments", design = "Power diagram"),
+  power_lh150  = list(group = "Access and segregation", label = "Power diagram catchments, Longhill 150",
+                      design = "Power diagram", pans = P(LH = 150)),
+  p6_off       = list(group = "Access and segregation", label = "No priority 6",
+                      rules = list(rule = "priorities", p6_share = 0)),
+  p6_20        = list(group = "Access and segregation", label = "Priority 6 at 20%",
+                      rules = list(rule = "priorities", p6_share = 0.20)),
+  equal        = list(group = "Access and segregation", label = "No oversubscription priorities: an equal chance",
+                      rule = "published"),
+  comart       = list(group = "Access and segregation",
+                      label = "CoMArt open at 150; Brighton Aldridge and Longhill at 150",
+                      pans = P(BACA = 150, LH = 150), comart = list(pan = 150, w = 1)),
+  package_a    = list(group = "Packages",
+                      label = "Longhill 150; Stringer 300, Varndean 270, Blatchington Mill 300; power diagram; no priority 6",
+                      design = "Power diagram", pans = P(LH = 150, DS = 300, V = 270, BMS = 300),
+                      rules = list(rule = "priorities", p6_share = 0)),
+  package_b    = list(group = "Packages",
+                      label = "Package A, with Longhill 1.5 times as attractive",
+                      design = "Power diagram", pans = P(LH = 150, DS = 300, V = 270, BMS = 300),
+                      w = P(LH = 1.5), rules = list(rule = "priorities", p6_share = 0)),
+  # The schools the council does not run. It cannot set their numbers,
+  # but it can ask, and the evidence for asking is what these show.
+  shrink_all   = list(group = "Fit the system",
+                      label = sprintf("Every school cut in proportion, to %s places in all by 2035", fmt_n(SHRINK_TOTAL)),
+                      pans = scale_pans(pan_city, SHRINK_TOTAL)),
+  cn300        = list(group = "Asks of schools the council does not run",
+                      label = "Cardinal Newman cut to 300", pans = P(CN = 300)),
+  cn270_kings  = list(group = "Asks of schools the council does not run",
+                      label = "Cardinal Newman cut to 270, King's to 150", pans = P(CN = 270, KINGS = 150)),
+  academies    = list(group = "Asks of schools the council does not run",
+                      label = "Brighton Aldridge cut to 150, Portslade Aldridge to 180",
+                      pans = P(BACA = 150, PACA = 180)),
+  package_c    = list(group = "Packages",
+                      label = "Package A, with Cardinal Newman at 300 and Brighton Aldridge at 150",
+                      design = "Power diagram",
+                      pans = P(LH = 150, DS = 300, V = 270, BMS = 300, CN = 300, BACA = 150),
+                      rules = list(rule = "priorities", p6_share = 0)),
+  package_d    = list(group = "Packages",
+                      label = "Whitehawk back to Longhill; Longhill 150; Stringer 300, Varndean 270, Blatchington Mill 300; no priority 6",
+                      design = "Current catchments, Whitehawk back to Longhill",
+                      pans = P(LH = 150, DS = 300, V = 270, BMS = 300),
+                      rules = list(rule = "priorities", p6_share = 0)),
+  package_e    = list(group = "Packages",
+                      label = "Package D, with Cardinal Newman at 300 and Brighton Aldridge at 150",
+                      design = "Current catchments, Whitehawk back to Longhill",
+                      pans = P(LH = 150, DS = 300, V = 270, BMS = 300, CN = 300, BACA = 150),
+                      rules = list(rule = "priorities", p6_share = 0)),
+  close_lh     = list(group = "Counterfactual", label = "Longhill closed",
+                      closed = c(N("LH"), CM_SCEN$name)))
+
+co_run <- function(o, year)
+  run_sim(inp_s, year = year, pans = o$pans, w_mult = o$w,
+          site = o$site %||% "now", design = o$design %||% "Current catchments",
+          rules = if (identical(o$rule, "published")) NULL else (o$rules %||% list(rule = "priorities")),
+          comart = o$comart, closed = o$closed)
+
+co_metrics <- function(r) {
+  m <- outcomes(inp_s, r); s <- r$schools; fin <- m$by_school
+  at <- function(tbl, nm, col) { v <- tbl[[col]][tbl$name == nm]; if (length(v)) v[1] else NA_real_ }
+  cf <- fin %>% filter(name %in% COMMUNITY)
+  lhc <- m$catchment$outside %>% filter(home == "Longhill")
+  comm <- s %>% filter(name %in% COMMUNITY)
+  tibble(lh_intake = at(s, N("LH"), "intake"), lh_pan = at(s, N("LH"), "pan"),
+         lh_fill = at(s, N("LH"), "fill"), lh_gap = at(fin, N("LH"), "gap"),
+         lh_gap_pct = at(fin, N("LH"), "gap_pct"), lh_years = at(fin, N("LH"), "years_left"),
+         comm_in_deficit = sum(cf$in_deficit), comm_gap = sum(cf$gap),
+         comm_empty = sum(pmax(0, comm$pan - comm$intake)), comm_full = sum(comm$fill >= 0.995),
+         city_gap = m$city_gap, empty = m$empty, below_pan = m$below_pan,
+         gorard = m$gorard, dep_gap = m$dep_gap, dep_min = dep_min(r)[["dep"]],
+         mean_min = m$mean_min, p90_min = m$p90_min, over_40 = m$over_40,
+         displaced = m$catchment$displaced, in_catchment = 1 - m$catchment$outside_share,
+         left_city = m$catchment$left_city,
+         lh_catch_at_home = if (nrow(lhc)) 1 - lhc$outside_share else NA_real_)
+}
+
+co_runs <- tidyr::expand_grid(id = names(CO_OPTIONS), year = c(2026, 2030, 2035)) %>%
+  purrr::pmap_dfr(function(id, year)
+    bind_cols(tibble(id, group = CO_OPTIONS[[id]]$group, label = CO_OPTIONS[[id]]$label, year),
+              co_metrics(co_run(CO_OPTIONS[[id]], year))))
+
+saveRDS(list(runs = co_runs, options = CO_OPTIONS, community = COMMUNITY,
+             shrink_total = SHRINK_TOTAL, built_at = Sys.time()),
+        file.path(DATA, "council_options.rds"))
+co30 <- co_runs %>% filter(year == 2030)
+message(sprintf("  council options, 2030: %s",
+                paste(sprintf("%s: Longhill %s, Gorard %.3f, displaced %.0f", co30$id,
+                              ifelse(is.na(co30$lh_intake), "-", sprintf("%.0f", co30$lh_intake)),
+                              co30$gorard, co30$displaced), collapse = "; ")))
+message("Saved data/council_options.rds")
