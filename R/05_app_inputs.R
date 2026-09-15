@@ -213,7 +213,7 @@ stopifnot(!any(is.na(schools$W)))
 
 # CoMArt's row: not a city school unless a scenario opens it (run_sim).
 schools <- bind_rows(schools %>% mutate(hypothetical = FALSE), tibble(
-  name = CM_SCEN$name, short = CM_SCEN$short, urn = NA_character_,
+  name = CM_SCEN$name, short = CM_SCEN$short, urn = "comart",
   easting = CMC$site$easting, northing = CMC$site$northing, faith = FALSE,
   pan = CM_SCEN$pan, city = FALSE, community = FALSE,
   W = schools$W[schools$name == CM_SCEN$w_from], group = NA_character_,
@@ -557,14 +557,15 @@ presets <- list(
   `CoMArt re-opened: three small eastern schools` = list(
     note = "CoMArt, closed in 2005, open again on its East Brighton site with 150 places, sharing Longhill's catchment, and Brighton Aldridge and Longhill both cut to 150. Watch segregation, journeys, and whether the central schools still fill.",
     design = "Current catchments", site = "now", year = 2026,
-    pan = c(`Brighton Aldridge Community Academy` = 150, `Longhill High School` = 150),
-    w = NULL, comart = list(pan = 150, w = 1)),
+    pan = c(`Brighton Aldridge Community Academy` = 150, `Longhill High School` = 150,
+            CoMArt = 150),
+    w = NULL, closed = character(0)),
   `CoMArt re-opened, and Stringer to 300` = list(
     note = "The same three small eastern schools, with Dorothy Stringer's admission number cut from 330 to 300. Does Stringer still fill, and where do the children go?",
     design = "Current catchments", site = "now", year = 2026,
     pan = c(`Brighton Aldridge Community Academy` = 150, `Longhill High School` = 150,
-            `Dorothy Stringer School` = 300),
-    w = NULL, comart = list(pan = 150, w = 1)))
+            `Dorothy Stringer School` = 300, CoMArt = 150),
+    w = NULL, closed = character(0)))
 
 # ---- 10. The admission rules, and FSM take-up -----------------------
 # The app can run the council's oversubscription priorities as a tiered

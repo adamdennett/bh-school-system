@@ -36,6 +36,11 @@ source(file.path(APP, "R", "outcomes.R"))
 
 inp <- readRDS(file.path(APP, "data", "sim_inputs.rds"))
 CITY <- inp$schools %>% filter(city) %>% arrange(short)
+# Every school with a row in the per-school list: the ten, and CoMArt at
+# the bottom, which is closed unless a scenario or the user opens it.
+SCH <- inp$schools %>% filter(city | hypothetical %in% TRUE) %>%
+  arrange(hypothetical %in% TRUE, short)
+HYP <- SCH$name[SCH$hypothetical %in% TRUE]
 
 # Total places, moved in classes of 30. The slider's grid is laid out from
 # whatever the total currently is, so any sum the ten admission numbers
@@ -95,7 +100,11 @@ MAP_LEGEND <- list(
 # ---- UI --------------------------------------------------------------
 
 school_row <- function(s) {
-  div(class = "sch-row",
+  div(class = if (isTRUE(s$hypothetical)) "sch-row closed" else "sch-row",
+      # Close the school: it leaves the city, and the row turns red.
+      div(class = "sch-close", title = paste("Close", s$short),
+          checkboxInput(paste0("closed_", s$urn), NULL,
+                        value = isTRUE(s$hypothetical), width = "20px")),
       div(class = "sch-name", s$short),
       div(class = "sch-w",
           sliderInput(paste0("w_", s$urn), NULL, min = 0.25, max = 4,
@@ -127,6 +136,12 @@ ui <- page_sidebar(
   tags$head(tags$style(HTML("
     .sch-row{display:flex;align-items:center;gap:6px;margin-bottom:-14px}
     .sch-name{width:104px;font-size:11.5px;line-height:1.15}
+    .sch-close{width:20px;flex:none}
+    .sch-close .form-group,.sch-close .checkbox,.sch-close .shiny-input-container{margin:0;width:20px}
+    .sch-close label{padding-left:0;min-height:0}
+    .sch-close input[type=checkbox]{margin:0;position:static;accent-color:#b2182b}
+    .sch-row.closed .sch-name{color:#b2182b;text-decoration:line-through}
+    .sch-row.closed .sch-w,.sch-row.closed .sch-pan{opacity:.3;pointer-events:none}
     .sch-w{flex:1}.sch-pan{width:84px}
     .sch-row .form-group{margin-bottom:0}
     .irs--shiny .irs-bar{background:#2a78d6;border-top-color:#2a78d6;border-bottom-color:#2a78d6}
@@ -152,7 +167,21 @@ ui <- page_sidebar(
     tags$link(rel = "stylesheet",
               href = "leaflet/leaflet.css"),
     tags$script(src = "leaflet/leaflet.js"),
-    tags$script(src = "map.js")),
+    tags$script(src = "map.js"),
+    # A closed school's row turns red, whether a user ticked it or a
+    # scenario did: shiny:inputchanged fires for both.
+    tags$script(HTML("
+      $(document).on('shiny:inputchanged', function (e) {
+        if (e.name && e.name.indexOf('closed_') === 0) {
+          var el = document.getElementById(e.name);
+          if (el) $(el).closest('.sch-row').toggleClass('closed', !!e.value);
+        }
+      });
+      $(document).on('shiny:connected', function () {
+        $('.sch-close input[type=checkbox]').each(function () {
+          $(this).closest('.sch-row').toggleClass('closed', this.checked);
+        });
+      });"))),
 
   sidebar = sidebar(
     width = 372,
@@ -169,22 +198,6 @@ ui <- page_sidebar(
     selectInput("site", "Longhill's site",
                 choices = c("Ovingdean (as now)" = "now",
                             "Elm Grove (relocated)" = "elm")),
-    checkboxInput("comart", "Re-open CoMArt (closed 2005)", value = FALSE),
-    conditionalPanel(
-      "input.comart",
-      div(class = "sch-row", style = "margin:-4px 0 -6px;font-size:11px;color:#666",
-          div(class = "sch-name", ""),
-          div(class = "sch-w", "Attractiveness (×)"),
-          div(class = "sch-pan", "Places (PAN)")),
-      div(class = "sch-row",
-          div(class = "sch-name", "CoMArt"),
-          div(class = "sch-w",
-              sliderInput("comart_w", NULL, min = 0.25, max = 4, value = 1,
-                          step = 0.05, width = "100%", ticks = FALSE)),
-          div(class = "sch-pan",
-              numericInput("comart_pan", NULL, value = inp$comart$pan,
-                           min = 30, max = 400, step = 15, width = "100%"))),
-      div(class = "note", style = "margin-top:10px", textOutput("comart_note"))),
     sliderInput("year", "Entry year", min = min(inp$demand$year),
                 max = max(inp$demand$year), value = 2026, step = 1, sep = "",
                 ticks = FALSE),
@@ -212,18 +225,23 @@ ui <- page_sidebar(
     hr(),
     div(strong("Per school")),
     div(class = "note", style = "margin-top:2px",
-        "Each school has two controls. ",
+        "Each school has three controls. ",
         tags$b("Drag its slider"), " to make the school more or less attractive to families: ",
         "1× is how attractive it is now, 2× twice as attractive, 0.5× half as attractive. ",
         tags$b("Type in the box on the right"), ", or use its arrows, to change that school's ",
         "admission number (PAN), the number of Year 7 places it offers. ",
-        "The total-places slider below changes every school's number at once."),
+        "The total-places slider below changes every open school's number at once. ",
+        tags$b("Tick the box at the left"), " to close a school: it is taken out of the city, ",
+        "its row turns red and its places come out of the total. CoMArt, at the bottom, ",
+        "closed in 2005 and starts closed; untick it to open it again."),
     div(class = "sch-row", style = "margin:8px 0 -6px;font-size:11px;color:#666",
+        div(class = "sch-close", title = "Close", "✕"),
         div(class = "sch-name", "School"),
         div(class = "sch-w", "Attractiveness (× now)"),
         div(class = "sch-pan", "Places (PAN)")),
-    div(style = "margin-top:8px", lapply(seq_len(nrow(CITY)),
-                                         function(i) school_row(CITY[i, ]))),
+    div(style = "margin-top:8px", lapply(seq_len(nrow(SCH)),
+                                         function(i) school_row(SCH[i, ]))),
+    div(class = "note", style = "margin-top:8px", textOutput("comart_note")),
     div(style = "margin-top:16px",
         sliderInput("total_pan", "Total places in the city",
                     min = total_grid(TOTAL_NOW)$min, max = total_grid(TOTAL_NOW)$max,
@@ -311,7 +329,14 @@ server <- function(input, output, session) {
   # back to it as an input event, so the numbers being pushed are held in
   # `pending` and events that are only the echo of them are ignored -
   # otherwise the half-applied set would be taken for a hand edit.
-  pans_rv <- reactiveValues(base = setNames(CITY$pan, CITY$name), pending = NULL)
+  pans_rv <- reactiveValues(base = setNames(SCH$pan, SCH$name), pending = NULL)
+
+  # Which schools are closed: the ticked boxes, and CoMArt until its box
+  # has been drawn. Totals and the total slider count open schools only.
+  closed_now <- reactive(SCH$name[vapply(seq_len(nrow(SCH)), function(i)
+    isTRUE(input[[paste0("closed_", SCH$urn[i])]] %||% isTRUE(SCH$hypothetical[i])),
+    logical(1))])
+  open_of <- function(p, closed = isolate(closed_now())) p[!names(p) %in% closed]
 
   set_total <- function(total) {
     g <- total_grid(total)
@@ -322,35 +347,39 @@ server <- function(input, output, session) {
     changed <- names(p)[!is.finite(cur[names(p)]) | abs(cur[names(p)] - p) > 0.5]
     pans_rv$pending <- if (length(changed)) p else NULL
     for (nm in changed)
-      updateNumericInput(session, paste0("pan_", CITY$urn[CITY$name == nm]),
+      updateNumericInput(session, paste0("pan_", SCH$urn[SCH$name == nm]),
                          value = unname(p[nm]))
   }
-  set_pans <- function(base, final = NULL) {
+  set_pans <- function(base, final = NULL, closed = isolate(closed_now())) {
     if (is.null(final)) final <- base
     pans_rv$base <- base
     push_pans(final)
-    set_total(sum(final))
+    set_total(sum(open_of(final, closed)))
   }
 
   observeEvent(input$total_pan, {
     tot <- input$total_pan
-    cur <- if (!is.null(pans_rv$pending)) sum(pans_rv$pending) else sum(pan_now())
+    cur <- if (!is.null(pans_rv$pending)) sum(open_of(pans_rv$pending)) else sum(open_of(pan_now()))
     if (!is.finite(cur) || abs(tot - cur) < 0.5) return()
-    push_pans(scale_pans(pans_rv$base, tot))
+    push_pans(scale_pans(open_of(pans_rv$base), tot))
   }, ignoreInit = TRUE)
 
   observe({
     p <- pan_now()
-    req(all(is.finite(p)))
+    op <- open_of(p, closed_now())
+    req(all(is.finite(op)))
     pend <- isolate(pans_rv$pending)
     if (!is.null(pend)) {
       if (all(abs(p[names(pend)] - pend) < 0.5)) pans_rv$pending <- NULL
       return()
     }
     tot <- isolate(input$total_pan)
-    if (is.null(tot) || abs(sum(p) - tot) >= 0.5) {
-      pans_rv$base <- p
-      set_total(sum(p))
+    if (is.null(tot) || abs(sum(op) - tot) >= 0.5) {
+      b <- isolate(pans_rv$base)
+      ok <- is.finite(p)
+      b[names(p)[ok]] <- p[ok]
+      pans_rv$base <- b
+      set_total(sum(op))
     }
   })
 
@@ -369,21 +398,27 @@ server <- function(input, output, session) {
     updateSliderInput(session, "p6", value = s$p6 %||% 5)
     updateCheckboxInput(session, "fsm", value = s$fsm %||% TRUE)
     updateCheckboxInput(session, "targeted", value = s$targeted %||% FALSE)
-    updateCheckboxInput(session, "comart", value = !is.null(s$comart))
-    updateNumericInput(session, "comart_pan", value = s$comart$pan %||% inp$comart$pan)
-    updateSliderInput(session, "comart_w", value = s$comart$w %||% 1)
-    for (i in seq_len(nrow(CITY))) {
-      nm <- CITY$name[i]; urn <- CITY$urn[i]
+    # A scenario that does not say which schools are closed means CoMArt
+    # closed and every school of today open.
+    closed_s <- s$closed %||% HYP
+    for (i in seq_len(nrow(SCH))) {
+      nm <- SCH$name[i]; urn <- SCH$urn[i]
       updateSliderInput(session, paste0("w_", urn),
                         value = if (!is.null(s$w) && nm %in% names(s$w))
                           round(unname(s$w[nm]), 2) else 1)
+      updateCheckboxInput(session, paste0("closed_", urn), value = nm %in% closed_s)
     }
     # Admission numbers: the published ones, any the scenario names, and
-    # then - where a scenario sets a city total - shared out to that total,
-    # exactly as moving the slider would.
-    base <- setNames(CITY$pan, CITY$name)
+    # then - where a scenario sets a city total - the open schools' shared
+    # out to that total, exactly as moving the slider would.
+    base <- setNames(SCH$pan, SCH$name)
     if (!is.null(s$pan)) base[names(s$pan)] <- s$pan
-    set_pans(base, if (is.null(s$total)) NULL else scale_pans(base, s$total))
+    final <- base
+    if (!is.null(s$total)) {
+      op <- base[!names(base) %in% closed_s]
+      final[names(op)] <- scale_pans(op, s$total)
+    }
+    set_pans(base, final, closed_s)
   }
   observeEvent(input$preset, apply_preset(input$preset))
   observeEvent(input$reset, apply_preset(input$preset))
@@ -418,13 +453,13 @@ server <- function(input, output, session) {
   })
 
   w_now <- reactive({
-    v <- vapply(CITY$urn, function(u) input[[paste0("w_", u)]] %||% 1, numeric(1))
-    setNames(as.numeric(v), CITY$name)
+    v <- vapply(SCH$urn, function(u) input[[paste0("w_", u)]] %||% 1, numeric(1))
+    setNames(as.numeric(v), SCH$name)
   })
   pan_now <- reactive({
-    v <- vapply(CITY$urn, function(u) as.numeric(input[[paste0("pan_", u)]] %||% NA),
+    v <- vapply(SCH$urn, function(u) as.numeric(input[[paste0("pan_", u)]] %||% NA),
                 numeric(1))
-    setNames(v, CITY$name)
+    setNames(v, SCH$name)
   })
 
   # The admission rules in force, in the shape run_sim() takes.
@@ -434,19 +469,13 @@ server <- function(input, output, session) {
     fsm = isTRUE(input$fsm %||% TRUE),
     targeted = isTRUE(input$targeted %||% FALSE)))
 
-  # CoMArt, when a scenario or the user opens it again.
-  comart_arg <- reactive(
-    if (isTRUE(input$comart))
-      list(pan = input$comart_pan %||% inp$comart$pan, w = input$comart_w %||% 1)
-    else NULL)
-  comart_places <- reactive(
-    if (isTRUE(input$comart)) as.numeric(input$comart_pan %||% inp$comart$pan) else 0)
   output$comart_note <- renderText(sprintf(paste(
-    "On its old site in East Brighton, sharing Longhill's catchment in whatever map is in force,",
-    "and run as a community school under the council's priorities - so Longhill's catchment",
-    "has two schools and its children lose priority 6. There are no preferences for a school",
-    "that does not exist, so 1× starts it as attractive as %s. Routed on the same network as",
-    "every other school. Its places count in the total below; it has no finance or attainment figures."),
+    "CoMArt closed in 2005. Open it and it is back on its old site in East Brighton, sharing",
+    "Longhill's catchment in whatever map is in force, as a community school under the",
+    "council's priorities - so Longhill's catchment has two schools and its children lose",
+    "priority 6. There are no preferences for a school that does not exist, so 1× starts it as",
+    "attractive as %s. Routed on the same network as every other school; it has no finance or",
+    "attainment figures. Close any school the same way."),
     inp$comart$w_from_short))
 
   sim <- reactive({
@@ -456,7 +485,7 @@ server <- function(input, output, session) {
     run_sim(inp, w_mult = w, pans = p, site = input$site,
             design = input$design, year = input$year, gamma = input$gamma,
             exclusive = input$exclusive, rules = rule_args(),
-            comart = comart_arg())
+            closed = closed_now())
   })
   met <- reactive(outcomes(inp, sim()))
 
@@ -472,7 +501,7 @@ server <- function(input, output, session) {
                        rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
                        fsm = isTRUE(input$fsm %||% TRUE),
                        targeted = isTRUE(input$targeted %||% FALSE),
-                       comart = comart_arg())
+                       closed = closed_now())
       writexl::write_xlsx(
         scenario_export(inp, sim(), met(), input$preset, settings, w_now(), pan_now()),
         file)
@@ -527,7 +556,7 @@ server <- function(input, output, session) {
     now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
                    design = "Current catchments", year = input$year,
                    gamma = input$gamma, exclusive = input$exclusive,
-                   rules = rule_args(), comart = comart_arg())
+                   rules = rule_args(), closed = closed_now())
     moved <- sum(pmax(0, sim()$schools$intake - now$schools$intake))
     if (regrouped == 0)
       sprintf("This is the map in force. %.0f%% of children are modelled as attending a school in their own catchment.",
@@ -544,7 +573,7 @@ server <- function(input, output, session) {
   # year the rest of the app is set to.
   output$pan_total <- renderUI({
     req(input$year)
-    places <- sum(pan_now()) + comart_places()
+    places <- sum(open_of(pan_now(), closed_now()))
     kids <- inp$demand$cohort[match(input$year, inp$demand$year)]
     pct <- 100 * places / kids
     spare <- places - kids
@@ -571,7 +600,7 @@ server <- function(input, output, session) {
   # bar is the surplus, and it is the thing the whole app is about.
   output$p_cohort <- renderPlot({
     ob <- inp$cohort$observed
-    places <- sum(pan_now()) + comart_places()
+    places <- sum(open_of(pan_now(), closed_now()))
     yr <- input$year
     kids <- inp$demand$cohort[match(yr, inp$demand$year)]
 
@@ -1000,7 +1029,7 @@ server <- function(input, output, session) {
                     design = input$design, year = input$year, gamma = input$gamma,
                     exclusive = input$exclusive,
                     rules = utils::modifyList(rule_args(), list(p6_share = 0)),
-                    comart = comart_arg())
+                    closed = closed_now())
       g0 <- outcomes(inp, r0)$gorard
       live <- sprintf(paste0(
         "<p><b>In this run:</b> Gorard %.3f with priority 6 at %d%% of places, ",
@@ -1143,11 +1172,12 @@ server <- function(input, output, session) {
     w <- w_now(); p <- pan_now()
     bind_rows(lapply(seq_len(nrow(CITY)), function(i) {
       nm <- CITY$name[i]
+      if (nm %in% closed_now()) return(NULL)
       s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w, pans = p,
                            rules = rule_args(), gamma = input$gamma,
                            exclusive = input$exclusive,
                            site = input$site, design = input$design,
-                           year = input$year, comart = comart_arg())
+                           year = input$year, closed = closed_now())
       data.frame(
         name = nm, short = CITY$short[i], att8 = CITY$att8[i],
         set_at = CITY$att8[i] + att8_points(inp, w[[nm]]),
@@ -1228,6 +1258,8 @@ server <- function(input, output, session) {
     if (input$solve_for == "—")
       return("Pick a school and the app solves for the attractiveness that fills it, holding everything else where you have set it.")
     nm <- CITY$name[match(input$solve_for, CITY$short)]
+    if (nm %in% closed_now())
+      return(sprintf("%s is closed in this run.", input$solve_for))
     p <- pan_now()
     # The other schools stay where the user has set them: the question
     # is what THIS school needs given everything else on the screen.
@@ -1235,7 +1267,7 @@ server <- function(input, output, session) {
                            rules = rule_args(), gamma = input$gamma,
                            exclusive = input$exclusive,
                          site = input$site, design = input$design,
-                         year = input$year, comart = comart_arg())
+                         year = input$year, closed = closed_now())
     if (is.infinite(s$multiplier))
       sprintf("%s cannot fill %s places at any attractiveness: at 60 times its own it reaches %.0f%%. There are not enough children within reach.",
               input$solve_for, fmt_n(p[[nm]]), 100 * s$fill)

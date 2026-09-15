@@ -11,16 +11,21 @@
 #' The scenario's own values, before anyone touches a slider
 scenario_defaults <- function(inp, preset) {
   s <- inp$presets[[preset]]
-  city <- inp$schools[inp$schools$city, ]
+  city <- inp$schools[inp$schools$city | inp$schools$hypothetical %in% TRUE, ]
+  closed <- s$closed %||% city$name[city$hypothetical %in% TRUE]
   base <- stats::setNames(city$pan, city$name)
   if (!is.null(s$pan)) base[names(s$pan)] <- s$pan
-  pans <- if (is.null(s$total)) base else scale_pans(base, s$total)
+  pans <- base
+  if (!is.null(s$total)) {
+    op <- base[!names(base) %in% closed]
+    pans[names(op)] <- scale_pans(op, s$total)
+  }
   w <- stats::setNames(rep(1, nrow(city)), city$name)
   if (!is.null(s$w)) {
     k <- intersect(names(s$w), names(w))
     w[k] <- round(s$w[k], 2)
   }
-  list(s = s, pans = pans, w = w)
+  list(s = s, pans = pans, w = w, closed = closed)
 }
 
 #' The workbook, as a named list of data frames
@@ -54,12 +59,11 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     c("Places for single-school catchments, priority 6 (%)", s$p6 %||% 5, settings$p6),
     c("Free school meals priority (4 and 5)", chr(s$fsm %||% TRUE), chr(settings$fsm)),
     c("Narrowed to Targeted FSM", chr(s$targeted %||% FALSE), chr(settings$targeted)),
-    c("CoMArt re-opened", chr(!is.null(s$comart)), chr(!is.null(settings$comart))),
-    c("CoMArt places", val(s$comart$pan), val(settings$comart$pan)),
-    c("CoMArt attractiveness (x)", val(s$comart$w), val(settings$comart$w)),
-    c("Total places in the city",
-      sum(def$pans) + (if (is.null(s$comart)) 0 else s$comart$pan),
-      sum(pans_used) + (if (is.null(settings$comart)) 0 else settings$comart$pan)))
+    c("Schools closed", paste(sort(def$closed), collapse = ", "),
+      paste(sort(settings$closed %||% def$closed), collapse = ", ")),
+    c("Total places in the city (open schools)",
+      sum(def$pans[!names(def$pans) %in% def$closed]),
+      sum(pans_used[!names(pans_used) %in% (settings$closed %||% def$closed)], na.rm = TRUE)))
   scen <- data.frame(
     Setting = vapply(rows, `[`, "", 1),
     `Scenario value` = vapply(rows, function(x) chr(x[2]), ""),

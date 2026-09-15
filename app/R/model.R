@@ -287,14 +287,34 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
 run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
                     capped = TRUE, gamma = NULL, rules = NULL,
-                    exclusive = NULL, comart = NULL) {
+                    exclusive = NULL, comart = NULL, closed = NULL) {
 
   # The ten city schools, and the four East Sussex schools M5 fits as
   # destinations: children do leave the city, most of them from Longhill's
   # catchment for Priory School in Lewes. Those four have an attractiveness
   # each and a decay on straight-line km, no catchment and no competition
   # term, and they are not rationed. Nothing about them is adjustable.
-  sch <- inp$schools[inp$schools$city, ]
+  # Which schools are open. Any of them can be closed, and a school that
+  # does not exist today - CoMArt - is closed unless a scenario or the user
+  # opens it. A closed school is taken out of the city, not given no
+  # places: a school with no places would still draw families, refuse them
+  # all and push them elsewhere, which is not what a closure does.
+  # `comart = list(pan, w)` is the shorter way the analysis opens CoMArt.
+  cm <- inp$comart
+  hyp <- inp$schools$name[inp$schools$hypothetical %in% TRUE]
+  if (is.null(closed))
+    closed <- setdiff(hyp, if (!is.null(comart) && !is.null(cm)) cm$name)
+  known <- inp$schools$name[inp$schools$city | inp$schools$name %in% hyp]
+  stopifnot(all(closed %in% known))
+  sch <- inp$schools[inp$schools$name %in% setdiff(known, closed), ]
+  sch$city <- TRUE
+  stopifnot(nrow(sch) > 0)
+  cm_on <- !is.null(cm) && cm$name %in% sch$name
+  if (cm_on && !is.null(comart)) {
+    k <- sch$name == cm$name
+    if (!is.null(comart$pan)) sch$pan[k] <- comart$pan
+    if (!is.null(comart$w)) sch$W[k] <- sch$W[k] * comart$w
+  }
   outside <- inp$params$outside
   ext_names <- if (is.null(outside)) character(0) else names(outside$W)
   ext_sch <- inp$schools[inp$schools$name %in% ext_names, ]
@@ -306,26 +326,20 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   # routed on the same network as every other school and competes with
   # them like any other; what it lacks is preferences, so its starting
   # attractiveness is borrowed (R/05_app_inputs.R says from where).
-  cm <- inp$comart
-  cm_on <- !is.null(comart) && !is.null(cm)
-  if (cm_on) {
-    cm_row <- inp$schools[inp$schools$name == cm$name, ]
-    stopifnot(nrow(cm_row) == 1)
-    cm_row$city <- TRUE
-    if (!is.null(comart$pan)) cm_row$pan <- comart$pan
-    if (!is.null(comart$w)) cm_row$W <- cm_row$W * comart$w
-    sch <- rbind(sch, cm_row)
-  }
+  # (Whether CoMArt is open, and at what, is settled above.)
   W <- setNames(sch$W, sch$name)
   if (!is.null(w_mult)) {
-    stopifnot(all(names(w_mult) %in% names(W)))
+    # The app passes every school's slider, closed ones included.
+    stopifnot(all(names(w_mult) %in% known))
+    w_mult <- w_mult[names(w_mult) %in% names(W)]
     W[names(w_mult)] <- W[names(w_mult)] * w_mult
   }
   W <- pmax(W, 1e-6)
 
   cap <- setNames(as.numeric(sch$pan), sch$name)
   if (!is.null(pans)) {
-    stopifnot(all(names(pans) %in% names(cap)))
+    stopifnot(all(names(pans) %in% known))
+    pans <- pans[names(pans) %in% names(cap)]
     cap[names(pans)] <- pans
   }
   cap_all <- c(cap, setNames(rep(1e6, length(ext_names)), ext_names))

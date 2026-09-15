@@ -122,7 +122,7 @@ for (p in names(inp$presets)) {
     pans_s <- if (is.null(s$total)) s$pan else scale_pans(base_p, s$total)
     rr <- run_sim(inp, w_mult = s$w, pans = pans_s, site = s$site,
                   design = s$design, year = s$year, gamma = s$gamma,
-                  comart = s$comart,
+                  closed = s$closed,
                   rules = if (is.null(s$rule)) NULL else
                     list(rule = s$rule, p6_share = (s$p6 %||% 5) / 100,
                          fsm = s$fsm %||% TRUE, targeted = s$targeted %||% FALSE))
@@ -380,6 +380,22 @@ if (lh_p6 > 1e-6)
 r_off <- run_sim(inp, year = 2026)
 if (inp$comart$name %in% r_off$schools$name || !is.na(r_off$design_map$school[inp$comart$name]))
   fail <- c(fail, "CoMArt appears when it has not been opened")
+
+# ---- Closing a school -------------------------------------------------------
+# A closed list is the whole list, so CoMArt is named to keep it closed.
+rcl <- run_sim(inp, year = 2026, closed = c("Longhill High School", inp$comart$name))
+ocl <- rcl$flows %>% group_by(zone) %>% summarise(s = sum(flow), .groups = "drop") %>%
+  inner_join(inp$zones %>% select(zone, Oi), by = "zone")
+mcl <- outcomes(inp, rcl)
+note(sprintf("Longhill closed: %d schools open, largest origin shortfall %.3f, Gorard %.3f, mean journey %.1f min",
+             sum(rcl$schools$city), max(abs(ocl$s - ocl$Oi)), mcl$gorard, mcl$mean_min))
+if ("Longhill High School" %in% rcl$schools$name || sum(rcl$schools$city) != 9 ||
+    max(abs(ocl$s - ocl$Oi)) > 1 ||
+    !is.finite(mcl$gorard))
+  fail <- c(fail, "closing a school does not take it out of the city cleanly")
+rco <- run_sim(inp, year = 2026, closed = character(0))
+if (!inp$comart$name %in% rco$schools$name)
+  fail <- c(fail, "an empty closed list does not open CoMArt")
 
 # ---- The download: a workbook that reproduces the run ---------------
 st <- list(design = "Current catchments", site = "now", year = 2027, gamma = 1.2,
