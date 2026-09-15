@@ -74,12 +74,14 @@ DATASETS <- tibble::tribble(
                                   "Funding allocations, 2025-26",          c("fundstats"),                                           "published dataset",
   "council_forecast_oct24.csv",   "The council's October 2024 forecast",   c("bhcc_plan"),                                           "transcribed from the published appendix",
   "catchments_current.geojson",   "Catchments in force",                   c("bhcc_catch"),                                          "published boundary file",
+  "catchments_pre2024.geojson",   "Catchments in force before 2026 entry", c("bhcc_catch"),                                          "published boundary file",
   "lsoa.geojson",                 "LSOA boundaries",                       c("onspd"),                                               "published boundary file",
 
-  "council_options.rds",          "The council's options, scored on its priorities", c("osm", "bods", "bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "fin"), "this repository, R/05_app_inputs.R",
-  "comart_scenarios.rds",         "CoMArt re-opened: the scenario runs",   c("osm", "bods", "bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd"), "this repository, R/05_app_inputs.R",
+  "whitehawk_explained.rds",      "What the Whitehawk redraw does, and why", c("osm", "bods", "bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "perf"), "this repository, R/05_app_inputs.R",
+  "council_options.rds",          "The council's options, scored on its priorities", c("osm", "bods", "bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "fin", "perf"), "this repository, R/05_app_inputs.R",
+  "comart_scenarios.rds",         "CoMArt re-opened: the scenario runs",   c("osm", "bods", "bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "perf"), "this repository, R/05_app_inputs.R",
   "comart_costs.rds",             "Routed journeys to CoMArt's site",     c("osm", "bods", "onspd"),                            "open Brightopia bundle",
-  "priority6_sweep.rds",          "Priority 6 and the social mix of intakes", c("bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "osm", "bods"), "this repository, R/05_app_inputs.R",
+  "priority6_sweep.rds",          "Priority 6 and the social mix of intakes", c("bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "osm", "bods", "perf"), "this repository, R/05_app_inputs.R",
   "route_geometries.rds",         "One journey, leg by leg",               c("osm", "bods"),                                         "open Brightopia bundle")
 
 stopifnot(!any(duplicated(DATASETS$file)),
@@ -113,6 +115,7 @@ QMD_VARS <- tibble::tribble(
   "p6s",    "priority6_sweep.rds",        FALSE,
   "cms",    "comart_scenarios.rds",       FALSE,
   "cop",    "council_options.rds",        FALSE,
+  "whx",    "whitehawk_explained.rds",    FALSE,
   "rg",     "route_geometries.rds",       FALSE,
   "council24", "council_forecast_oct24.csv", TRUE,
   "pcd",    "postcode_children.csv",      TRUE,

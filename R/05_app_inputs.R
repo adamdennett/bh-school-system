@@ -503,13 +503,37 @@ design_geojson <- vapply(unique(design_sf$design), function(d) {
   txt
 }, character(1))
 
-# Outlines for the two maps built above, from whole LSOAs.
-lsoa_sf <- bh_data("lsoa.geojson")
-for (nm in c("Pre-2024 catchments", "Current catchments, Whitehawk back to Longhill")) {
-  g <- lsoa_sf %>%
-    mutate(grp = unname(DESIGNS[[nm]]$lsoa[lsoa21cd])) %>%
-    filter(!is.na(grp)) %>%
-    sf::st_transform(27700) %>%
+# Outlines for the two maps built above, from the published boundary files
+# rather than whole LSOAs: both boundaries run through LSOAs, so an outline
+# dissolved from them put whole neighbourhoods on the wrong side. The model
+# itself never used the LSOA version - its zones were split on both maps
+# postcode by postcode. The pre-2024 outline is the council's file as
+# published; the Whitehawk redraw is today's map with the part of
+# Stringer / Varndean's catchment that was Longhill's before 2024 given back
+# to Longhill, the same rule that moves the model's zones.
+norm_catch <- function(g, field) {
+  g %>% sf::st_transform(27700) %>% sf::st_make_valid() %>%
+    mutate(grp = dplyr::recode(as.character(.data[[field]]),
+      "Patcham HighSchool" = "Patcham", "StringerVarndean" = "DS_Varndean",
+      "BrightonAldridge" = "BACA", "BlatchingtonHove" = "Hove_Blatch", "Portslade" = "PACA",
+      "VarndeanStringer" = "DS_Varndean", "HoveBlatchington" = "Hove_Blatch")) %>%
+    select(grp)
+}
+pre_sf <- norm_catch(bh_data("catchments_pre2024.geojson"), "AreaName")
+now_sf <- norm_catch(bh_data("catchments_current.geojson"), "catchment")
+stopifnot(setequal(pre_sf$grp, unique(design_sf$grp[design_sf$design == "Current catchments"])),
+          setequal(now_sf$grp, pre_sf$grp))
+lh_before <- sf::st_union(pre_sf[pre_sf$grp == "Longhill", ])
+dsv_now <- sf::st_union(now_sf[now_sf$grp == "DS_Varndean", ])
+given_back <- sf::st_intersection(dsv_now, lh_before)
+wh_sf <- now_sf
+sf::st_geometry(wh_sf)[wh_sf$grp == "DS_Varndean"] <- sf::st_difference(dsv_now, lh_before)
+sf::st_geometry(wh_sf)[wh_sf$grp == "Longhill"] <-
+  sf::st_union(sf::st_union(now_sf[now_sf$grp == "Longhill", ]), given_back)
+outline_sf <- list(`Pre-2024 catchments` = pre_sf,
+                   `Current catchments, Whitehawk back to Longhill` = wh_sf)
+for (nm in names(outline_sf)) {
+  g <- outline_sf[[nm]] %>%
     group_by(grp) %>% summarise(.groups = "drop") %>%
     sf::st_simplify(dTolerance = 60) %>%
     sf::st_transform(4326)
@@ -671,6 +695,129 @@ RULES$fsm_city <- weighted.mean(zones$fsm, zones$Oi)
 message(sprintf("  FSM take-up %.3f x IDACI: %.0f FSM-priority places at the three rationing schools (published %d); %.1f%% of the city's children",
                 hi, fsm_places(hi), fsm_target, 100 * RULES$fsm_city))
 
+# ---- 10b. Disadvantaged pupils, calibrated to the published shares ---
+# Checked against the Department for Education's published share of
+# disadvantaged pupils at each school, the neighbourhood measure of an
+# intake's deprivation got the schools in the wrong order (strategic view,
+# section 11). So each school's pull on disadvantaged children is fitted
+# here: a neighbourhood's disadvantaged share is its IDACI score scaled to
+# the city's published average, and lambda_j is adjusted until every
+# school's modelled share, in 2026 under the council's priorities,
+# reproduces its published one. The target is the mean of the three
+# latest years, which is steadier than one. The published figure is the
+# whole school (Years 7 to 11), used here for its intake.
+source(file.path(APP_DIR, "R", "outcomes.R"))
+pub_dis <- nat$bh %>%
+  mutate(urn = as.character(URN)) %>%
+  filter(!is.na(PTFSM6CLA1A)) %>%
+  group_by(urn) %>% arrange(desc(year_numeric), .by_group = TRUE) %>%
+  summarise(published = mean(head(PTFSM6CLA1A, 3)) / 100,
+            years = paste(head(year_label, 3), collapse = ", "), .groups = "drop")
+dis_target <- schools %>% filter(city) %>% select(name, urn) %>%
+  inner_join(pub_dis, by = "urn")
+stopifnot(nrow(dis_target) == sum(schools$city))
+#
+# The published figures lag the admissions policy. Every cohort in them
+# (Years 7 to 11 in 2022-23 to 2024-25) was admitted before September 2025:
+# under the pre-2024 map, with no free school meals priority and no
+# priority 6. Fitted on today's map, the pulls would absorb the policy
+# change itself - Longhill's standing in for the Whitehawk children it no
+# longer admits, Varndean's holding down the ones it now does. So the pulls
+# are fitted on the map and rules those cohorts were admitted under, with
+# the 2026 cohort's size, and then held fixed. The fit on today's map is
+# kept for the comparison.
+cal$zones <- zones
+DIS_N <- dis_target$name
+dis_share <- function(inp_c, r) {
+  dd <- dis_flows(inp_c, r$flows)
+  (tapply(dd, r$flows$name, sum)[DIS_N] / tapply(r$flows$flow, r$flows$name, sum)[DIS_N])
+}
+fit_dis <- function(r, target = dis_target$published) {
+  lam <- setNames(rep(1, length(DIS_N)), DIS_N)
+  k <- 1
+  intake <- tapply(r$flows$flow, r$flows$name, sum)[DIS_N]
+  for (it in 1:500) {
+    cal$params$dis <- list(k = k, lambda = lam)
+    sh <- dis_share(cal, r)
+    city_mod <- sum(sh * intake) / sum(intake)
+    city_pub <- sum(target * intake) / sum(intake)
+    gap <- max(abs(sh - target))
+    if (gap < 1e-4 && abs(city_mod - city_pub) < 1e-4) break
+    k <- k * city_pub / city_mod
+    lam <- lam * (target / sh)^0.8
+    lam <- lam / exp(mean(log(lam)))
+  }
+  stopifnot(gap < 0.005)
+  list(k = k, lambda = lam, share = sh, intake = intake, gap = gap, rounds = it)
+}
+DIS_PRE_RULES <- list(rule = "priorities", p6_share = 0, fsm = FALSE)
+r_dis_pre <- run_sim(cal, year = 2026, design = "Pre-2024 catchments", rules = DIS_PRE_RULES)
+r_dis <- run_sim(cal, year = 2026, rules = list(rule = "priorities"))
+fit_pre <- fit_dis(r_dis_pre)
+fit_now <- fit_dis(r_dis)
+
+# Better than either: the first Year 7 intakes admitted under today's map
+# and rules, with no lag. The council's allocation factsheet for September
+# 2026 gives, for each community school, the children eligible for free
+# school meals offered a place under any priority, and all the offers
+# made, on national offer day - the basis the model runs on. The four
+# academies and faith schools do not publish it and their arrangements did
+# not change in 2025, so they keep their published whole-school shares.
+# Free school meal eligibility is taken as the disadvantaged share; the
+# Pupil Premium measure also counts children eligible at any point in six
+# years, so if anything this understates the community schools' intakes.
+# 2025 gives only the priority 4 and 5 offers, kept for the record.
+YEAR7_FSM <- tibble::tribble(
+  ~name, ~offers_2026, ~fsm_2026, ~fsm_p13_2026, ~fsm_p45_2026, ~offers_2025, ~fsm_p45_2025,
+  "Blatchington Mill School", 330, 74, 15, 59, 330, 47,
+  "Dorothy Stringer School",  330, 84, 18, 66, 330, 49,
+  "Hove Park School",         136, 48, 11, 37, 171, 31,
+  "Longhill High School",      81, 40, 12, 28,  97, 14,
+  "Patcham High School",      204, 55, 20, 35, 202, 24,
+  "Varndean School",          300, 90, 24, 66, 300, 88)
+stopifnot(with(YEAR7_FSM, all(fsm_p13_2026 + fsm_p45_2026 == fsm_2026)),
+          all(YEAR7_FSM$name %in% DIS_N))
+y7_target <- dis_target$published
+y7_target[match(YEAR7_FSM$name, DIS_N)] <- YEAR7_FSM$fsm_2026 / YEAR7_FSM$offers_2026
+fit_y7 <- fit_dis(r_dis, y7_target)
+dis_k <- fit_y7$k
+dis_lam <- fit_y7$lambda
+# What the pre-change pulls give a Year 7 intake under today's map and
+# rules, for the comparison with the offers.
+cal$params$dis <- list(k = fit_pre$k, lambda = fit_pre$lambda)
+y7_now <- dis_share(cal, r_dis)
+cal$params$dis <- NULL
+# The measure the calibration replaces, kept for the record: each school's
+# intake scored by the neighbourhoods its children come from.
+nb_dep <- coalesce(idaci$dep3[match(r_dis$flows$lsoa, idaci$lsoa)], 0)
+nb_share <- (tapply(r_dis$flows$flow * nb_dep, r_dis$flows$name, sum) /
+               tapply(r_dis$flows$flow, r_dis$flows$name, sum))[DIS_N]
+params$dis <- list(
+  k = dis_k, lambda = dis_lam,
+  fit = tibble(name = DIS_N, published = dis_target$published,
+               year7_fsm = YEAR7_FSM$fsm_2026[match(DIS_N, YEAR7_FSM$name)] /
+                 YEAR7_FSM$offers_2026[match(DIS_N, YEAR7_FSM$name)],
+               target = y7_target, modelled = unname(fit_y7$share),
+               neighbourhood = unname(nb_share), intake = unname(fit_now$intake),
+               years = dis_target$years, lambda = unname(dis_lam),
+               year7_pre = unname(y7_now),
+               lambda_pre = unname(fit_pre$lambda),
+               lambda_today_map = unname(fit_now$lambda)),
+  k_pre = fit_pre$k, k_today_map = fit_now$k,
+  year7_fsm = YEAR7_FSM,
+  fitted_on = "Today's map and the council's priorities, 2026: community schools to their September 2026 Year 7 free school meal offers, academies and faith schools to their published whole-school shares",
+  source = "Brighton & Hove City Council, Year 7 allocation factsheet, September 2026 (free school meal offers); DfE performance tables, PTFSM6CLA1A, mean of the three latest years")
+message(sprintf("  disadvantaged pupils, fitted to the 2026 Year 7 offers: k %.3f, lambda %s; largest gap %.2f points",
+                dis_k, paste(sprintf("%s %.2f", short_sch(DIS_N), dis_lam), collapse = ", "),
+                100 * fit_y7$gap))
+message(sprintf("  ... fitted before the policy change: lambda %s",
+                paste(sprintf("%s %.2f", short_sch(DIS_N), fit_pre$lambda), collapse = ", ")))
+message(sprintf("  ... on today's map instead: lambda %s",
+                paste(sprintf("%s %.2f", short_sch(DIS_N), fit_now$lambda), collapse = ", ")))
+message(sprintf("  ... Year 7 today with the pre-change pulls: %s",
+                paste(sprintf("%s %.0f%% (published %.0f%%)", short_sch(DIS_N), 100 * y7_now,
+                              100 * dis_target$published), collapse = ", ")))
+
 # Children offered a place outside Brighton & Hove somewhere the model does
 # not go - West Sussex, London, and anything else the four East Sussex
 # schools do not account for. The adjudicator's Table 11 gives all
@@ -743,8 +890,8 @@ p6_schools <- m0 %>% select(name, n_0 = n, dep_0 = dep_share, contrib_0 = contri
   left_join(inp_s$schools %>% select(name, short, faith), by = "name")
 
 r1 <- run_p6(P6_AT)
-fl1 <- r1$flows %>% left_join(inp_s$idaci %>% select(lsoa, dep3), by = "lsoa") %>%
-  mutate(dep3 = coalesce(dep3, 0))
+# dep3 is now the disadvantaged fraction of each flow (dis_flows).
+fl1 <- r1$flows %>% mutate(dep3 = dis_flows(inp_s, r1$flows) / pmax(flow, 1e-12))
 p6_winners <- fl1 %>% group_by(catchment) %>%
   summarise(children = sum(flow), dep_all = sum(flow * dep3) / sum(flow),
             # dep_p6 before p6: inside summarise, a column once summed
@@ -782,8 +929,8 @@ CM_CONFIGS <- list(
   comart180 = list(label = "CoMArt open at 180, Brighton Aldridge and Longhill at 150", pans = SMALL, comart = list(pan = 180, w = 1)))
 
 dep_min <- function(r) {
-  f <- r$flows %>% filter(name %in% r$schools$name[r$schools$city]) %>%
-    left_join(inp_s$idaci %>% select(lsoa, dep3), by = "lsoa") %>% mutate(dep3 = coalesce(dep3, 0))
+  f <- r$flows %>% mutate(dep3 = dis_flows(inp_s, r$flows) / pmax(flow, 1e-12)) %>%
+    filter(name %in% r$schools$name[r$schools$city])
   c(dep = sum(f$flow * f$dep3 * f$cij) / sum(f$flow * f$dep3),
     rest = sum(f$flow * (1 - f$dep3) * f$cij) / sum(f$flow * (1 - f$dep3)))
 }
@@ -978,6 +1125,7 @@ co_runs <- tidyr::expand_grid(id = names(CO_OPTIONS), year = c(2026, 2030, 2035)
               co_metrics(co_run(CO_OPTIONS[[id]], year))))
 
 saveRDS(list(runs = co_runs, options = CO_OPTIONS, community = COMMUNITY,
+             dis_fit = inp_s$params$dis$fit, dis_source = inp_s$params$dis$source,
              shrink_total = SHRINK_TOTAL, built_at = Sys.time()),
         file.path(DATA, "council_options.rds"))
 co30 <- co_runs %>% filter(year == 2030)
@@ -986,3 +1134,104 @@ message(sprintf("  council options, 2030: %s",
                               ifelse(is.na(co30$lh_intake), "-", sprintf("%.0f", co30$lh_intake)),
                               co30$gorard, co30$displaced), collapse = "; ")))
 message("Saved data/council_options.rds")
+
+# ---- 14. What the Whitehawk redraw does, and why ----------------------
+# Strategic view, section 11: returning Whitehawk to Longhill's catchment
+# moves segregation, and the direction depends on how disadvantage is
+# measured. This is the evidence for the explanation there: who lives in
+# the Whitehawk zones, where their children and their disadvantaged
+# children go under each map, and what that does to each school's intake.
+WH_DESIGN <- "Current catchments, Whitehawk back to Longhill"
+wh_zones <- zones$zone[wh_catch != zones$catchment]
+zone_dis <- pmin(inp_s$params$dis$k * zones$idaci_score, 0.95)
+wh_area <- tibble(
+  # n_zones, not zones: inside tibble() a column called zones would hide
+  # the zones table from every column after it.
+  n_zones = length(wh_zones),
+  children = sum(zones$Oi[zones$zone %in% wh_zones]),
+  disadvantaged_share = weighted.mean(zone_dis[zones$zone %in% wh_zones], zones$Oi[zones$zone %in% wh_zones]),
+  city_share = weighted.mean(zone_dis, zones$Oi),
+  dsv_share = weighted.mean(zone_dis[zones$catchment == "DS_Varndean" & !zones$zone %in% wh_zones],
+                            zones$Oi[zones$catchment == "DS_Varndean" & !zones$zone %in% wh_zones]),
+  longhill_share = weighted.mean(zone_dis[zones$catchment == "Longhill"], zones$Oi[zones$catchment == "Longhill"]))
+
+wh_sch <- list(); wh_dest <- list(); wh_g <- list()
+for (y in c(2026, 2030)) for (mp in c("today", "whitehawk")) {
+  r <- run_sim(inp_s, year = y, design = if (mp == "today") "Current catchments" else WH_DESIGN,
+               rules = list(rule = "priorities"))
+  fl <- r$flows %>% mutate(dis = dis_flows(inp_s, r$flows), wh = zone %in% wh_zones)
+  city_n <- r$schools$name[r$schools$city]
+  wh_sch[[length(wh_sch) + 1]] <- fl %>% filter(name %in% city_n) %>%
+    group_by(name) %>% summarise(intake = sum(flow), dis = sum(dis), .groups = "drop") %>%
+    mutate(share = dis / intake,
+           contrib = 0.5 * abs(dis / sum(dis) - intake / sum(intake)),
+           year = y, map = mp)
+  wh_dest[[length(wh_dest) + 1]] <- fl %>% filter(wh) %>%
+    group_by(name) %>%
+    summarise(children = sum(flow), dis = sum(dis), minutes = weighted.mean(cij, flow), .groups = "drop") %>%
+    mutate(year = y, map = mp)
+  m <- outcomes(inp_s, r)
+  wh_g[[length(wh_g) + 1]] <- tibble(year = y, map = mp, gorard = m$gorard, dep_gap = m$dep_gap,
+                                     displaced = m$catchment$displaced)
+}
+# How much the direction rests on the fitted pull on disadvantaged
+# children: as fitted, at half its strength (lambda to the power 0.5), and
+# with none (every lambda 1, so disadvantaged children spread as their
+# neighbourhood's children do). Only the fitted version reproduces the
+# published shares.
+#
+# And how much it rests on the measure: the first version's neighbourhood
+# score (no calibration), the pulls fitted on today's map (which absorb the
+# policy change), and the pulls fitted on the map and rules the published
+# cohorts were admitted under (the model's measure).
+dis_variant <- function(v) {
+  inp_a <- inp_s
+  if (v == "neighbourhood") inp_a$params$dis <- NULL
+  if (v == "today_map") {
+    inp_a$params$dis$lambda <- setNames(inp_s$params$dis$fit$lambda_today_map, inp_s$params$dis$fit$name)
+    inp_a$params$dis$k <- inp_s$params$dis$k_today_map
+  }
+  if (v == "pre") {
+    inp_a$params$dis$lambda <- setNames(inp_s$params$dis$fit$lambda_pre, inp_s$params$dis$fit$name)
+    inp_a$params$dis$k <- inp_s$params$dis$k_pre
+  }
+  inp_a
+}
+wh_measures <- purrr::map_dfr(c(`By neighbourhood` = "neighbourhood",
+                                `Whole-school shares, fitted on today's map` = "today_map",
+                                `Whole-school shares, fitted before the policy change` = "pre",
+                                `Year 7 offers, 2026 (the model's measure)` = "year7"), function(v) {
+  inp_a <- dis_variant(v)
+  purrr::map_dfr(c(today = "Current catchments", whitehawk = WH_DESIGN), function(des) {
+    purrr::map_dfr(c(2026, 2030), function(y) {
+      m <- outcomes(inp_a, run_sim(inp_a, year = y, design = des, rules = list(rule = "priorities")))
+      tibble(year = y, gorard = m$gorard,
+             longhill_share = m$mix$dep_share[m$mix$name == "Longhill High School"],
+             varndean_share = m$mix$dep_share[m$mix$name == "Varndean School"])
+    })
+  }, .id = "map")
+}, .id = "measure")
+wh_sens <- purrr::map_dfr(c(`As fitted` = 1, `Half the pull` = 0.5, `No pull` = 0), function(a) {
+  inp_a <- inp_s
+  inp_a$params$dis$lambda <- inp_s$params$dis$lambda^a
+  purrr::map_dfr(c(today = "Current catchments", whitehawk = WH_DESIGN), function(des) {
+    r <- run_sim(inp_a, year = 2026, design = des, rules = list(rule = "priorities"))
+    m <- outcomes(inp_a, r)
+    tibble(gorard = m$gorard,
+           longhill_share = m$mix$dep_share[m$mix$name == "Longhill High School"],
+           varndean_share = m$mix$dep_share[m$mix$name == "Varndean School"])
+  }, .id = "map")
+}, .id = "variant")
+
+short_of <- inp_s$schools %>% select(name, short)
+saveRDS(list(area = wh_area, sens = wh_sens, measures = wh_measures,
+             schools = bind_rows(wh_sch) %>% left_join(short_of, by = "name"),
+             dest = bind_rows(wh_dest) %>% left_join(short_of, by = "name"),
+             gorard = bind_rows(wh_g), zones = wh_zones,
+             dis_fit = inp_s$params$dis$fit, built_at = Sys.time()),
+        file.path(DATA, "whitehawk_explained.rds"))
+whg <- bind_rows(wh_g)
+message(sprintf("  Whitehawk: %d zones, %.0f children, %.0f%% disadvantaged (city %.0f%%); Gorard %s",
+                wh_area$n_zones, wh_area$children, 100 * wh_area$disadvantaged_share, 100 * wh_area$city_share,
+                paste(sprintf("%d %s %.3f", whg$year, whg$map, whg$gorard), collapse = ", ")))
+message("Saved data/whitehawk_explained.rds")

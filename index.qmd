@@ -3336,10 +3336,8 @@ criteria is, in practice, debate about a minority of the city's schools
 Since 2026/27 one more criterion sits in the list: priority 6, a share
 of places at the community schools for children from the four
 single-school catchments, set at 5% after a first proposal of 20%. It is
-meant to widen access. @sec-fr-p6 finds that, in the full model, the
-larger that share, the *more* segregated the city's intakes become ---
-a result withdrawn pending recalibration, for the reason set out in
-@sec-weighing.
+meant to widen access. @sec-fr-p6 finds that, in the full model, it
+makes almost no difference to how mixed the city's intakes are.
 
 ## Sixteen years of demand {#sec-demand-history}
 
@@ -6742,14 +6740,15 @@ minus minimum does not.
 ### A catchment is not an intake {#sec-fr-intakes}
 
 ::: {.callout-important appearance="simple"}
-## The intake figures here are withdrawn pending recalibration
+## The intake figures here remain withdrawn
 
 The catchment figures above measure the neighbourhoods each catchment
-contains, and stand. The intake figures below measure modelled intakes by
-the neighbourhoods their children come from, and that measure does not
-match the schools' published shares of disadvantaged pupils --- see the
-check at the head of @sec-weighing. They are withdrawn until the model is
-recalibrated.
+contains, and stand. The intake figures below come from this section's
+allocation model and score intakes by the neighbourhoods their children
+come from, which does not match the schools' published shares of
+disadvantaged pupils (@sec-weighing). The full model has been
+recalibrated to those shares; this allocation model has not, so these
+intake figures remain withdrawn.
 :::
 
 Everything above measures the **neighbourhoods a boundary encloses**.
@@ -6916,14 +6915,14 @@ curves is the size of that amplification.
 ### Opening places to single-school catchments {#sec-fr-p6}
 
 ::: {.callout-important appearance="simple"}
-## Withdrawn pending recalibration
+## Recalibrated
 
-This subsection's finding rests on the model's neighbourhood measure of
-how deprived each school's intake is. That measure does not match the
-schools' published shares of disadvantaged pupils --- see the check at
-the head of @sec-weighing --- so the result below is withdrawn until the
-model is recalibrated. The mechanisms it describes may still operate;
-their direction and size on the real intakes are not established.
+The first version of this subsection measured intakes by the
+neighbourhoods their children come from, which did not match the
+schools' published shares of disadvantaged pupils (@sec-weighing). It
+found priority 6 made intakes noticeably more segregated. On the
+recalibrated measure the effect is much smaller, and the mechanisms the
+first version described are not repeated here.
 :::
 
 The 2026/27 arrangements added **priority 6**: a share of places at each
@@ -6936,8 +6935,7 @@ popular schools of the two paired catchments.
 
 The simulator runs the council's priorities as a tiered ceiling on the
 full model of section 7 (@sec-m5): free school meals first, up to 30% of
-places, then priority 6 up to its share, then the catchment. Moving the
-priority-6 share shows something the policy does not intend.
+places, then priority 6 up to its share, then the catchment.
 
 ```{r p6-prep}
 #| include: false
@@ -6975,28 +6973,28 @@ p6s$sweep %>%
   scale_linetype_manual(values = c(`With the FSM priority` = "solid", `Without it` = "22"), name = NULL) +
   scale_x_continuous(breaks = unique(p6s$sweep$p6), labels = function(x) paste0(x, "%")) +
   labs(x = "Priority-6 share of each community school's places", y = "Gorard's segregation index",
-       title = "More places for single-school catchments, more segregated intakes",
+       title = "More places for single-school catchments barely changes how mixed intakes are",
        subtitle = "Further up is more segregated. The lines flatten once nobody else wants the places.",
        caption = "Sources: modelled intakes (M5); IMD 2019 IDACI; ONS postcode household counts.") +
   theme_bh(11) +
   theme(legend.position = "top")
 ```
 
-**The larger the priority-6 share, the more segregated the intakes.** In
+**Priority 6 makes almost no difference to how mixed the intakes are.** In
 2026 the index is `r sprintf("%.3f", p6_g(0))` with priority 6 switched
 off, `r sprintf("%.3f", p6_g(5))` at the 5% in force,
 `r sprintf("%.3f", p6_g(15))` at 15% and `r sprintf("%.3f", p6_g(20))`
 at 20%, where the first proposal would have put it. Past about
 `r p6_sat`% it stops moving, because there are no more families in the
 single-school catchments who want the places: `r fmt_n(p6_n(p6_sat))`
-children at `r p6_sat`%, `r fmt_n(p6_n(40))` at 40%. It rises the same
-way with the free school meals priority switched off, and in 2030. The
-rise is modest --- about `r sprintf("%.0f", 100 * (p6_g(15) / p6_g(0) - 1))`%
-of the index between none and 15% --- but it runs in the wrong direction
-for a policy about access.
+children at `r p6_sat`%, `r fmt_n(p6_n(40))` at 40%. Between none and
+15% the index moves by
+`r sprintf("%+.0f", 100 * (p6_g(15) / p6_g(0) - 1))`%, and by 2030 by
+`r sprintf("%+.0f", 100 * (p6_g(15, 2030) / p6_g(0, 2030) - 1))`% --- well
+inside what the model's assumptions could move.
 
 ```{r tbl-p6-schools}
-#| tbl-cap: "Each school's modelled intake, with priority 6 off and at 15% of places, under the council's priorities in 2026: the share from the three most deprived deciles, and the school's contribution to Gorard's index (half the absolute gap between its share of the city's deprived children and its share of all children). Ordered by how much the school adds to the index."
+#| tbl-cap: "Each school's modelled intake, with priority 6 off and at 15% of places, under the council's priorities in 2026: its share of disadvantaged pupils (calibrated to the published shares), and its contribution to Gorard's index (half the absolute gap between its share of the city's disadvantaged pupils and its share of all pupils). Ordered by how much the school adds to the index."
 p6s$schools %>%
   mutate(d_con = contrib_at - contrib_0) %>%
   arrange(desc(d_con)) %>%
@@ -7008,32 +7006,18 @@ p6s$schools %>%
   knitr::kable(align = "lrrrr")
 ```
 
-Two things in the model drive it.
-
-**The children who use it still go to the popular school nearest them.**
-Priority 6 lets a child cross a catchment boundary; it does not change
-how far a family will travel. `r if (p6_top_to("BACA") == p6_top_to("Longhill")) paste0("Brighton Aldridge's and Longhill's catchments send most of their priority-6 children to ", p6_top_to("BACA"), ".") else paste0("Brighton Aldridge's catchment sends most of its priority-6 children to ", p6_top_to("BACA"), ", and Longhill's to ", p6_top_to("Longhill"), ".")` `r short_sch(p6_up$name)` is the school that
-moves the index most: its intake was already
-`r fmt_pct(100 * p6_up$dep_0, 0)` deprived against a city average of
-`r fmt_pct(100 * p6s$city_dep, 0)`, and at 15% it is
-`r fmt_pct(100 * p6_up$dep_at, 0)`, while the catchment children it
-turns away move next door. Portslade's catchment sends its priority-6
-children to `r p6_top_to("PACA")`, and at the other end the schools
-already below the city average become less deprived still:
-`r paste(sprintf("%s from %s to %s", p6_below_short, fmt_pct(100 * p6_below$dep_0, 1), fmt_pct(100 * p6_below$dep_at, 1)), collapse = "; ")`. A school above the average moves
-further above it and one below further below, which is exactly what
-Gorard's index measures.
-
-**The families who use it are the better-off ones in their catchment.**
-The priority-6 places won from Brighton Aldridge's catchment go to
-neighbourhoods `r fmt_pct(100 * p6_w("BACA", "dep_p6"), 0)` deprived,
-where the catchment as a whole is
-`r fmt_pct(100 * p6_w("BACA", "dep_all"), 0)`; from Portslade's,
+**Who uses it depends on the catchment.** From Longhill's catchment the
+priority-6 places go mostly to the less disadvantaged families:
+`r fmt_pct(100 * p6_w("Longhill", "dep_p6"), 0)` of them to disadvantaged
+children, where the catchment as a whole is
+`r fmt_pct(100 * p6_w("Longhill", "dep_all"), 0)` disadvantaged. From
+Portslade's it is the other way round,
 `r fmt_pct(100 * p6_w("PACA", "dep_p6"), 0)` against
-`r fmt_pct(100 * p6_w("PACA", "dep_all"), 0)`. A lottery within the
-priority does not change that. Who wins a place is set by who applies
-out of catchment, and in the model that follows how strongly each
-neighbourhood is drawn to each school.
+`r fmt_pct(100 * p6_w("PACA", "dep_all"), 0)`; from Brighton Aldridge's,
+`r fmt_pct(100 * p6_w("BACA", "dep_p6"), 0)` against
+`r fmt_pct(100 * p6_w("BACA", "dep_all"), 0)`. It does not move the
+city's index because the places are few and go to schools on both sides
+of the city's share.
 
 ::: {.callout-warning appearance="simple"}
 ## How far to take this
@@ -7041,15 +7025,15 @@ neighbourhood is drawn to each school.
 The effect is small beside what a catchment redesign does, and it is a
 model result, not an observed one: the council has published the
 priority-6 offers by school for 2026 but not which neighbourhoods they
-went to. Deprivation here is a neighbourhood measure, so a better-off
-family in a deprived neighbourhood counts as deprived and the second
-mechanism may be understated or overstated. And segregation is one
-objective among several. Priority 6 may still widen access for the
-children who use it --- the `r fmt_n(p6_n(5))` or so a year at 5% ---
-and that may be judged worth a small rise in the index. What it does not
-do, on this evidence, is even out the intakes, and a larger share makes
-that worse rather than better. The simulator shows the same comparison
-live in its Fairness tab for any setting.
+went to. Each school's pull on disadvantaged children is fitted to its
+2026 Year 7 offers, or for the academies and faith schools its published
+share, and held fixed, which is an assumption about how the children who
+use priority 6 differ from their neighbours. And
+segregation is one objective among several. Priority 6 widens access for
+the children who use it --- the `r fmt_n(p6_n(5))` or so a year at 5% ---
+and on this evidence it does so at almost no cost to how mixed the
+intakes are. The simulator shows the same comparison live in its
+Fairness tab for any setting.
 :::
 
 ## And if Longhill moves {#sec-fr-elm}
@@ -7865,28 +7849,29 @@ and everyone else closes from
 against `r fmt_n(cm_v("today", "left_es"))` today, most of them from
 Longhill's catchment.
 
-**On the model's measure, it makes the intakes more segregated, not
-less** --- a result that rests on the neighbourhood measure @sec-weighing
-finds does not match the schools' published disadvantaged shares, and
-is withdrawn pending recalibration. Gorard's index
-rises from `r sprintf("%.3f", cm_v("today", "gorard"))` to
-`r sprintf("%.3f", cm_v("comart", "gorard"))`. A school that recruits
-locally takes its neighbourhood with it, and CoMArt's neighbourhood is a
-deprived one:
-`r fmt_pct(100 * cm_s("comart", "CoMArt", "dep_share"), 0)` of its
-intake is from the three most deprived deciles, against
-`r fmt_pct(100 * cm_city_dep, 0)` across the city. Those children now
-stay in the east instead of spreading into Stringer, Varndean and the
-schools further out, most of whose intakes become slightly less deprived.
-Brighton Aldridge, already the most deprived intake, does not gain from
-it: it goes from `r fmt_pct(100 * cm_s("today", "Brighton Aldridge Community Academy", "dep_share"), 0)`
-to `r fmt_pct(100 * cm_s("comart", "Brighton Aldridge Community Academy", "dep_share"), 0)`.
-It is the same trade that runs through section 8: **a system that
-shortens deprived children's journeys by giving them a school nearby
-concentrates them in it**.
+**Its effect on how mixed intakes are is small.** Counting disadvantaged
+pupils as calibrated in @sec-weighing, Gorard's index goes from
+`r sprintf("%.3f", cm_v("today", "gorard"))` to
+`r sprintf("%.3f", cm_v("comart", "gorard"))` in 2026, and from
+`r sprintf("%.3f", cm_v("today", "gorard", 2030))` to
+`r sprintf("%.3f", cm_v("comart", "gorard", 2030))` in 2030. A school
+that recruits locally takes its neighbourhood with it:
+`r fmt_pct(100 * cm_s("comart", "CoMArt", "dep_share"), 0)` of CoMArt's
+intake is disadvantaged, against `r fmt_pct(100 * cm_city_dep, 0)` across
+the city. But Longhill and Brighton Aldridge, the two most disadvantaged
+intakes, are already well above that, so a third school in the east
+between them does little to the city's index. Brighton Aldridge goes from
+`r fmt_pct(100 * cm_s("today", "Brighton Aldridge Community Academy", "dep_share"), 0)`
+to `r fmt_pct(100 * cm_s("comart", "Brighton Aldridge Community Academy", "dep_share"), 0)`,
+Longhill from
+`r fmt_pct(100 * cm_s("today", "Longhill High School", "dep_share"), 0)`
+to `r fmt_pct(100 * cm_s("comart", "Longhill High School", "dep_share"), 0)`.
+What CoMArt changes is access: it shortens deprived children's journeys
+without, on this evidence, concentrating them much more than today's
+system already does.
 
 ```{r tbl-comart-schools}
-#| tbl-cap: "Each school's modelled intake and its share from the three most deprived deciles, today and with CoMArt open at 150 (Brighton Aldridge and Longhill at 150), council priorities, 2026."
+#| tbl-cap: "Each school's modelled intake and its share of disadvantaged pupils (calibrated to the published shares), today and with CoMArt open at 150 (Brighton Aldridge and Longhill at 150), council priorities, 2026."
 cms$schools %>%
   filter(id %in% c("today", "comart")) %>%
   select(id, short, pan, intake, dep_share) %>%
@@ -7929,10 +7914,12 @@ is, on this model, CoMArt full, Brighton Aldridge
 Brighton Aldridge's, CoMArt takes only
 `r fmt_n(cm_sens("As Longhill", "intake_comart"))` children, Longhill
 `r fmt_n(cm_sens("As Longhill", "intake_lh"))`, and Gorard's index is
-`r sprintf("%.3f", cm_sens("As Longhill", "gorard"))` --- still above
-today. At the city median it fills and the index is
-`r sprintf("%.3f", cm_sens("The city median", "gorard"))`. The direction
-does not depend on the assumption; the size does.
+`r sprintf("%.3f", cm_sens("As Longhill", "gorard"))`, against
+`r sprintf("%.3f", cm_v("today", "gorard"))` today. At the city median it
+fills and the index is
+`r sprintf("%.3f", cm_sens("The city median", "gorard"))`. Both the size
+and the direction of CoMArt's effect on segregation depend on this
+assumption; its effect on journeys does not.
 
 **So is the catchment term.** Families in Longhill's catchment are
 assumed to follow a catchment with two schools in it as closely as they
@@ -7988,10 +7975,9 @@ already holds.
    PACA over-forecast; the first does not.
 2. **Which neighbourhoods did the priority-6 places go to, and what did
    they do to the social mix of the community schools' intakes?**
-   (@sec-fr-p6) In the full model a larger priority-6 share makes intakes
-   more segregated, because the families who use it are the better-off
-   ones in their catchments and they go to the popular school nearest
-   them. The council holds the offers and the home postcodes to test it.
+   (@sec-fr-p6) In the full model it makes almost no difference to how
+   mixed intakes are, and who uses it varies by catchment. The council holds the offers and
+   the home postcodes to test both.
 
 ## Data the council could simply publish {#sec-data-asks}
 
@@ -8048,65 +8034,85 @@ the rest of the system would be better for their taking fewer, this
 section says so.
 
 ::: {.callout-important appearance="default"}
-## A check the segregation results fail
+## How segregation is measured here, and a check the first version failed
 
 ```{r weigh-validate}
-#| tbl-cap: "Each school's intake as the model measures it --- the share of its children from neighbourhoods in the three most deprived deciles --- against the Department for Education's published share of disadvantaged pupils at the school, in the latest year of the performance tables. The model's figures are for 2026 under the council's priorities. Ordered by the published share."
-val_obs <- perf$bh %>%
-  mutate(URN = as.character(URN)) %>%
-  filter(!is.na(PTFSM6CLA1A), year_label == perf$latest) %>%
-  inner_join(oi$schools %>% transmute(name, URN = as.character(urn)), by = "URN") %>%
-  select(name, published = PTFSM6CLA1A)
-val <- cms$schools %>% filter(id == "today") %>%
-  transmute(name, short, intake, model = 100 * dep_share) %>%
-  inner_join(val_obs, by = "name") %>%
-  mutate(model_avg = weighted.mean(model, intake), pub_avg = weighted.mean(published, intake),
-         model_side = ifelse(model >= model_avg, "above", "below"),
-         pub_side = ifelse(published >= pub_avg, "above", "below"))
-val_r <- cor(val$model, val$published)
-val_r_nobaca <- with(val %>% filter(short != "Brighton Aldridge"), cor(model, published))
-val_same <- sum(val$model_side == val$pub_side)
+#| tbl-cap: "Each school's share of disadvantaged pupils: as the first version of the model measured it, by the neighbourhoods its children come from; as the Department for Education publishes it for the whole school (the mean of 2022-23 to 2024-25, every cohort admitted before the 2024 map and the new priorities); the share of each community school's September 2026 Year 7 offers that went to children eligible for free school meals (council allocation factsheet); and the model's Year 7 share in 2026, which reproduces the offers for the community schools and the published share for the rest. The last three columns are each school's pull on disadvantaged children fitted three ways: to the Year 7 offers (the model's measure), to the published shares on the pre-2024 map and rules, and to the published shares on today's map. Ordered by the published share."
+val <- bh_data("council_options.rds")$dis_fit %>%
+  mutate(short = vapply(name, short_sch, character(1)),
+         nb = 100 * neighbourhood, pub = 100 * published, cal = 100 * modelled,
+         nb_side = ifelse(nb >= weighted.mean(nb, intake), "above", "below"),
+         pub_side = ifelse(pub >= weighted.mean(pub, intake), "above", "below"))
+val_r <- cor(val$nb, val$pub)
+val_r_nobaca <- with(val %>% filter(short != "Brighton Aldridge"), cor(nb, pub))
+val_same <- sum(val$nb_side == val$pub_side)
 val_of <- function(s, col) val[[col]][val$short == s]
 val %>%
-  arrange(desc(published)) %>%
+  arrange(desc(pub)) %>%
   transmute(School = short,
-            `Model: from deprived neighbourhoods` = fmt_pct(model, 0),
-            `Relative to the city` = model_side,
-            `Published: disadvantaged pupils` = fmt_pct(published, 0),
-            `Relative to the city ` = pub_side) %>%
-  knitr::kable(align = "lrlrl")
+            `First version: by neighbourhood` = sprintf("%s (%s)", fmt_pct(nb, 0), nb_side),
+            `Published: disadvantaged pupils` = sprintf("%s (%s)", fmt_pct(pub, 0), pub_side),
+            `Year 7 offers, 2026: free school meals` = ifelse(is.na(year7_fsm), "---", fmt_pct(100 * year7_fsm, 0)),
+            `Model, Year 7 2026` = fmt_pct(cal, 0),
+            `Pull: Year 7 offers` = sprintf("%.2f", lambda),
+            `Pull: before the change` = sprintf("%.2f", lambda_pre),
+            `Pull: today's map, whole school` = sprintf("%.2f", lambda_today_map)) %>%
+  knitr::kable(align = "lrrrrrrr")
 ```
 
-Every segregation figure in this document measures how mixed a school's
-intake is by the **neighbourhoods** its children come from. Checked
-against the share of **disadvantaged pupils each school actually has**,
-as the Department for Education publishes it, that measure gets the
-schools in the wrong order. The two correlate at
-`r sprintf("%.2f", val_r)`, and only because of Brighton Aldridge:
-without it the correlation is `r sprintf("%.2f", val_r_nobaca)`. Only
-`r val_same` of the `r nrow(val)` schools are on the same side of the
-city average on both. Longhill and Hove Park, which the model puts below
-the city average, have among the highest disadvantaged shares in the
-city --- `r fmt_pct(val_of("Longhill", "published"), 0)` and
-`r fmt_pct(val_of("Hove Park", "published"), 0)` --- and Varndean, which
-the model puts well above it, has about the average.
+The first version of this section measured how mixed a school's intake
+is by the **neighbourhoods** its children come from. Checked against the
+share of **disadvantaged pupils each school actually has**, as the
+Department for Education publishes it, that measure put the schools in
+the wrong order. The two correlate at `r sprintf("%.2f", val_r)`, and
+only because of Brighton Aldridge: without it the correlation is
+`r sprintf("%.2f", val_r_nobaca)`, and only `r val_same` of the
+`r nrow(val)` schools are on the same side of the city average on both.
+Longhill and Hove Park, which the neighbourhood measure put below the
+average, have among the highest disadvantaged shares in the city ---
+`r fmt_pct(val_of("Longhill", "pub"), 0)` and
+`r fmt_pct(val_of("Hove Park", "pub"), 0)` --- and Varndean, which it put
+well above, has about the average.
 
-The gap is consistent with families sorting *within* neighbourhoods: the
-better-off families in a mixed neighbourhood choosing a different school
-from their neighbours, which a neighbourhood measure cannot see. It is
-also the process segregation is made of.
+The gap is families sorting *within* neighbourhoods: in a mixed
+neighbourhood, the disadvantaged families and the better-off ones do not
+choose the same schools, and a neighbourhood measure cannot see it. That
+sorting is what segregation is made of, so **the model has been
+recalibrated to it**. Each neighbourhood's disadvantaged children are
+placed across the schools its children attend, weighted by each
+school's pull on disadvantaged children, and those pulls are fitted to
+what each school actually admits.
 
-**Every segregation result in this document is therefore withdrawn
-until the model is recalibrated against the published figures**: the
-Gorard indices in this section, the intake results in section 8, the
-priority-6 finding (@sec-fr-p6) and CoMArt's (@sec-comart). In
-particular, the model's result that returning Whitehawk to Longhill's
-catchment lowers segregation is **not supported**. On the published
-figures that redraw would move children from a school with about the
-city's share of disadvantaged pupils to one with well above it, which is
-more likely to raise segregation than to lower it. The journey,
-displacement, catchment and Longhill results below do not rest on this
-measure and stand.
+**The published shares lag the policy.** They average Years 7 to 11
+over 2022-23 to 2024-25, and every one of those cohorts was admitted
+before September 2025, under the pre-2024 map with no free school meals
+priority and no priority 6. Fitted to them on today's map, the pulls
+absorb the policy change itself. Fitted on the old map and rules, they
+still miss what the new rules do. So for the six community schools the
+target is the first intake admitted under today's map and priorities:
+the share of each school's September 2026 offers that went to children
+eligible for free school meals, which the council publishes in its
+allocation factsheet. The four academies and faith schools do not
+publish it and their arrangements did not change in 2025, so they keep
+their published whole-school shares. Free school meal eligibility is a
+narrower count than the Pupil Premium measure, so if anything this
+understates the community schools' disadvantaged intakes. The pulls are
+then held fixed while maps, admission numbers and schools change. Every segregation
+figure in this section, in the priority-6 subsection (@sec-fr-p6) and in
+CoMArt's (@sec-comart) is on that basis. The intake figures in section 8
+come from a separate allocation model the recalibration does not cover,
+and remain withdrawn.
+
+**Several results change.** On this measure returning Whitehawk to
+Longhill's catchment raises segregation a little, but not reliably ---
+the box under Priority 2 sets out why earlier versions said otherwise.
+Priority 6 makes no measurable difference. Closing Longhill, removing
+the oversubscription priorities and trimming Cardinal Newman and King's
+lower segregation; the power diagram, Elm Grove and the packages raise
+it. Most options differ by a few thousandths on the index, and the
+Whitehawk box shows a change of measure moving results of that size, so
+only the larger differences should be read as findings. The journey, displacement, catchment and
+Longhill results do not rest on this measure and are unchanged.
 :::
 
 ```{r weigh-prep}
@@ -8145,7 +8151,7 @@ back to Longhill"** is today's map with only those neighbourhoods
 returned.
 
 ```{r tbl-weigh-2030}
-#| tbl-cap: "The options in 2030, under the council's priorities. Community schools' balance is the steady-state annual balance across the six schools the council runs (section 6). Gorard is across all city schools' intakes, on the model's neighbourhood measure, and is withdrawn pending recalibration (see the check at the head of this section). The deprived-journey gap is the extra minutes children from the three most deprived deciles travel. Displaced children would have taken a place in their own catchment and could not. Where an option cuts a school's admission number and that school is no longer full in 2030, the cut changes nothing that year."
+#| tbl-cap: "The options in 2030, under the council's priorities. Community schools' balance is the steady-state annual balance across the six schools the council runs (section 6). Gorard is across all city schools' intakes, counting disadvantaged pupils calibrated to each school's published share (see the box at the head of this section). The deprived-journey gap is the extra minutes children from the three most deprived deciles travel. Displaced children would have taken a place in their own catchment and could not. Where an option cuts a school's admission number and that school is no longer full in 2030, the cut changes nothing that year."
 show <- c("today", "lh150", "central", "whitehawk", "whitehawk_central", "elm",
           "lh_wanted", "cn300", "cn270_kings", "academies", "p6_off", "p6_20",
           "equal", "power", "comart", "package_d", "package_e", "close_lh")
@@ -8194,8 +8200,8 @@ The levers that do move children, ranked by what they add in 2030:
   `r fmt_n(co("today", "lh_intake", 2026))` and
   `r fmt_n(co("today", "lh_intake", 2035))`), and keeps most of that
   gain as the cohort falls. It barely changes journeys, and Priority 3
-  shows it lowers displacement. What it does to segregation is the open
-  question in the check above.
+  shows it lowers displacement. Its effect on segregation is small and
+  not reliably in either direction (Priority 2).
 - **Moving to Elm Grove with redrawn catchments** adds
   `r fmt_n(co("elm", "lh_intake") - co("today", "lh_intake"))`, at the
   cost of a new site and of the segregation result under Priority 2.
@@ -8234,8 +8240,8 @@ else --- is improved most by putting a school where they live. With
 Longhill at Elm Grove the gap falls from
 `r sprintf("%.1f", co("today", "dep_gap"))` to
 `r sprintf("%.1f", co("elm", "dep_gap"))` minutes; with CoMArt open, to
-`r sprintf("%.1f", co("comart", "dep_gap"))`. Nothing else moves it by
-more than a minute.
+`r sprintf("%.1f", co("comart", "dep_gap"))`. Nothing else in the table
+moves it by more than half a minute.
 
 **Segregation** is lowest where the intakes are mixed, and a school
 placed among deprived neighbourhoods recruits from them: Gorard's index
@@ -8243,29 +8249,174 @@ rises from `r sprintf("%.3f", co("today", "gorard"))` to
 `r sprintf("%.3f", co("elm", "gorard"))` with Longhill at Elm Grove and to
 `r sprintf("%.3f", co("comart", "gorard"))` with CoMArt open (@sec-comart).
 
-**On the model's neighbourhood measure, Whitehawk back to Longhill gives
-the lowest index of any option the council controls**,
-`r sprintf("%.3f", co("whitehawk", "gorard"))`. That is the result the
-check at the head of this section does not support: on the published
-disadvantaged shares, the redraw moves children towards the more
-disadvantaged intake, not away from it.
+**Returning Whitehawk to Longhill's catchment makes little difference to
+segregation, and not reliably in either direction.** In 2030 the index
+is `r sprintf("%.3f", co("today", "gorard"))` today and
+`r sprintf("%.3f", co("whitehawk", "gorard"))` with the redraw. Earlier
+versions of this section found first that it lowered segregation and
+then that it clearly raised it. How far it moves the index, and which
+way, turns on how disadvantage is counted, and the box below sets out
+why.
 
-**On the same measure, priority 6 works against it.** Switched off, the index is
+::: {.callout-note appearance="default"}
+## Does returning Whitehawk to Longhill change segregation?
+
+```{r wh-prep}
+#| include: false
+whx <- bh_data("whitehawk_explained.rds")
+wh_g <- function(map, y = 2026) whx$gorard$gorard[whx$gorard$map == map & whx$gorard$year == y]
+wh_s <- function(school, map, col, y = 2026)
+  whx$schools[[col]][whx$schools$short == school & whx$schools$map == map & whx$schools$year == y]
+wh_d <- function(school, map, col, y = 2026) {
+  v <- whx$dest[[col]][whx$dest$short == school & whx$dest$map == map & whx$dest$year == y]
+  if (length(v)) v else 0
+}
+wh_m <- function(measure, map, col = "gorard", y = 2026)
+  whx$measures[[col]][whx$measures$measure == measure & whx$measures$map == map & whx$measures$year == y]
+wh_sens <- function(variant, map) whx$sens$gorard[whx$sens$variant == variant & whx$sens$map == map]
+wh_city <- with(whx$schools %>% filter(map == "today", year == 2026), sum(dis) / sum(intake))
+wh_fit <- function(s, col) { f <- whx$dis_fit; f[[col]][vapply(f$name, short_sch, character(1)) == s] }
+wh_chg <- vapply(c("As fitted", "Half the pull", "No pull"),
+                 function(v) wh_sens(v, "whitehawk") - wh_sens(v, "today"), numeric(1))
+wh_fmt <- function(x) if (abs(x) < 0.0005) "less than a thousandth" else sprintf("%+.3f", x)
+```
+
+**Who lives there.** The 2024 catchment change moved
+`r whx$area$n_zones` small areas around CoMArt's old site in Whitehawk
+out of Longhill's catchment and into Stringer / Varndean's. About
+`r fmt_n(whx$area$children)` children a year live in them, and
+`r fmt_pct(100 * whx$area$disadvantaged_share, 0)` of them are
+disadvantaged --- against `r fmt_pct(100 * whx$area$city_share, 0)` across
+the city, `r fmt_pct(100 * whx$area$dsv_share, 0)` in the rest of
+Stringer / Varndean's catchment, and
+`r fmt_pct(100 * whx$area$longhill_share, 0)` in Longhill's.
+
+**Where their children go.** Today
+`r fmt_n(wh_d("Varndean", "today", "children"))` go to Varndean and
+`r fmt_n(wh_d("Dorothy Stringer", "today", "children"))` to Stringer.
+Returned to Longhill's catchment,
+`r fmt_n(wh_d("Longhill", "whitehawk", "children"))` go to Longhill ---
+in the model almost all of them disadvantaged ones, for the reason set
+out below --- and Cardinal Newman
+takes `r fmt_n(wh_d("Cardinal Newman", "whitehawk", "children"))` rather
+than `r fmt_n(wh_d("Cardinal Newman", "today", "children"))`. For the
+children who go to Longhill the journey is about
+`r sprintf("%.0f", wh_d("Longhill", "whitehawk", "minutes"))` minutes,
+against `r sprintf("%.0f", wh_d("Varndean", "today", "minutes"))` to
+Varndean.
+
+```{r tbl-whitehawk}
+#| tbl-cap: "The three schools the Whitehawk redraw moves, 2026, council priorities: each school's share of disadvantaged pupils, and its contribution to Gorard's index (half the gap between its share of the city's disadvantaged pupils and its share of all pupils)."
+whx$schools %>%
+  filter(year == 2026, short %in% c("Longhill", "Varndean", "Dorothy Stringer")) %>%
+  select(short, map, share, contrib) %>%
+  tidyr::pivot_wider(names_from = map, values_from = c(share, contrib)) %>%
+  transmute(School = short,
+            `Disadvantaged, today` = fmt_pct(100 * share_today, 1),
+            `With Whitehawk back` = fmt_pct(100 * share_whitehawk, 1),
+            `Contribution to the index, today` = sprintf("%.4f", contrib_today),
+            `With Whitehawk back ` = sprintf("%.4f", contrib_whitehawk)) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+**What it does to the intakes.** Across the city
+`r fmt_pct(100 * wh_city, 1)` of pupils are disadvantaged. Longhill's
+intake, already above that at
+`r fmt_pct(100 * wh_s("Longhill", "today", "share"), 1)`, rises to
+`r fmt_pct(100 * wh_s("Longhill", "whitehawk", "share"), 1)`, which adds
+to the index. Varndean's, also above it today at
+`r fmt_pct(100 * wh_s("Varndean", "today", "share"), 1)`, falls to
+`r fmt_pct(100 * wh_s("Varndean", "whitehawk", "share"), 1)`, closer to
+it, which takes from it. Stringer's goes from
+`r fmt_pct(100 * wh_s("Dorothy Stringer", "today", "share"), 1)` to
+`r fmt_pct(100 * wh_s("Dorothy Stringer", "whitehawk", "share"), 1)`,
+further below it, which adds. On balance the index is
+`r sprintf("%.3f", wh_g("today"))` today and
+`r sprintf("%.3f", wh_g("whitehawk"))` with the redraw in 2026,
+`r sprintf("%.3f", wh_g("today", 2030))` and
+`r sprintf("%.3f", wh_g("whitehawk", 2030))` in 2030.
+
+**Why earlier versions said otherwise.**
+
+```{r tbl-wh-measures}
+#| tbl-cap: "Gorard's index, and Longhill's and Varndean's shares of disadvantaged pupils, today and with Whitehawk returned to Longhill, 2026, council priorities, on each of the four ways this document has counted disadvantaged pupils. The last is the model's measure."
+whx$measures %>%
+  filter(year == 2026) %>%
+  select(measure, map, gorard, longhill_share, varndean_share) %>%
+  tidyr::pivot_wider(names_from = map, values_from = c(gorard, longhill_share, varndean_share)) %>%
+  transmute(`Disadvantaged pupils counted` = measure,
+            `Index, today` = sprintf("%.3f", gorard_today),
+            `With Whitehawk back` = sprintf("%.3f", gorard_whitehawk),
+            `Longhill` = sprintf("%s → %s", fmt_pct(100 * longhill_share_today, 0), fmt_pct(100 * longhill_share_whitehawk, 0)),
+            `Varndean` = sprintf("%s → %s", fmt_pct(100 * varndean_share_today, 0), fmt_pct(100 * varndean_share_whitehawk, 0))) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+Scored by the neighbourhoods their children come from, Varndean looked
+the more deprived school and Longhill the less, so moving Whitehawk
+looked like evening them out. The published figures put them the other
+way round, and the second version fitted each school's pull on
+disadvantaged children to those figures --- but on today's map. The
+published figures are whole-school averages for cohorts admitted before
+the 2024 map and the new priorities, when Whitehawk was in Longhill's
+catchment. Fitted on today's map, Longhill's pull
+(`r sprintf("%.2f", wh_fit("Longhill", "lambda_today_map"))`) stood in
+for Whitehawk children it no longer admits, and Varndean's
+(`r sprintf("%.2f", wh_fit("Varndean", "lambda_today_map"))`) held down
+the ones it now does; moving Whitehawk then looked like concentrating
+disadvantage at Longhill. Fitted on the map and rules those cohorts were
+admitted under, the pulls are
+`r sprintf("%.2f", wh_fit("Longhill", "lambda_pre"))` and
+`r sprintf("%.2f", wh_fit("Varndean", "lambda_pre"))`, and the redraw
+barely moves the index --- but that fit still misses what the new rules
+do. Fitted to the first Year 7 offers under today's map and priorities,
+the model's measure, Longhill's pull is far stronger,
+`r sprintf("%.2f", wh_fit("Longhill", "lambda"))`, because
+`r fmt_pct(100 * wh_fit("Longhill", "year7_fsm"), 0)` of its September
+2026 offers went to children eligible for free school meals; Varndean's
+is `r sprintf("%.2f", wh_fit("Varndean", "lambda"))`. On that measure the
+redraw raises the index a little, because the model sends Longhill
+almost only the disadvantaged Whitehawk children:
+`r fmt_n(wh_d("Longhill", "whitehawk", "dis"))` of
+`r fmt_n(wh_d("Longhill", "whitehawk", "children"))`.
+
+**How firm that is.** As fitted, the redraw changes the index by
+`r wh_fmt(wh_chg[["As fitted"]])`; at half the fitted pull by
+`r wh_fmt(wh_chg[["Half the pull"]])`; with no pull by
+`r wh_fmt(wh_chg[["No pull"]])`.
+`r if (length(unique(sign(round(wh_chg, 3)))) > 1) "The sign changes with the strength of the pull. The honest reading is that the redraw's effect on segregation is too small for this model to call." else "The sign is the same in every version, but the size is small beside the differences between the measures."`
+Longhill's pull rests on a single year of offers at a school that made
+fewer than a hundred of them on offer day, and it implies that almost
+every Whitehawk family choosing Longhill would be disadvantaged. A
+second year of Year 7 offers would test it; the published whole-school
+figures will not show the 2024 map in full until every year group has
+been admitted under it, in 2029-30.
+
+**What that leaves.** The case for or against returning Whitehawk rests
+on other things: a shorter journey for the children who would take a
+Longhill place, `r fmt_n(co("whitehawk", "lh_intake") - co("today", "lh_intake"))`
+more children a year for Longhill by 2030, and less displacement. For
+comparison, the whole pre-2024 map scores
+`r sprintf("%.3f", co("pre2024", "gorard", 2026))` in 2026, against
+`r sprintf("%.3f", co("today", "gorard", 2026))` today. And a more or
+less mixed intake is not the same as
+better or worse results for the children in it: most of the difference
+between schools' headline scores reflects who they teach rather than what
+they add (@sec-school-effects).
+:::
+
+**Priority 6 makes almost no difference.** Switched off, the index is
 `r sprintf("%.3f", co("p6_off", "gorard"))`; at 20% it is
-`r sprintf("%.3f", co("p6_20", "gorard"))` ([the priority-6 subsection of section 8](#sec-fr-p6)). Removing all
+`r sprintf("%.3f", co("p6_20", "gorard"))`
+([the priority-6 subsection of section 8](#sec-fr-p6)). Removing all
 oversubscription priorities gives
-`r sprintf("%.3f", co("equal", "gorard"))` but displaces
+`r sprintf("%.3f", co("equal", "gorard"))` and displaces
 `r fmt_n(co("equal", "displaced", 2026))` children in 2026 against
 `r fmt_n(co("today", "displaced", 2026))`.
 
-**The power diagram does not help on this model.** Section 8 ranks it
-the most even design under an in-catchment-then-distance allocation;
-on the full model, with families' attachment to their own neighbourhood
-carried to the new map, its index is
-`r sprintf("%.3f", co("power", "gorard"))` and it costs Longhill
+**The power diagram raises segregation** on this model ---
+`r sprintf("%.3f", co("power", "gorard"))` --- and costs Longhill
 `r fmt_n(co("today", "lh_intake") - co("power", "lh_intake"))` children.
-The two models disagree, and the disagreement turns on how closely
-families would follow a redrawn boundary, which no published data shows.
 It is not recommended on this evidence.
 
 ## Priority 3: catchments, journeys and displacement
@@ -8303,7 +8454,13 @@ lengthen to `r sprintf("%.0f", co("close_lh", "p90_min"))` minutes, the
 share travelling over 40 minutes rises to
 `r fmt_pct(100 * co("close_lh", "over_40"), 0)`, and more children leave
 the city: `r fmt_n(co("close_lh", "left_city"))` in 2030 against
-`r fmt_n(co("today", "left_city"))`. It is the counterfactual against
+`r fmt_n(co("today", "left_city"))`. It also lowers segregation more than
+any other option in the table, to
+`r sprintf("%.3f", co("close_lh", "gorard"))` against
+`r sprintf("%.3f", co("today", "gorard"))`: Longhill's Year 7 intake is
+among the most disadvantaged in the city, and its children would spread
+across schools with less disadvantaged ones. That is a statistic about
+intakes, not a benefit to the children who would travel further. It is the counterfactual against
 which keeping Longhill open is a choice to spend money on shorter
 journeys in the east.
 
@@ -8345,26 +8502,29 @@ council's case for asking them rests on exactly this comparison.
 
 **Where the priorities agree.**
 
-- *Whitehawk back to Longhill* helps Priorities 1 and 3: more children
-  for Longhill, less displacement, and no real change to journeys. What
-  it does to segregation is not settled: the model says it lowers it,
-  and the published disadvantaged shares suggest it would raise it.
 - *Cardinal Newman and King's taking fewer* helps Priority 1 and
   Priority 3 together, and the community schools' finances most of all.
   It needs the dioceses' agreement, and the case to put to them is that a
   city whose cohort is falling cannot keep every school full, and that
   the schools it does not run are part of the same system.
-- *Reviewing priority 6* helps Priority 2 and Priority 3 together. It
-  costs something real --- a route into the popular schools for the
-  children of single-school catchments who use it --- and that is a
-  judgement the council should make knowing the segregation result.
+- *Reviewing priority 6* touches little. It makes almost no difference to
+  segregation and a small one to displacement, and it gives something
+  real --- a route into the popular schools for the children of
+  single-school catchments who use it. The case for keeping it at 5% is
+  as good as the case against.
 
 **Where they compete, and which should give.**
 
-- *Access against segregation.* Elm Grove and CoMArt shorten deprived
-  children's journeys and, on the model's measure, concentrate them in
-  one school --- a trade whose second half the recalibration has to
-  confirm. If the council
+- *Whitehawk is not the trade-off it looked.* Returning Whitehawk to Longhill's
+  catchment gives Longhill
+  `r fmt_n(co("whitehawk", "lh_intake") - co("today", "lh_intake"))` more
+  children a year by 2030 and lowers
+  displacement, and its effect on how mixed intakes are is small and
+  turns on how disadvantage is counted. It is not the clear trade
+  against segregation earlier versions of this section showed.
+- *Access against segregation.* Elm Grove shortens deprived children's
+  journeys and concentrates them in one school; CoMArt shortens them
+  with little change to how mixed intakes are. If the council
   values access more, relocation is its strongest tool; if it values
   mixed intakes more, it should not move Longhill for that reason.
 - *Longhill against short journeys.* Trimming the central schools helps
@@ -8383,10 +8543,14 @@ council's case for asking them rests on exactly this comparison.
 pk <- "package_e"
 ```
 
-1. **Test returning Whitehawk to Longhill's catchment** before proposing
-   it. It gives Longhill children and lowers displacement; whether it
-   helps or harms the social mix of intakes needs the recalibrated
-   model, and on the published figures it may harm it.
+1. **Consider returning Whitehawk to Longhill's catchment.** Returning it
+   to Longhill's catchment gives Longhill
+   `r fmt_n(co("whitehawk", "lh_intake") - co("today", "lh_intake"))`
+   children a year by 2030 and
+   lowers displacement, and gives the children who take a Longhill place
+   a shorter journey. Its effect on how mixed intakes are is small and
+   not reliably in either direction; the case rests on Longhill and on
+   journeys, not on segregation.
 2. **Set Longhill's admission number at 150**, and plan its budget and
    staffing for about a hundred children a year, not for 150. Put the
    gap between that and break-even --- about
@@ -8412,7 +8576,9 @@ Newman at 300 and Brighton Aldridge at 150 --- that package gives Longhill
 `r fmt_n(co(pk, "lh_intake", 2026))` children in 2026 and
 `r fmt_n(co(pk, "lh_intake", 2030))` in 2030, against
 `r fmt_n(co("today", "lh_intake", 2026))` and
-`r fmt_n(co("today", "lh_intake", 2030))`;
+`r fmt_n(co("today", "lh_intake", 2030))`; a segregation index of
+`r sprintf("%.3f", co(pk, "gorard"))` against
+`r sprintf("%.3f", co("today", "gorard"))`;
 `r fmt_n(co(pk, "displaced", 2026))` children displaced in 2026 against
 `r fmt_n(co("today", "displaced", 2026))`;
 `r fmt_pct(100 * co(pk, "in_catchment"), 0)` at a catchment school
@@ -8431,8 +8597,14 @@ totals, not to individual applications. The finances are a steady state
 five years out, with a school shedding three quarters of the cost of a
 pupil it loses. The catchment terms are carried to redrawn maps at the
 strength families follow the maps they have, which is what decides every
-redraw result above. And the academies and faith schools are modelled as
-responding to demand, not as making their own decisions about numbers.
+redraw result above. Segregation counts disadvantaged pupils placed by
+each school's fitted pull on them, which reproduces the published shares
+for the cohorts admitted before the 2024 map and priorities, and assumes
+those pulls hold under today's rules and when maps and schools change.
+Most options differ on the index by a few thousandths, which is inside
+what a change of measure has moved. And the
+academies and faith schools are modelled as responding to demand, not as
+making their own decisions about numbers.
 The direction of each finding is more reliable than its size.
 :::
 

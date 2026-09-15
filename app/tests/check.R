@@ -397,6 +397,20 @@ rco <- run_sim(inp, year = 2026, closed = character(0))
 if (!inp$comart$name %in% rco$schools$name)
   fail <- c(fail, "an empty closed list does not open CoMArt")
 
+# ---- Disadvantaged pupils reproduce the published shares ----------------
+if (!is.null(inp$params$dis)) {
+  # Community schools against their September 2026 Year 7 free school meal
+  # offers, the rest against their published whole-school shares.
+  mb <- outcomes(inp, run_sim(inp, year = 2026, rules = pr()))$mix
+  cmpd <- mb %>% inner_join(inp$params$dis$fit %>% select(name, published = target), by = "name")
+  note(sprintf("disadvantaged pupils: %d schools against the 2026 Year 7 offers and published shares, largest gap %.2f points",
+               nrow(cmpd), 100 * max(abs(cmpd$dep_share - cmpd$published))))
+  if (nrow(cmpd) != 10 || max(abs(cmpd$dep_share - cmpd$published)) > 0.01)
+    fail <- c(fail, "the disadvantaged-pupil calibration does not reproduce the published shares")
+} else {
+  fail <- c(fail, "the input bundle has no disadvantaged-pupil calibration")
+}
+
 # ---- The download: a workbook that reproduces the run ---------------
 st <- list(design = "Current catchments", site = "now", year = 2027, gamma = 1.2,
            exclusive = 1, rule = "priorities", p6 = 10, fsm = TRUE, targeted = FALSE)

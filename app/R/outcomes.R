@@ -36,6 +36,51 @@ gorard_index <- function(n, dep_n) {
   0.5 * sum(abs(dep_n / sum(dep_n) - n / sum(n)))
 }
 
+#' Disadvantaged children in each flow
+#'
+#' Segregation used to be measured by the neighbourhoods an intake's
+#' children come from, and checked against the Department for Education's
+#' published share of disadvantaged pupils at each school that got the
+#' schools in the wrong order: within a mixed neighbourhood the better-off
+#' families and the disadvantaged ones do not choose the same schools, and
+#' a neighbourhood measure cannot see it.
+#'
+#' So the disadvantaged children are placed explicitly. Each
+#' neighbourhood has a disadvantaged share, from its IDACI score scaled to
+#' the city's published average; its disadvantaged children are shared
+#' across the schools its children attend in proportion to flow times
+#' lambda_j, a school's pull on disadvantaged children relative to the
+#' rest, and never more than the flow itself. lambda is fitted in
+#' R/05_app_inputs.R so every school's modelled share reproduces its
+#' published one in 2026, and then held fixed while maps, places and
+#' schools change. The flows themselves are not touched.
+#'
+#' Bundles without the calibration fall back to the neighbourhood measure.
+dis_flows <- function(inp, flows) {
+  p <- inp$params$dis
+  if (is.null(p)) {
+    dep <- inp$idaci$dep3[match(flows$lsoa, inp$idaci$lsoa)]
+    return(flows$flow * dplyr::coalesce(dep, 0))
+  }
+  s <- pmin(p$k * flows$idaci_score, 0.95)
+  lam <- unname(p$lambda[flows$name]); lam[is.na(lam)] <- 1
+  oid <- match(flows$orig, unique(flows$orig))
+  remaining <- s * rowsum(flows$flow, oid)[oid, 1]
+  d <- numeric(length(flows$flow))
+  free <- flows$flow > 0
+  for (it in 1:30) {
+    w <- flows$flow * lam * free
+    ws <- rowsum(w, oid)[oid, 1]
+    d <- d + ifelse(ws > 0, remaining * w / ws, 0)
+    excess <- rowsum(pmax(0, d - flows$flow), oid)[oid, 1]
+    d <- pmin(d, flows$flow)
+    free <- free & d < flows$flow - 1e-12
+    remaining <- excess
+    if (max(excess) < 1e-9) break
+  }
+  d
+}
+
 #' Score a run on every objective
 #'
 #' @param inp the input bundle
@@ -63,10 +108,11 @@ outcomes <- function(inp, r, shed = 0.75) {
   # Journeys to the city's schools. The routed times to the East Sussex
   # schools go by bus through Brighton, which is not how those families
   # travel, so they are left out rather than inflating every journey figure.
-  f <- r$flows %>%
-    dplyr::filter(name %in% city_names) %>%
-    dplyr::left_join(inp$idaci %>% dplyr::select(lsoa, dep3), by = "lsoa") %>%
-    dplyr::mutate(dep3 = dplyr::coalesce(dep3, 0))
+  # Disadvantaged children are placed across the whole run, East Sussex
+  # schools included, before the journeys are cut to the city's schools.
+  fl_all <- r$flows
+  fl_all$dis <- dis_flows(inp, fl_all)
+  f <- fl_all %>% dplyr::filter(name %in% city_names)
 
   wq <- function(x, w, p) {
     o <- order(x); x <- x[o]; w <- w[o]
@@ -77,14 +123,14 @@ outcomes <- function(inp, r, shed = 0.75) {
     p90_min = wq(f$cij, f$flow, 0.9),
     over_40 = sum(f$flow[f$cij > 40]) / sum(f$flow),
     child_km_day = 2 * sum(f$flow * f$km),
-    dep_gap = sum(f$flow * f$dep3 * f$cij) / sum(f$flow * f$dep3) -
-              sum(f$flow * (1 - f$dep3) * f$cij) / sum(f$flow * (1 - f$dep3)))
+    dep_gap = sum(f$dis * f$cij) / sum(f$dis) -
+              sum((f$flow - f$dis) * f$cij) / sum(f$flow - f$dis))
 
   # ---- Fairness ------------------------------------------------------
   # Over the intakes the model produces, not over the catchments the
   # design draws. Section 8.3 is about why those differ.
   mix <- f %>%
-    dplyr::mutate(dep_flow = flow * dep3) %>%
+    dplyr::mutate(dep_flow = dis) %>%
     dplyr::group_by(name) %>%
     dplyr::summarise(n = sum(flow), dep_n = sum(dep_flow), .groups = "drop") %>%
     dplyr::mutate(dep_share = dplyr::if_else(n > 0, dep_n / n, NA_real_))
