@@ -373,6 +373,188 @@ ggplot() +
   theme_map(13) + theme(legend.position = "top")
 ```
 
+# Does the model reproduce what we know?
+
+## It reproduces the 2026 offers, which it was not fitted to
+
+```{r fig-valid-offers}
+#| fig-width: 11
+#| fig-height: 5.8
+vo <- mt$runs$M5 |> dplyr::mutate(short = short_sch(name))
+r2 <- cor(vo$observed, vo$modelled)^2
+ggplot(vo, aes(observed, modelled)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey60", linetype = "31") +
+  geom_point(size = 4.5, colour = INK) +
+  ggrepel::geom_text_repel(aes(label = short), size = 4.3, seed = 3, colour = INK, box.padding = 0.6) +
+  scale_x_continuous(limits = c(0, 380)) + scale_y_continuous(limits = c(0, 380)) +
+  labs(x = "Places offered, September 2026 (council factsheet)", y = "Modelled intake, 2026",
+       title = sprintf("Modelled against actual offers: R² = %.2f", r2),
+       subtitle = str_wrap(paste("Fitted to catchment preferences, not to offers. The four schools that filled come out exactly full;",
+                                 "the two academies also take children placed there without naming them."), 110)) +
+  theme_slide(14)
+```
+
+## It reproduces where each catchment's families want to go
+
+```{r fig-valid-cells}
+#| fig-width: 11.5
+#| fig-height: 5.8
+cells <- mt$calibrated$cells |>
+  tidyr::pivot_longer(c(m4_share, m5_share), names_to = "model", values_to = "modelled") |>
+  dplyr::mutate(model = ifelse(model == "m4_share", "One catchment term for the whole city", "Fitted to each catchment"))
+r2c <- cells |> dplyr::group_by(model) |> dplyr::summarise(r2 = cor(obs_share, modelled)^2, .groups = "drop")
+cells <- cells |> dplyr::left_join(r2c, by = "model") |>
+  dplyr::mutate(model = sprintf("%s (R² = %.2f)", model, r2),
+                model = factor(model, sort(unique(model), decreasing = TRUE)))
+ggplot(cells, aes(obs_share, modelled)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey60", linetype = "31") +
+  geom_point(aes(colour = model), size = 3.2, alpha = 0.85, show.legend = FALSE) +
+  facet_wrap(~ model) +
+  scale_colour_manual(values = c(MUTED, ACCENT)) +
+  scale_x_continuous(labels = scales::label_percent()) + scale_y_continuous(labels = scales::label_percent()) +
+  coord_equal() +
+  labs(x = "Share of the catchment's first preferences, published", y = "Modelled share",
+       title = "Each dot is one catchment and one school: 60 combinations",
+       subtitle = "Council's catchment-level preference table, three rounds pooled") +
+  theme_slide(14)
+```
+
+# A system that moves
+
+## The same system, year by year
+
+```{r dyn-runs}
+#| include: false
+source(here::here("app", "R", "model.R"))
+source(here::here("app", "R", "outcomes.R"))
+city_s <- inp$schools |> dplyr::filter(city)
+YRS <- 2026:2035
+p_base <- setNames(city_s$pan, city_s$name)
+run_year <- function(y, pans = p_base)
+  run_sim(inp, pans = pans, year = y, rules = list(rule = "priorities"))
+dyn <- purrr::map_dfr(YRS, function(y) {
+  run_year(y)$schools |> dplyr::filter(city) |> dplyr::transmute(year = y, name, intake, pan)
+})
+lh_of <- function(r) r$schools$intake[r$schools$name == "Longhill High School"]
+lever <- purrr::map_dfr(YRS, function(y) {
+  b <- lh_of(run_year(y))
+  pc <- p_base; pc[c("Dorothy Stringer School", "Varndean School", "Blatchington Mill School")] <- c(300, 270, 300)
+  pf <- p_base; pf[c("Cardinal Newman Catholic School", "King's School")] <- c(270, 150)
+  tibble::tibble(year = y,
+                 `Stringer, Varndean and Blatchington Mill trimmed` = lh_of(run_year(y, pc)) - b,
+                 `Cardinal Newman 270 and King's 150` = lh_of(run_year(y, pf)) - b)
+})
+empty_by_year <- dyn |> dplyr::group_by(year) |> dplyr::summarise(empty = sum(pmax(pan - intake, 0)), .groups = "drop")
+```
+
+```{r fig-dynamic}
+#| fig-width: 12
+#| fig-height: 5.8
+dd <- dyn |> dplyr::mutate(short = short_sch(name), lh = grepl("Longhill", name))
+ggplot(dd, aes(year, intake, group = short)) +
+  geom_line(aes(colour = lh, linewidth = lh)) +
+  ggrepel::geom_text_repel(data = dd |> dplyr::filter(year == max(YRS)),
+                           aes(label = short, colour = lh), hjust = 0, nudge_x = 0.3, direction = "y",
+                           size = 4, segment.colour = "grey80", show.legend = FALSE) +
+  scale_colour_manual(values = c(`FALSE` = "grey55", `TRUE` = "#b2182b"), guide = "none") +
+  scale_linewidth_manual(values = c(`FALSE` = 0.8, `TRUE` = 1.8), guide = "none") +
+  scale_x_continuous(breaks = YRS, limits = c(2026, 2037.5)) +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(x = NULL, y = "Modelled Year 7 intake",
+       title = "As the cohort falls, the full schools stay full and the others empty",
+       subtitle = sprintf("Empty Year 7 places across the city rise from %s in 2026 to %s in 2035. Council priorities, today's map.",
+                          fmt_n(empty_by_year$empty[empty_by_year$year == 2026]),
+                          fmt_n(empty_by_year$empty[empty_by_year$year == 2035]))) +
+  theme_slide(15)
+```
+
+## The same lever works in one year and not the next
+
+```{r fig-lever-years}
+#| fig-width: 11
+#| fig-height: 5.6
+lv <- lever |> tidyr::pivot_longer(-year, names_to = "lever", values_to = "gain")
+LV_COL <- c("Stringer, Varndean and Blatchington Mill trimmed" = "#d95f02",
+            "Cardinal Newman 270 and King's 150" = INK)
+ggplot(lv, aes(year, gain, colour = lever)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(linewidth = 1.6) + geom_point(size = 2.6) +
+  geom_text(data = lv |> dplyr::filter(year == 2030),
+            aes(label = lever), size = 4.6, vjust = -1, hjust = 0, show.legend = FALSE) +
+  scale_colour_manual(values = LV_COL, guide = "none") +
+  scale_x_continuous(breaks = YRS) +
+  labs(x = NULL, y = "Extra children at Longhill",
+       title = "Trimming the central schools helps Longhill only while they are full",
+       subtitle = "Once the cohort falls, they have room and stop overflowing east. Fewer faith-school places keeps adding a few.") +
+  theme_slide(15)
+```
+
+# Complex interactions, surprising results
+
+## Things the model shows that intuition would not
+
+```{r fig-surprises}
+#| fig-width: 12.5
+#| fig-height: 6
+p6s <- bh_data("priority6_sweep.rds")$sweep
+g_p6 <- function(fsm, y = 2026, p = 5) p6s$gorard[p6s$fsm == fsm & p6s$year == y & p6s$p6 == p]
+sur <- tibble::tribble(
+  ~panel, ~stage, ~value,
+  "Cut Longhill's admission number\n210 → 150\nLonghill's intake, 2030", "Before", co("today", "lh_intake"),
+  "Cut Longhill's admission number\n210 → 150\nLonghill's intake, 2030", "After",  co("lh150", "lh_intake"),
+  "Cut only the community schools\nto 1,920 places by 2035\nTheir annual balance, 2035 (£m)", "Before", co("today", "comm_gap", 2035) / 1e6,
+  "Cut only the community schools\nto 1,920 places by 2035\nTheir annual balance, 2035 (£m)", "After",  co("shrink", "comm_gap", 2035) / 1e6,
+  "Switch on the free school\nmeals priority\nSegregation index, 2026", "Before", g_p6(FALSE),
+  "Switch on the free school\nmeals priority\nSegregation index, 2026", "After",  g_p6(TRUE),
+  "Remove every oversubscription\npriority\nChildren displaced, 2026", "Before", co("today", "displaced", 2026),
+  "Remove every oversubscription\npriority\nChildren displaced, 2026", "After",  co("equal", "displaced", 2026)) |>
+  dplyr::mutate(stage = factor(stage, c("Before", "After")),
+                label = ifelse(abs(value) < 1, sprintf("%.3f", value), sprintf("%.1f", value)))
+ggplot(sur, aes(stage, value, fill = stage)) +
+  geom_col(width = 0.62) +
+  geom_hline(yintercept = 0, colour = "grey50") +
+  geom_text(aes(label = label, vjust = ifelse(value < 0, 1.4, -0.4)), size = 4.4, colour = INK) +
+  facet_wrap(~ panel, nrow = 1, scales = "free_y") +
+  scale_fill_manual(values = c(Before = "#b9c2cc", After = ACCENT), guide = "none") +
+  scale_y_continuous(expand = expansion(mult = c(0.15, 0.2))) +
+  labs(x = NULL, y = NULL,
+       title = "Pull one lever and the effect turns up somewhere else",
+       subtitle = str_wrap(paste("A smaller number does not bring children to Longhill; cutting only the schools the council runs sends children to the ones it does not;",
+                                 "a priority meant to widen access slightly concentrates disadvantage; and a fairer-looking lottery displaces three times as many children."), 130)) +
+  theme_slide(12) + theme(strip.text = element_text(size = 11, face = "bold"))
+```
+
+## Open admissions and integration: a finding that did not survive
+
+```{r fig-p6-reversal}
+#| fig-width: 12
+#| fig-height: 5.4
+p6l <- p6s |> dplyr::filter(fsm) |> dplyr::mutate(yr = factor(year))
+pa <- ggplot(p6l, aes(p6, gorard, colour = yr)) +
+  geom_line(linewidth = 1.4) + geom_point(size = 2.4) +
+  scale_colour_manual(values = c(`2026` = INK, `2030` = "#d95f02"), name = NULL) +
+  scale_y_continuous(limits = c(0, 0.15)) +
+  scale_x_continuous(labels = function(x) paste0(x, "%")) +
+  labs(x = "Share of community-school places for single-school catchments", y = "Segregation index",
+       subtitle = "More priority-6 places: segregation unchanged") +
+  theme_slide(13) + theme(legend.position = "top")
+wn <- bh_data("priority6_sweep.rds")$winners |>
+  tidyr::pivot_longer(c(dep_all, dep_p6), names_to = "who", values_to = "share") |>
+  dplyr::mutate(who = ifelse(who == "dep_all", "All the catchment's children", "Those who win a priority-6 place"))
+pb <- ggplot(wn, aes(share, catchment)) +
+  geom_line(aes(group = catchment), colour = "grey75", linewidth = 1.2) +
+  geom_point(aes(colour = who), size = 4) +
+  scale_colour_manual(values = c("All the catchment's children" = "#b9c2cc", "Those who win a priority-6 place" = ACCENT), name = NULL) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  labs(x = "Share disadvantaged", y = NULL,
+       subtitle = "Who uses it depends on the catchment") +
+  theme_slide(13) + theme(legend.position = "top")
+(pa | pb) + plot_annotation(
+  title = "An earlier version found open admissions made intakes more segregated",
+  subtitle = "Measured on disadvantaged pupils fitted to the council's Year 7 offers, that finding reverses to no effect",
+  theme = theme_slide(15))
+```
+
 ## Checked, and corrected, along the way
 
 The segregation results changed as the measure was tested against published figures.
