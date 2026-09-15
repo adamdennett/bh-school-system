@@ -9,7 +9,9 @@
 <link href="site_libs/quarto-html/quarto-syntax-highlighting-ed96de9b727972fe78a7b5d16c58bf87.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
   <meta name="generator" content="quarto-1.8.27">
 
-  <title>Brighton Secondary Schools</title>
+  <meta name="author" content="Adam Dennett, UCL Centre for Advanced Spatial Analysis">
+  <meta name="dcterms.date" content="2026-09-15">
+  <title>Brighton Secondary Schools – Brighton &amp; Hove secondary schools</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
@@ -28,7 +30,7 @@
       vertical-align: middle;
     }
   </style>
-  <link rel="stylesheet" href="site_libs/revealjs/dist/theme/quarto-534cd8e3a96973385dffff3f4709048d.css">
+  <link rel="stylesheet" href="site_libs/revealjs/dist/theme/quarto-0fde88a82f0356838740f155f1088782.css">
   <link href="site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
   <link href="site_libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
   <link href="site_libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
@@ -44,6 +46,7 @@
     }
     .reveal .slide:not(.center) {
       height: 100%;
+      overflow-y: auto;
     }
     .reveal .slide.scrollable {
       overflow-y: auto;
@@ -126,18 +129,344 @@
     <div class="slides">
 
 <section id="title-slide" class="quarto-title-block center">
-  <h1 class="title">Brighton Secondary Schools</h1>
+  <h1 class="title">Brighton &amp; Hove secondary schools</h1>
+  <p class="subtitle">What the evidence says, how it was built, and what to do about Longhill</p>
 
 <div class="quarto-title-authors">
+<div class="quarto-title-author">
+<div class="quarto-title-author-name">
+Adam Dennett, UCL Centre for Advanced Spatial Analysis 
+</div>
+</div>
 </div>
 
+  <p class="date">2026-09-15</p>
 </section>
-<section id="placeholder" class="slide level2">
-<h2>Placeholder</h2>
-<p>Slides to follow once the analysis page is settled.</p>
+<section id="before-anything-else" class="slide level2">
+<h2>Before anything else</h2>
+<div class="callout callout-warning callout-titled callout-style-default">
+<div class="callout-body">
+<div class="callout-title">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<p><strong>Warning</strong></p>
+</div>
+<div class="callout-content">
+<p><strong>Beta.</strong> Every number in these slides is <strong>modelled</strong> from published data, not a record of what happened or a forecast to plan on. The model has not been fully validated.</p>
+</div>
+</div>
+</div>
+<ul>
+<li>Built from <strong>published data only</strong> — no pupil-level records.</li>
+<li>The full working, every source and every caveat: <a href="https://adamdennett.github.io/bh-school-system/">The Brighton Secondary School System: a strategic view</a></li>
+<li>Try any option yourself: <a href="https://adamdennett-bh-school-system.share.connect.posit.cloud/">the policy simulator</a></li>
+</ul>
+</section>
+<section>
+<section id="the-situation" class="title-slide slide level1 center">
+<h1>The situation</h1>
+
+</section>
+<section id="a-system-built-for-more-children-than-it-has" class="slide level2">
+<h2>A system built for more children than it has</h2>
+<div class="columns">
+<div class="column" style="width:55%;">
+<ul>
+<li>The city publishes <strong>2,515</strong> Year 7 places across its ten secondary schools.</li>
+<li>The modelled cohort is <strong>2,267</strong> in 2026 and <strong>1,835</strong> by 2035 — those children are already in primary school.</li>
+<li>By 2035 that is about <strong>720 empty Year 7 places a year</strong>.</li>
+<li>Nine of the ten schools have been spending their reserves. The money is <strong>a city problem, not only a Longhill problem</strong>.</li>
+</ul>
+</div><div class="column" style="width:45%;">
+<p><strong>Longhill</strong></p>
+<ul>
+<li>Takes about <strong>91</strong> children in 2026 and <strong>75</strong> in 2030, on 210 places.</li>
+<li>About <strong>£0.8m a year</strong> short of break-even in 2030.</li>
+<li>Sits at the far edge of the city, at Ovingdean.</li>
+</ul>
+</div></div>
+</section>
+<section id="what-the-evidence-says" class="slide level2">
+<h2>What the evidence says</h2>
+<ul>
+<li><strong>This is not mainly a school quality problem.</strong> Most of what separates schools’ headline results arrives with the children; the part a school can reach runs mostly through <strong>attendance</strong>.</li>
+<li><strong>Families choose on the headline score</strong>, which largely describes the intake — so choice is self-fulfilling.</li>
+<li><strong>Admissions criteria only bind at some schools.</strong> Several schools offer a place to every first-preference applicant.</li>
+<li><strong>Physical access is unequal, in the worst direction.</strong> 29 neighbourhoods can reach <strong>no</strong> school place within 30 minutes by walking and bus, and access and child poverty go together.</li>
+<li>Children from the most deprived neighbourhoods travel <strong>3.7 minutes further</strong> each way than everyone else, under the map in force.</li>
+</ul>
+</section></section>
+<section>
+<section id="how-it-was-built" class="title-slide slide level1 center">
+<h1>How it was built</h1>
+
+</section>
+<section id="the-steps" class="slide level2 scrollable">
+<h2>The steps</h2>
+<ol type="1">
+<li><strong>Where the children and schools are</strong> — census households, ONS postcodes and small areas, catchment boundaries.</li>
+<li><strong>How reachable schools are</strong> — walk-and-bus journeys routed on the real network for every neighbourhood.</li>
+<li><strong>How many children, and when</strong> — the cohort already in primary school, projected forward.</li>
+<li><strong>What families choose</strong> — sixteen years of the council’s preference factsheets.</li>
+<li><strong>A model of the whole system</strong> — a ladder of spatial interaction models (M0 to M5), each adding one thing: distance, capacity, catchments, competition, and finally calibration to what each catchment’s families actually ask for.</li>
+<li><strong>The admission rules</strong> — the council’s 2026/27 priorities, and where refused children go next.</li>
+<li><strong>Children who leave the city</strong> — Priory, Peacehaven, Seahaven and Seaford Head, fitted to a published FOI table.</li>
+<li><strong>Money</strong> — each school’s finances, and what intake changes do to them.</li>
+<li><strong>The simulator</strong> — the same model, open to any setting, with every run downloadable.</li>
+<li><strong>The options</strong> — scored on the council’s three priorities at once.</li>
+</ol>
+</section>
+<section id="checked-and-corrected-along-the-way" class="slide level2">
+<h2>Checked, and corrected, along the way</h2>
+<p>The segregation results changed as the measure was tested against published figures.</p>
+<div class="cell">
+<div id="tbl-measures" class="cell quarto-float quarto-figure quarto-figure-center">
+<figure class="quarto-float quarto-float-tbl">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-measures-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;1
+</figcaption>
+<div aria-describedby="tbl-measures-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="do-not-create-environment caption-top">
+<colgroup>
+<col style="width: 57%">
+<col style="width: 13%">
+<col style="width: 29%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">How disadvantaged pupils were counted</th>
+<th style="text-align: right;">Index today</th>
+<th style="text-align: right;">Whitehawk back to Longhill</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">By neighbourhood</td>
+<td style="text-align: right;">0.154</td>
+<td style="text-align: right;">0.137</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Whole-school shares, fitted on today’s map</td>
+<td style="text-align: right;">0.118</td>
+<td style="text-align: right;">0.140</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Whole-school shares, fitted before the policy change</td>
+<td style="text-align: right;">0.124</td>
+<td style="text-align: right;">0.125</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Year 7 offers, 2026 (the model’s measure)</td>
+<td style="text-align: right;">0.117</td>
+<td style="text-align: right;">0.122</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<ul>
+<li>Scored <strong>by neighbourhood</strong>, the schools came out in the wrong order against DfE’s published shares.</li>
+<li>The published shares <strong>lag the policy</strong> by up to five years, so the model is now fitted to the <strong>first Year 7 offers</strong> under today’s map and rules (council factsheet, 2026).</li>
+<li>The Whitehawk redraw’s effect on segregation turned out <strong>too small to call</strong>. Its case rests on journeys and Longhill, not on segregation.</li>
+</ul>
+</section></section>
+<section>
+<section id="the-options" class="title-slide slide level1 center">
+<h1>The options</h1>
+
+</section>
+<section id="three-priorities-scored-at-once" class="slide level2">
+<h2>Three priorities, scored at once</h2>
+<div class="cell">
+<div id="tbl-options" class="cell quarto-float quarto-figure quarto-figure-center">
+<figure class="quarto-float quarto-float-tbl">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-options-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;2
+</figcaption>
+<div aria-describedby="tbl-options-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="do-not-create-environment caption-top" style="width:100%;">
+<colgroup>
+<col style="width: 28%">
+<col style="width: 10%">
+<col style="width: 23%">
+<col style="width: 12%">
+<col style="width: 6%">
+<col style="width: 18%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Option</th>
+<th style="text-align: right;">Longhill intake</th>
+<th style="text-align: right;">Deprived children’s extra journey</th>
+<th style="text-align: right;">Segregation index</th>
+<th style="text-align: right;">Displaced</th>
+<th style="text-align: right;">Community schools’ balance</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Today</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">3.5 min</td>
+<td style="text-align: right;">0.117</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">−£3.5m</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Whitehawk back to Longhill</td>
+<td style="text-align: right;">86</td>
+<td style="text-align: right;">3.2 min</td>
+<td style="text-align: right;">0.121</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">−£3.5m</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Longhill 150, central schools trimmed</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">3.5 min</td>
+<td style="text-align: right;">0.118</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">−£3.5m</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Longhill at Elm Grove (150), map redrawn</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">0.1 min</td>
+<td style="text-align: right;">0.149</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">−£3.8m</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">CoMArt re-opened (not available)</td>
+<td style="text-align: right;">49</td>
+<td style="text-align: right;">2.2 min</td>
+<td style="text-align: right;">0.119</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">−£4.5m</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Package without a move</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">3.3 min</td>
+<td style="text-align: right;">0.122</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">−£3.1m</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Elm Grove package</td>
+<td style="text-align: right;">99</td>
+<td style="text-align: right;">0.3 min</td>
+<td style="text-align: right;">0.146</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">−£3.1m</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Longhill closed</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">4.2 min</td>
+<td style="text-align: right;">0.103</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">−£2.3m</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p>2030, council priorities. “Package without a move”: Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. “Elm Grove package”: Longhill at Elm Grove at 150 with the map redrawn, Cardinal Newman 300, King’s 150, Brighton Aldridge 150.</p>
+</section>
+<section id="only-a-nearer-school-closes-the-access-gap" class="slide level2">
+<h2>Only a nearer school closes the access gap</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-gap-1.png" id="fig-gap" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;1
+</p></section></section>
+<section>
+<section id="what-this-means-for-longhill" class="title-slide slide level1 center">
+<h1>What this means for Longhill</h1>
+
+</section>
+<section id="a-smaller-longhill-at-the-top-of-elm-grove" class="slide level2">
+<h2>A smaller Longhill at the top of Elm Grove</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<p><strong>What it does</strong> (150 places, catchments redrawn)</p>
+<ul>
+<li>Longhill takes <strong>112</strong> in 2026 and <strong>94</strong> in 2030 — against 91 and 75 today.</li>
+<li>Deprived children’s extra journey falls from <strong>3.5</strong> to <strong>0.1</strong> minutes.</li>
+<li>Whitehawk’s disadvantaged children travel <strong>26</strong> minutes instead of <strong>53</strong>.</li>
+<li>The map drawn round it puts <strong>5 of the 6</strong> Whitehawk neighbourhoods back in Longhill’s catchment — as part of a redesign, not a reversal of the 2024 change.</li>
+<li>With Cardinal Newman, King’s and Brighton Aldridge taking fewer: <strong>122</strong> in 2026 and <strong>99</strong> in 2030.</li>
+</ul>
+</div><div class="column" style="width:50%;">
+<p><strong>What it costs</strong></p>
+<ul>
+<li>A site — <strong>not costed</strong> in this work.</li>
+<li>Intakes more concentrated: segregation index <strong>0.149</strong> against 0.117.</li>
+<li>About <strong>434</strong> children a year in neighbourhoods that change catchment.</li>
+<li>Longer journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.</li>
+<li>Longhill <strong>still does not break even</strong> — about £0.6m a year short in 2030.</li>
+<li>Two known model limits at Elm Grove, both likely to <strong>understate</strong> its intake, still to fix.</li>
+</ul>
+</div></div>
+</section>
+<section id="access-or-mixing-the-review-has-to-choose" class="slide level2">
+<h2>Access or mixing? The review has to choose</h2>
+<ul>
+<li>A school near Whitehawk <strong>shortens disadvantaged children’s journeys</strong> and <strong>concentrates them in one school</strong>. No option does both.</li>
+<li>The evidence here leans towards <strong>access</strong>: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day.</li>
+<li>What this work cannot show is whether <strong>shorter journeys raise attendance</strong> — the lever that matters most. The council’s own records can.</li>
+<li>Re-opening CoMArt would have given much of the access gain; it is off the table. Closing Longhill is the cheapest system and has the longest journeys in the east.</li>
+</ul>
+</section></section>
+<section>
+<section id="recommendations" class="title-slide slide level1 center">
+<h1>Recommendations</h1>
+
+</section>
+<section id="what-to-do" class="slide level2 scrollable">
+<h2>What to do</h2>
+<ol type="1">
+<li><strong>Lead with a smaller Longhill at the top of Elm Grove</strong>, with catchments redrawn round it — and test it properly, costs stated.</li>
+<li><strong>If the site cannot be had, return Whitehawk to Longhill’s catchment</strong> on its own.</li>
+<li><strong>Set Longhill at 150</strong> on either site, and budget for the children it will get, not for 150.</li>
+<li><strong>Ask Cardinal Newman (300), King’s (150) and Brighton Aldridge (150)</strong> to take fewer, and every school to share the fall in proportion by 2030.</li>
+<li><strong>Trim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean</strong>, and only with the Whitehawk redraw.</li>
+<li><strong>Publish where priority 6’s places went.</strong></li>
+<li><strong>Ask the inequalities review to settle the measure</strong> — journeys or mixing — and whether journey length affects attendance.</li>
+</ol>
+</section>
+<section id="next-steps" class="slide level2">
+<h2>Next steps</h2>
+<ul>
+<li><strong>Fix the two Elm Grove model limits</strong> — competition measured from the new site, and second preferences that follow the move — then re-run and cost the move.</li>
+<li><strong>Draw the Elm Grove catchment with Rottingdean, Saltdean and Woodingdean in the room</strong>, before rather than after.</li>
+<li><strong>Check the disadvantaged-intake calibration against a second year</strong> of Year 7 offers.</li>
+<li><strong>Release six small tables</strong> the council already holds — applicants’ home areas, full preferences, allocations and the criterion each place was given under — which would turn most of the ranges here into estimates.</li>
+<li><strong>Link journeys to attendance</strong> in the council’s records, for the inequalities review.</li>
+</ul>
+</section>
+<section id="what-this-rests-on" class="slide level2">
+<h2>What this rests on</h2>
+<ul>
+<li>A model calibrated to <strong>published catchment totals</strong>, not individual applications.</li>
+<li>Catchment attachment carried to <strong>redrawn maps</strong> at the strength families follow the maps they have — the assumption every redraw result depends on.</li>
+<li>Finances as a <strong>five-year steady state</strong>; site and capital costs <strong>not included</strong>.</li>
+<li>The academies and faith schools modelled as <strong>responding to demand</strong>, not setting their own numbers.</li>
+<li><strong>The direction of each finding is more reliable than its size.</strong></li>
+</ul>
+<p><a href="https://adamdennett.github.io/bh-school-system/">Full document</a> · <a href="https://adamdennett-bh-school-system.share.connect.posit.cloud/">Simulator</a> · <a href="https://github.com/adamdennett/bh-school-system">Code and data</a></p>
 
 
-</section>
+</section></section>
     </div>
   <div class="quarto-auto-generated-content" style="display: none;">
 <div class="footer footer-default">
@@ -174,7 +503,7 @@
 'autoAnimateUnmatched': true,
 'jumpToSlide': true,
 'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"<i class=\"fas fa-gear\"></i>","content":"<ul class=\"slide-menu-items\">\n<li class=\"slide-tool-item active\" data-item=\"0\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\"><kbd>f</kbd> Fullscreen</a></li>\n<li class=\"slide-tool-item\" data-item=\"1\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\"><kbd>s</kbd> Speaker View</a></li>\n<li class=\"slide-tool-item\" data-item=\"2\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\"><kbd>o</kbd> Slide Overview</a></li>\n<li class=\"slide-tool-item\" data-item=\"3\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\"><kbd>e</kbd> PDF Export Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"4\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleScrollView(event)\"><kbd>r</kbd> Scroll View Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"5\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\"><kbd>?</kbd> Keyboard Help</a></li>\n</ul>"}],"openButton":true},
-'smaller': false,
+'smaller': true,
  
         // Display controls in the bottom right corner
         controls: false,
@@ -194,7 +523,7 @@
         progress: true,
 
         // Display the page number of the current slide
-        slideNumber: false,
+        slideNumber: 'c/t',
 
         // 'all', 'print', or 'speaker'
         showSlideNumber: 'all',
@@ -319,12 +648,12 @@
         // The "normal" size of the presentation, aspect ratio will be preserved
         // when the presentation is scaled to fit different resolutions. Can be
         // specified using percentage units.
-        width: 1050,
+        width: 1280,
 
-        height: 700,
+        height: 720,
 
         // Factor of the display size that should remain empty around the content
-        margin: 0.1,
+        margin: 6.0e-2,
 
         math: {
           mathjax: 'https://cdn.jsdelivr.net/npm/mathjax@2.7.9/MathJax.js',
@@ -353,6 +682,82 @@
         ]
       });
     </script>
+    
+
+    <script>
+
+      // htmlwidgets need to know to resize themselves when slides are shown/hidden.
+
+      // Fire the "slideenter" event (handled by htmlwidgets.js) when the current
+
+      // slide changes (different for each slide format).
+
+      (function () {
+
+        // dispatch for htmlwidgets
+
+        function fireSlideEnter() {
+
+          const event = window.document.createEvent("Event");
+
+          event.initEvent("slideenter", true, true);
+
+          window.document.dispatchEvent(event);
+
+        }
+
+    
+
+        function fireSlideChanged(previousSlide, currentSlide) {
+
+          fireSlideEnter();
+
+    
+
+          // dispatch for shiny
+
+          if (window.jQuery) {
+
+            if (previousSlide) {
+
+              window.jQuery(previousSlide).trigger("hidden");
+
+            }
+
+            if (currentSlide) {
+
+              window.jQuery(currentSlide).trigger("shown");
+
+            }
+
+          }
+
+        }
+
+    
+
+        // hookup for slidy
+
+        if (window.w3c_slidy) {
+
+          window.w3c_slidy.add_observer(function (slide_num) {
+
+            // slide_num starts at position 1
+
+            fireSlideChanged(null, w3c_slidy.slides[slide_num - 1]);
+
+          });
+
+        }
+
+    
+
+      })();
+
+    </script>
+
+    
+
     <script id="quarto-html-after-body" type="application/javascript">
       window.document.addEventListener("DOMContentLoaded", function (event) {
         const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
@@ -437,6 +842,11 @@
               if (link.dataset.originalHref !== undefined) {
                 link.href = link.dataset.originalHref;
               }
+                // target, if specified
+                link.setAttribute("target", "_blank");
+                if (link.getAttribute("rel") === null) {
+                  link.setAttribute("rel", "noopener");
+                }
             }
           }
         function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {

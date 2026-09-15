@@ -1,8 +1,238 @@
 ---
-title: "Brighton Secondary Schools"
-format: revealjs
+title: "Brighton & Hove secondary schools"
+subtitle: "What the evidence says, how it was built, and what to do about Longhill"
+author: "Adam Dennett, UCL Centre for Advanced Spatial Analysis"
+date: today
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    smaller: true
+    scrollable: true
+    link-external-newwindow: true
+execute:
+  echo: false
+  warning: false
+  message: false
 ---
 
-## Placeholder
+```{r setup}
+#| include: false
+source(here::here("R", "00_core.R"))
+knitr::opts_chunk$set(dev = "ragg_png", dpi = 150)
 
-Slides to follow once the analysis page is settled.
+fmt_n   <- function(x, d = 0) formatC(round(x, d), big.mark = ",", format = "f", digits = d)
+fmt_pct <- function(x, d = 0) paste0(formatC(x, format = "f", digits = d), "%")
+gbp_m   <- function(x) sprintf("%s£%.1fm", ifelse(x < 0, "−", ""), abs(x) / 1e6)
+
+inp <- readRDS(here::here("app", "data", "sim_inputs.rds"))
+cop <- bh_data("council_options.rds")
+whx <- bh_data("whitehawk_explained.rds")
+acc <- bh_data("accessibility.rds")
+
+co  <- function(id, col, y = 2030) cop$runs[[col]][cop$runs$id == id & cop$runs$year == y]
+whe <- function(id, col, y = 2026)
+  cop$whitehawk_elm[[col]][cop$whitehawk_elm$id == id & cop$whitehawk_elm$year == y]
+
+city   <- inp$schools[inp$schools$city, ]
+places <- sum(city$pan)
+kids   <- function(y) inp$demand$cohort[inp$demand$year == y]
+no30   <- acc$lsoa[acc$lsoa$places_30 < 1, ]
+
+INK <- "#1f3b57"; MUTED <- "#6b7785"; ACCENT <- "#2a78d6"
+theme_slide <- function(base = 16)
+  ggplot2::theme_minimal(base) +
+  ggplot2::theme(panel.grid.major.y = ggplot2::element_blank(),
+                 panel.grid.minor = ggplot2::element_blank(),
+                 plot.title = ggplot2::element_text(face = "bold", colour = INK),
+                 plot.subtitle = ggplot2::element_text(colour = MUTED),
+                 axis.text = ggplot2::element_text(colour = INK))
+```
+
+## Before anything else
+
+::: {.callout-warning}
+**Beta.** Every number in these slides is **modelled** from published data, not a record of what happened or a forecast to plan on. The model has not been fully validated.
+:::
+
+- Built from **published data only** --- no pupil-level records.
+- The full working, every source and every caveat: [The Brighton Secondary School System: a strategic view](https://adamdennett.github.io/bh-school-system/)
+- Try any option yourself: [the policy simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/)
+
+# The situation
+
+## A system built for more children than it has
+
+::: {.columns}
+::: {.column width="55%"}
+- The city publishes **`r fmt_n(places)`** Year 7 places across its ten secondary schools.
+- The modelled cohort is **`r fmt_n(kids(2026))`** in 2026 and **`r fmt_n(kids(2035))`** by 2035 --- those children are already in primary school.
+- By 2035 that is about **`r fmt_n(co("today", "empty", 2035))` empty Year 7 places a year**.
+- Nine of the ten schools have been spending their reserves. The money is **a city problem, not only a Longhill problem**.
+:::
+::: {.column width="45%"}
+**Longhill**
+
+- Takes about **`r fmt_n(co("today", "lh_intake", 2026))`** children in 2026 and **`r fmt_n(co("today", "lh_intake"))`** in 2030, on 210 places.
+- About **`r gbp_m(-co("today", "lh_gap"))` a year** short of break-even in 2030.
+- Sits at the far edge of the city, at Ovingdean.
+:::
+:::
+
+## What the evidence says
+
+- **This is not mainly a school quality problem.** Most of what separates schools' headline results arrives with the children; the part a school can reach runs mostly through **attendance**.
+- **Families choose on the headline score**, which largely describes the intake --- so choice is self-fulfilling.
+- **Admissions criteria only bind at some schools.** Several schools offer a place to every first-preference applicant.
+- **Physical access is unequal, in the worst direction.** `r nrow(no30)` neighbourhoods can reach **no** school place within 30 minutes by walking and bus, and access and child poverty go together.
+- Children from the most deprived neighbourhoods travel **`r sprintf("%.1f", co("today", "dep_gap", 2026))` minutes further** each way than everyone else, under the map in force.
+
+# How it was built
+
+## The steps
+
+1. **Where the children and schools are** --- census households, ONS postcodes and small areas, catchment boundaries.
+2. **How reachable schools are** --- walk-and-bus journeys routed on the real network for every neighbourhood.
+3. **How many children, and when** --- the cohort already in primary school, projected forward.
+4. **What families choose** --- sixteen years of the council's preference factsheets.
+5. **A model of the whole system** --- a ladder of spatial interaction models (M0 to M5), each adding one thing: distance, capacity, catchments, competition, and finally calibration to what each catchment's families actually ask for.
+6. **The admission rules** --- the council's 2026/27 priorities, and where refused children go next.
+7. **Children who leave the city** --- Priory, Peacehaven, Seahaven and Seaford Head, fitted to a published FOI table.
+8. **Money** --- each school's finances, and what intake changes do to them.
+9. **The simulator** --- the same model, open to any setting, with every run downloadable.
+10. **The options** --- scored on the council's three priorities at once.
+
+## Checked, and corrected, along the way
+
+The segregation results changed as the measure was tested against published figures.
+
+```{r tbl-measures}
+whx$measures |>
+  dplyr::filter(year == 2026) |>
+  dplyr::select(measure, map, gorard) |>
+  tidyr::pivot_wider(names_from = map, values_from = gorard) |>
+  dplyr::transmute(`How disadvantaged pupils were counted` = measure,
+                   `Index today` = sprintf("%.3f", today),
+                   `Whitehawk back to Longhill` = sprintf("%.3f", whitehawk)) |>
+  knitr::kable(align = "lrr")
+```
+
+- Scored **by neighbourhood**, the schools came out in the wrong order against DfE's published shares.
+- The published shares **lag the policy** by up to five years, so the model is now fitted to the **first Year 7 offers** under today's map and rules (council factsheet, 2026).
+- The Whitehawk redraw's effect on segregation turned out **too small to call**. Its case rests on journeys and Longhill, not on segregation.
+
+# The options
+
+## Three priorities, scored at once
+
+```{r tbl-options}
+show <- c("today", "whitehawk", "central", "elm", "comart", "package_e", "package_f", "close_lh")
+short <- c(today = "Today", whitehawk = "Whitehawk back to Longhill",
+           central = "Longhill 150, central schools trimmed",
+           elm = "Longhill at Elm Grove (150), map redrawn",
+           comart = "CoMArt re-opened (not available)",
+           package_e = "Package without a move",
+           package_f = "Elm Grove package",
+           close_lh = "Longhill closed")
+cop$runs |>
+  dplyr::filter(year == 2030, id %in% show) |>
+  dplyr::mutate(id = factor(id, show)) |>
+  dplyr::arrange(id) |>
+  dplyr::transmute(Option = unname(short[as.character(id)]),
+                   `Longhill intake` = ifelse(is.na(lh_intake), "---", fmt_n(lh_intake)),
+                   `Deprived children's extra journey` = sprintf("%.1f min", dep_gap),
+                   `Segregation index` = sprintf("%.3f", gorard),
+                   Displaced = fmt_n(displaced),
+                   `Community schools' balance` = gbp_m(comm_gap)) |>
+  knitr::kable(align = "lrrrrr")
+```
+
+2030, council priorities. "Package without a move": Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. "Elm Grove package": Longhill at Elm Grove at 150 with the map redrawn, Cardinal Newman 300, King's 150, Brighton Aldridge 150.
+
+## Only a nearer school closes the access gap
+
+```{r fig-gap}
+#| fig-width: 11
+#| fig-height: 5.2
+gap <- cop$runs |>
+  dplyr::filter(year == 2030, id %in% show) |>
+  dplyr::mutate(label = unname(short[as.character(id)]),
+                elm = id %in% c("elm", "package_f"),
+                label = forcats::fct_reorder(label, dep_gap))
+ggplot2::ggplot(gap, ggplot2::aes(dep_gap, label)) +
+  ggplot2::geom_col(ggplot2::aes(fill = elm), width = 0.62, show.legend = FALSE) +
+  ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f min", dep_gap)),
+                     hjust = -0.15, size = 5, colour = INK) +
+  ggplot2::scale_fill_manual(values = c(`FALSE` = "#9aa7b4", `TRUE` = ACCENT)) +
+  ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0, 0.18))) +
+  ggplot2::labs(x = "Extra minutes children from the most deprived neighbourhoods travel, each way", y = NULL,
+                title = "How much further deprived children travel than everyone else",
+                subtitle = "2030, council priorities. Blue: Longhill at the top of Elm Grove.") +
+  theme_slide(15)
+```
+
+# What this means for Longhill
+
+## A smaller Longhill at the top of Elm Grove
+
+::: {.columns}
+::: {.column width="50%"}
+**What it does** (150 places, catchments redrawn)
+
+- Longhill takes **`r fmt_n(co("elm", "lh_intake", 2026))`** in 2026 and **`r fmt_n(co("elm", "lh_intake"))`** in 2030 --- against `r fmt_n(co("today", "lh_intake", 2026))` and `r fmt_n(co("today", "lh_intake"))` today.
+- Deprived children's extra journey falls from **`r sprintf("%.1f", co("today", "dep_gap"))`** to **`r sprintf("%.1f", co("elm", "dep_gap"))`** minutes.
+- Whitehawk's disadvantaged children travel **`r sprintf("%.0f", whe("elm", "minutes_disadvantaged"))`** minutes instead of **`r sprintf("%.0f", whe("today", "minutes_disadvantaged"))`**.
+- The map drawn round it puts **`r cop$elm_moves$whitehawk_to_longhill` of the `r cop$elm_moves$whitehawk_zones`** Whitehawk neighbourhoods back in Longhill's catchment --- as part of a redesign, not a reversal of the 2024 change.
+- With Cardinal Newman, King's and Brighton Aldridge taking fewer: **`r fmt_n(co("package_f", "lh_intake", 2026))`** in 2026 and **`r fmt_n(co("package_f", "lh_intake"))`** in 2030.
+:::
+::: {.column width="50%"}
+**What it costs**
+
+- A site --- **not costed** in this work.
+- Intakes more concentrated: segregation index **`r sprintf("%.3f", co("elm", "gorard"))`** against `r sprintf("%.3f", co("today", "gorard"))`.
+- About **`r fmt_n(cop$elm_moves$children)`** children a year in neighbourhoods that change catchment.
+- Longer journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.
+- Longhill **still does not break even** --- about `r gbp_m(-co("elm", "lh_gap"))` a year short in 2030.
+- Two known model limits at Elm Grove, both likely to **understate** its intake, still to fix.
+:::
+:::
+
+## Access or mixing? The review has to choose
+
+- A school near Whitehawk **shortens disadvantaged children's journeys** and **concentrates them in one school**. No option does both.
+- The evidence here leans towards **access**: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day.
+- What this work cannot show is whether **shorter journeys raise attendance** --- the lever that matters most. The council's own records can.
+- Re-opening CoMArt would have given much of the access gain; it is off the table. Closing Longhill is the cheapest system and has the longest journeys in the east.
+
+# Recommendations
+
+## What to do
+
+1. **Lead with a smaller Longhill at the top of Elm Grove**, with catchments redrawn round it --- and test it properly, costs stated.
+2. **If the site cannot be had, return Whitehawk to Longhill's catchment** on its own.
+3. **Set Longhill at 150** on either site, and budget for the children it will get, not for 150.
+4. **Ask Cardinal Newman (300), King's (150) and Brighton Aldridge (150)** to take fewer, and every school to share the fall in proportion by 2030.
+5. **Trim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean**, and only with the Whitehawk redraw.
+6. **Publish where priority 6's places went.**
+7. **Ask the inequalities review to settle the measure** --- journeys or mixing --- and whether journey length affects attendance.
+
+## Next steps
+
+- **Fix the two Elm Grove model limits** --- competition measured from the new site, and second preferences that follow the move --- then re-run and cost the move.
+- **Draw the Elm Grove catchment with Rottingdean, Saltdean and Woodingdean in the room**, before rather than after.
+- **Check the disadvantaged-intake calibration against a second year** of Year 7 offers.
+- **Release six small tables** the council already holds --- applicants' home areas, full preferences, allocations and the criterion each place was given under --- which would turn most of the ranges here into estimates.
+- **Link journeys to attendance** in the council's records, for the inequalities review.
+
+## What this rests on
+
+- A model calibrated to **published catchment totals**, not individual applications.
+- Catchment attachment carried to **redrawn maps** at the strength families follow the maps they have --- the assumption every redraw result depends on.
+- Finances as a **five-year steady state**; site and capital costs **not included**.
+- The academies and faith schools modelled as **responding to demand**, not setting their own numbers.
+- **The direction of each finding is more reliable than its size.**
+
+[Full document](https://adamdennett.github.io/bh-school-system/) · [Simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/) · [Code and data](https://github.com/adamdennett/bh-school-system)

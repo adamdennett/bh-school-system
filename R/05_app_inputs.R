@@ -1091,6 +1091,13 @@ CO_OPTIONS <- list(
                       design = "Current catchments, Whitehawk back to Longhill",
                       pans = P(LH = 150, DS = 300, V = 270, BMS = 300, CN = 300, BACA = 150),
                       rules = list(rule = "priorities", p6_share = 0)),
+  # Led by access: a smaller Longhill at the top of Elm Grove, with the
+  # catchments redrawn round it, and the asks of the schools the council
+  # does not run that section 11 makes anyway.
+  package_f    = list(group = "Packages",
+                      label = "Longhill at Elm Grove at 150, catchments redrawn; Cardinal Newman 300, King's 150, Brighton Aldridge 150",
+                      site = "elm", design = "Flow regions, Longhill at Elm Grove",
+                      pans = P(LH = 150, CN = 300, KINGS = 150, BACA = 150)),
   close_lh     = list(group = "Counterfactual", label = "Longhill closed",
                       closed = c(N("LH"), CM_SCEN$name)))
 
@@ -1124,10 +1131,41 @@ co_runs <- tidyr::expand_grid(id = names(CO_OPTIONS), year = c(2026, 2030, 2035)
     bind_cols(tibble(id, group = CO_OPTIONS[[id]]$group, label = CO_OPTIONS[[id]]$label, year),
               co_metrics(co_run(CO_OPTIONS[[id]], year))))
 
+# What moving Longhill does for Whitehawk. The 2024 change took six zones
+# around CoMArt's old site out of Longhill's catchment; a map drawn round
+# Longhill at Elm Grove puts most of them back, as part of a redesign
+# rather than a reversal. Their journeys, and their disadvantaged
+# children's, under today's map, the Whitehawk redraw and the move.
+ELM_DESIGN <- "Flow regions, Longhill at Elm Grove"
+wh_zones_co <- zones$zone[wh_catch != zones$catchment]
+elm_zone <- DESIGNS[[ELM_DESIGN]]$zone
+now_zone <- DESIGNS[["Current catchments"]]$zone
+elm_moves <- tibble(
+  n_zones = sum(elm_zone[zones$zone] != now_zone[zones$zone]),
+  children = sum(zones$Oi[elm_zone[zones$zone] != now_zone[zones$zone]]),
+  whitehawk_zones = length(wh_zones_co),
+  whitehawk_to_longhill = sum(elm_zone[wh_zones_co] == "Longhill"))
+whitehawk_elm <- purrr::map_dfr(c("today", "whitehawk", "elm", "package_f"), function(id)
+  purrr::map_dfr(c(2026, 2030), function(y) {
+    r <- co_run(CO_OPTIONS[[id]], y)
+    fl <- r$flows
+    dd <- dis_flows(inp_s, fl)
+    k <- fl$zone %in% wh_zones_co
+    tibble(id = id, year = y, children = sum(fl$flow[k]),
+           to_longhill = sum(fl$flow[k & fl$name == N("LH")]),
+           minutes = weighted.mean(fl$cij[k], fl$flow[k]),
+           minutes_disadvantaged = weighted.mean(fl$cij[k], dd[k]))
+  }))
+stopifnot(elm_moves$whitehawk_to_longhill >= 1)
+
 saveRDS(list(runs = co_runs, options = CO_OPTIONS, community = COMMUNITY,
              dis_fit = inp_s$params$dis$fit, dis_source = inp_s$params$dis$source,
-             shrink_total = SHRINK_TOTAL, built_at = Sys.time()),
+             shrink_total = SHRINK_TOTAL, elm_moves = elm_moves,
+             whitehawk_elm = whitehawk_elm, built_at = Sys.time()),
         file.path(DATA, "council_options.rds"))
+message(sprintf("  Elm Grove map: %d zones (%.0f children) change catchment; %d of %d Whitehawk zones back in Longhill's",
+                elm_moves$n_zones, elm_moves$children, elm_moves$whitehawk_to_longhill,
+                elm_moves$whitehawk_zones))
 co30 <- co_runs %>% filter(year == 2030)
 message(sprintf("  council options, 2030: %s",
                 paste(sprintf("%s: Longhill %s, Gorard %.3f, displaced %.0f", co30$id,

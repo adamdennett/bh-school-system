@@ -375,7 +375,10 @@ them the pupil projections put next in line.
 2. **Treat the instruments as a package.** Moving the school, changing
    its admission number and redrawing catchments each fall short alone
    and compose when combined. Picking one and waiting is the worst
-   available option.
+   available option. If the council puts access for disadvantaged
+   children first, the package should be led by a smaller Longhill at
+   the top of Elm Grove with the catchments redrawn round it
+   (@sec-weighing).
 3. **Publish a contextualised measure alongside Attainment 8.** It costs
    nothing and begins to unwind a loop the authority currently sustains
    through its own admissions guide.
@@ -8154,7 +8157,7 @@ returned.
 #| tbl-cap: "The options in 2030, under the council's priorities. Community schools' balance is the steady-state annual balance across the six schools the council runs (section 6). Gorard is across all city schools' intakes, counting disadvantaged pupils calibrated to each school's published share (see the box at the head of this section). The deprived-journey gap is the extra minutes children from the three most deprived deciles travel. Displaced children would have taken a place in their own catchment and could not. Where an option cuts a school's admission number and that school is no longer full in 2030, the cut changes nothing that year."
 show <- c("today", "lh150", "central", "whitehawk", "whitehawk_central", "elm",
           "lh_wanted", "cn300", "cn270_kings", "academies", "p6_off", "p6_20",
-          "equal", "power", "comart", "package_d", "package_e", "close_lh")
+          "equal", "power", "comart", "package_d", "package_e", "package_f", "close_lh")
 cop$runs %>%
   filter(year == 2030, id %in% show) %>%
   mutate(id = factor(id, show)) %>% arrange(id) %>%
@@ -8203,8 +8206,14 @@ The levers that do move children, ranked by what they add in 2030:
   shows it lowers displacement. Its effect on segregation is small and
   not reliably in either direction (Priority 2).
 - **Moving to Elm Grove with redrawn catchments** adds
-  `r fmt_n(co("elm", "lh_intake") - co("today", "lh_intake"))`, at the
-  cost of a new site and of the segregation result under Priority 2.
+  `r fmt_n(co("elm", "lh_intake") - co("today", "lh_intake"))` in 2030 and
+  `r fmt_n(co("elm", "lh_intake", 2026) - co("today", "lh_intake", 2026))`
+  in 2026, more than any other single change the council controls, and
+  the map drawn round the new site puts
+  `r cop$elm_moves$whitehawk_to_longhill` of the
+  `r cop$elm_moves$whitehawk_zones` Whitehawk neighbourhoods back in
+  Longhill's catchment. It needs a new site, which is not costed here,
+  and it raises segregation (Priority 2).
 - **Making Longhill half as attractive again** adds `r fmt_n(co("lh_wanted", "lh_intake") - co("today", "lh_intake"))`.
   On section 5.4's fit that is about
   `r sprintf("%.1f", log(1.5) / ch_w5_slope)` points of Attainment 8,
@@ -8242,6 +8251,23 @@ Longhill at Elm Grove the gap falls from
 `r sprintf("%.1f", co("elm", "dep_gap"))` minutes; with CoMArt open, to
 `r sprintf("%.1f", co("comart", "dep_gap"))`. Nothing else in the table
 moves it by more than half a minute.
+
+```{r weigh-elm}
+#| include: false
+whe <- function(id, col, y = 2026)
+  cop$whitehawk_elm[[col]][cop$whitehawk_elm$id == id & cop$whitehawk_elm$year == y]
+```
+
+**For Whitehawk the move does what the redraw cannot.** With Longhill at
+Elm Grove, Whitehawk's children travel
+`r sprintf("%.0f", whe("elm", "minutes"))` minutes on average in 2026
+against `r sprintf("%.0f", whe("today", "minutes"))` today, and its
+disadvantaged children `r sprintf("%.0f", whe("elm", "minutes_disadvantaged"))`
+against `r sprintf("%.0f", whe("today", "minutes_disadvantaged"))`.
+Returning Whitehawk to Longhill's catchment with the school at Ovingdean
+leaves its disadvantaged children at
+`r sprintf("%.0f", whe("whitehawk", "minutes_disadvantaged"))` minutes,
+because Ovingdean is no nearer to them than Varndean is.
 
 **Segregation** is lowest where the intakes are mixed, and a school
 placed among deprived neighbourhoods recruits from them: Gorard's index
@@ -8522,11 +8548,19 @@ council's case for asking them rests on exactly this comparison.
   displacement, and its effect on how mixed intakes are is small and
   turns on how disadvantage is counted. It is not the clear trade
   against segregation earlier versions of this section showed.
-- *Access against segregation.* Elm Grove shortens deprived children's
-  journeys and concentrates them in one school; CoMArt shortens them
-  with little change to how mixed intakes are. If the council
-  values access more, relocation is its strongest tool; if it values
-  mixed intakes more, it should not move Longhill for that reason.
+- *Access against segregation.* Elm Grove all but closes the gap between
+  deprived children's journeys and everyone else's, and it concentrates
+  disadvantaged children in one school: the index rises from
+  `r sprintf("%.3f", co("today", "gorard"))` to
+  `r sprintf("%.3f", co("elm", "gorard"))`. A review of how to even out
+  disadvantaged children's chances has to choose between those two
+  measures, because relocation improves one and worsens the other. This
+  document's evidence leans towards access: most of what separates
+  schools' headline results arrives with the children rather than being
+  added by the school (@sec-school-effects), so a more mixed intake is a
+  weak lever on outcomes, while the journey is made by every child twice
+  a day. What the document cannot show is whether shorter journeys raise
+  attendance; the council's records could.
 - *Longhill against short journeys.* Trimming the central schools helps
   Longhill for two or three years and lengthens journeys for the
   children moved. It should be done only with the Whitehawk redraw, and
@@ -8540,39 +8574,78 @@ council's case for asking them rests on exactly this comparison.
 
 ```{r weigh-pkg}
 #| include: false
-pk <- "package_e"
+pk <- "package_f"
 ```
 
-1. **Consider returning Whitehawk to Longhill's catchment.** Returning it
-   to Longhill's catchment gives Longhill
+If the council's inequalities review puts evening out disadvantaged
+children's chances first, the order of the recommendations changes. The
+earlier version of this section treated a move to Elm Grove as an access
+decision to be weighed against its cost to Longhill. On the full model
+with the catchments redrawn, it is the option that does most for access
+**and** most for Longhill's roll, and the map drawn round it settles the
+Whitehawk question as part of a redesign. So it leads.
+
+1. **Make a smaller Longhill at the top of Elm Grove the lead option, and
+   test it properly.** At 150 places with the catchments redrawn round
+   it, Longhill takes `r fmt_n(co("elm", "lh_intake", 2026))` children in
+   2026 and `r fmt_n(co("elm", "lh_intake"))` in 2030, against
+   `r fmt_n(co("today", "lh_intake", 2026))` and
+   `r fmt_n(co("today", "lh_intake"))` today; deprived children stop
+   travelling further than everyone else, a gap of
+   `r sprintf("%.1f", co("elm", "dep_gap"))` minutes against
+   `r sprintf("%.1f", co("today", "dep_gap"))`; Whitehawk's disadvantaged
+   children's journeys fall from
+   `r sprintf("%.0f", whe("today", "minutes_disadvantaged"))` to
+   `r sprintf("%.0f", whe("elm", "minutes_disadvantaged"))` minutes; and the
+   new map puts `r cop$elm_moves$whitehawk_to_longhill` of the
+   `r cop$elm_moves$whitehawk_zones` Whitehawk neighbourhoods back in
+   Longhill's catchment. A move needs a new map in any case, so
+   Whitehawk's return comes as part of a redesign built round a new
+   school rather than as a stand-alone reversal of the 2024 change. The
+   costs belong in the same paper: a site, not costed here; a segregation
+   index of `r sprintf("%.3f", co("elm", "gorard"))` against
+   `r sprintf("%.3f", co("today", "gorard"))`;
+   `r fmt_n(cop$elm_moves$children)` children a year in neighbourhoods
+   that change catchment; longer journeys for Rottingdean, Saltdean and
+   Woodingdean, more of whose children leave the city
+   (`r fmt_n(co("elm", "left_city"))` from across the city in 2030
+   against `r fmt_n(co("today", "left_city"))`); and a school that still
+   does not break even.
+2. **If the site cannot be had, return Whitehawk to Longhill's catchment
+   on its own.** It gives Longhill
    `r fmt_n(co("whitehawk", "lh_intake") - co("today", "lh_intake"))`
-   children a year by 2030 and
-   lowers displacement, and gives the children who take a Longhill place
-   a shorter journey. Its effect on how mixed intakes are is small and
-   not reliably in either direction; the case rests on Longhill and on
-   journeys, not on segregation.
-2. **Set Longhill's admission number at 150**, and plan its budget and
-   staffing for about a hundred children a year, not for 150. Put the
-   gap between that and break-even --- about
-   `r gbp_m(-co("today", "lh_gap", 2030))` a year on the intake it would
-   have in 2030 with nothing changed ---
-   to members as the cost of keeping a school in the east, and decide it
-   as that.
-3. **Trim Stringer, Varndean and Blatchington Mill** --- to 300, 270
-   and 300 --- for the next two or three rounds, while they are full,
-   alongside the redraw, and not without it.
+   children a year by 2030 and lowers displacement. Its effect on how
+   mixed intakes are is small and not reliably in either direction, and
+   it does little for Whitehawk's journeys while the school is at
+   Ovingdean.
+3. **Set Longhill's admission number at 150**, on either site, and plan
+   its budget and staffing for the children it will get --- about a
+   hundred at Ovingdean, somewhat more at Elm Grove --- not for 150. Put
+   the gap between that and break-even --- about
+   `r gbp_m(-co("today", "lh_gap", 2030))` a year at Ovingdean in 2030 and
+   `r gbp_m(-co("elm", "lh_gap", 2030))` at Elm Grove --- to members as
+   the cost of keeping a school in the east, and decide it as that.
 4. **Ask Cardinal Newman to reduce to 300, and King's to 150**, and
    Brighton Aldridge to 150, and make the case for each school in the
-   city giving up places in proportion by 2030.
-5. **Publish where priority 6's places went**, so what it does to
+   city giving up places in proportion by 2030. With Longhill at Elm
+   Grove these asks add most to its roll.
+5. **Trim Stringer, Varndean and Blatchington Mill only if Longhill stays
+   at Ovingdean** --- to 300, 270 and 300, for the next two or three
+   rounds while they are full, and only with the Whitehawk redraw. With
+   Longhill at Elm Grove the trims add few children in the model's runs
+   and raise displacement.
+6. **Publish where priority 6's places went**, so what it does to
    segregation can be measured rather than modelled.
-6. **Do not move Longhill to raise its roll**; consider Elm Grove only as
-   an access decision for deprived children in the east, with the
-   segregation cost stated.
+7. **Ask the inequalities review to settle the measure.** Relocation
+   shortens disadvantaged children's journeys and concentrates them in
+   one school. Whether evening out chances means the first or the
+   second, and whether shorter journeys raise attendance, are questions
+   the review can answer from the council's own records and this
+   document cannot.
 
-Together --- Whitehawk back to Longhill, Longhill at 150, the central
-trims, priority 6 switched off (the far end of reviewing it), Cardinal
-Newman at 300 and Brighton Aldridge at 150 --- that package gives Longhill
+Together --- Longhill at Elm Grove at 150 with the catchments redrawn,
+Cardinal Newman at 300, King's at 150 and Brighton Aldridge at 150 ---
+that package gives Longhill
 `r fmt_n(co(pk, "lh_intake", 2026))` children in 2026 and
 `r fmt_n(co(pk, "lh_intake", 2030))` in 2030, against
 `r fmt_n(co("today", "lh_intake", 2026))` and
@@ -8584,10 +8657,18 @@ Newman at 300 and Brighton Aldridge at 150 --- that package gives Longhill
 `r fmt_pct(100 * co(pk, "in_catchment"), 0)` at a catchment school
 against `r fmt_pct(100 * co("today", "in_catchment"), 0)`; and, in 2026,
 longest journeys of `r sprintf("%.0f", co(pk, "p90_min", 2026))` minutes
-against `r sprintf("%.0f", co("today", "p90_min", 2026))`. It does not make Longhill
-break even, and it does not shorten deprived children's journeys. The
-first needs a decision about money; the second needs a decision about
-where schools are, or about buses (@sec-decisions).
+against `r sprintf("%.0f", co("today", "p90_min", 2026))`; and a
+deprived-journey gap of `r sprintf("%.1f", co(pk, "dep_gap"))` minutes
+against `r sprintf("%.1f", co("today", "dep_gap"))`. It does not make
+Longhill break even; that needs a decision about money. Without the
+move, the best package tested --- Whitehawk back to Longhill, Longhill
+at 150, the central trims, no priority 6, Cardinal Newman at 300 and
+Brighton Aldridge at 150 --- gives Longhill
+`r fmt_n(co("package_e", "lh_intake", 2026))` in 2026 and
+`r fmt_n(co("package_e", "lh_intake"))` in 2030, and leaves the
+deprived-journey gap at `r sprintf("%.1f", co("package_e", "dep_gap"))`
+minutes: only a school nearer to them, or better buses, closes that
+(@sec-decisions).
 
 ::: {.callout-warning appearance="simple"}
 ## What this rests on
@@ -8605,6 +8686,12 @@ Most options differ on the index by a few thousandths, which is inside
 what a change of measure has moved. And the
 academies and faith schools are modelled as responding to demand, not as
 making their own decisions about numbers.
+The Elm Grove runs carry two further limits, found while checking the
+simulator: the competition term still measures distances from Longhill's
+Ovingdean site, and children refused elsewhere are re-offered places
+using the second preferences families gave with Longhill at Ovingdean.
+Both are likely to understate how many children a school at Elm Grove
+would draw, and both should be corrected before the move is costed.
 The direction of each finding is more reliable than its size.
 :::
 
