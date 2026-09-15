@@ -1039,7 +1039,15 @@ server <- function(input, output, session) {
         m$gorard, as.integer(input$p6), g0, 100 * (m$gorard / g0 - 1),
         fmt_n(sum(sim()$flows$p6)))
     }
-    HTML(paste0(live,
+    HTML(paste0(
+      "<p style=\"background:#fdecea;border:1px solid #f5c2c0;border-radius:6px;padding:6px 10px\">",
+      "<b>Treat the segregation figures as unreliable for now.</b> They measure how mixed an ",
+      "intake is by the neighbourhoods its children come from, and that does not match the ",
+      "schools' published shares of disadvantaged pupils: in the published figures Longhill and ",
+      "Hove Park are among the most disadvantaged intakes in the city, and in the model among the ",
+      "least. The model is being recalibrated; until then, the index here and the notes below ",
+      "should not be relied on. See section 11 of the strategic view.</p>",
+      live,
       "<p><b>Priority 6 can make the city's intakes slightly more segregated, not less.</b> ",
       "Under the council's priorities in 2026, raising it from 0% to 15% of places moves ",
       "the Gorard index from about 0.152 to 0.162; past about 17% there is no more demand ",
