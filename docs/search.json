@@ -564,14 +564,14 @@
     "href": "slides.html#before-anything-else",
     "title": "Brighton & Hove secondary schools",
     "section": "Before anything else",
-    "text": "Before anything else\n\n\n\n\n\n\nWarning\n\n\nBeta. Every number in these slides is modelled from published data, not a record of what happened or a forecast to plan on. The model has not been fully validated.\n\n\n\n\nBuilt from published data only — no pupil-level records.\nThe full working, every source and every caveat: The Brighton Secondary School System: a strategic view\nTry any option yourself: the policy simulator"
+    "text": "Before anything else\n\n\n\n\n\n\nWarning\n\n\nBeta. Every number in these slides is modelled from published data, not a record of what happened or a forecast to plan on. The model has not been fully validated.\n\n\n\n\nBuilt from published data only — no pupil-level records.\nThe full working, every source and every caveat: The Brighton Secondary School System: a strategic view\nEvery stage of the model, opened up for checking: The model, stage by stage\nTry any option yourself: the policy simulator"
   },
   {
     "objectID": "slides.html#a-system-built-for-more-children-than-it-has",
     "href": "slides.html#a-system-built-for-more-children-than-it-has",
     "title": "Brighton & Hove secondary schools",
     "section": "A system built for more children than it has",
-    "text": "A system built for more children than it has\n\n\n\nThe city publishes 2,515 Year 7 places across its ten secondary schools.\nThe modelled cohort is 2,267 in 2026 and 1,835 by 2035 — those children are already in primary school.\nBy 2035 that is about 720 empty Year 7 places a year.\nNine of the ten schools have been spending their reserves. The money is a city problem, not only a Longhill problem.\n\n\nLonghill\n\nTakes about 91 children in 2026 and 75 in 2030, on 210 places.\nAbout £0.8m a year short of break-even in 2030.\nSits at the far edge of the city, at Ovingdean."
+    "text": "A system built for more children than it has\n\n\n\nThe city publishes 2,515 Year 7 places across its ten secondary schools.\nThe modelled cohort is 2,267 in 2026 and 1,835 by 2035 — those children are already in primary school.\nBy 2035 that is about 720 empty Year 7 places a year.\nNine of the ten schools have been spending their reserves. The money is a city problem, not only a Longhill problem.\n\n\nLonghill\n\nTakes about 88 children in 2026 and 71 in 2030, on 210 places.\nAbout £0.8m a year short of break-even in 2030.\nSits at the far edge of the city, at Ovingdean."
   },
   {
     "objectID": "slides.html#ten-schools-six-catchments-and-where-the-children-are",
@@ -620,70 +620,70 @@
     "href": "slides.html#what-the-evidence-says",
     "title": "Brighton & Hove secondary schools",
     "section": "What the evidence says",
-    "text": "What the evidence says\n\nThis is not mainly a school quality problem. Most of what separates schools’ headline results arrives with the children; the part a school can reach runs mostly through attendance.\nFamilies choose on the headline score, which largely describes the intake — so choice is self-fulfilling.\nAdmissions criteria only bind at some schools. Several schools offer a place to every first-preference applicant.\nPhysical access is unequal, in the worst direction. 29 neighbourhoods can reach no school place within 30 minutes by walking and bus, and access and child poverty go together.\nChildren from the most deprived neighbourhoods travel 3.7 minutes further each way than everyone else, under the map in force."
+    "text": "What the evidence says\n\nThis is not mainly a school quality problem. Most of what separates schools’ headline results arrives with the children; the part a school can reach runs mostly through attendance.\nFamilies choose on the headline score, which largely describes the intake — so choice is self-fulfilling.\nAdmissions criteria only bind at some schools. Several schools offer a place to every first-preference applicant.\nPhysical access is unequal, in the worst direction. 29 neighbourhoods can reach no school place within 30 minutes by walking and bus, and access and child poverty go together.\nChildren from the most deprived neighbourhoods travel 4.0 minutes further each way than everyone else, under the map in force."
   },
   {
     "objectID": "slides.html#from-published-data-to-options",
     "href": "slides.html#from-published-data-to-options",
     "title": "Brighton & Hove secondary schools",
     "section": "From published data to options",
-    "text": "From published data to options\n\n\n\n\n\nflowchart LR\n  A[\"Where children live&lt;br/&gt;census, ONS small areas\"] --&gt; M\n  B[\"Journey times&lt;br/&gt;routed walk and bus\"] --&gt; M\n  C[\"What families ask for&lt;br/&gt;16 years of factsheets,&lt;br/&gt;catchment preferences\"] --&gt; M\n  D[\"Catchment maps\"] --&gt; M\n  M[\"Spatial interaction model&lt;br/&gt;M0 to M5\"] --&gt; R[\"Admission numbers and&lt;br/&gt;the council's priorities\"]\n  R --&gt; S[\"Refused children&lt;br/&gt;re-offered by 2nd preference\"]\n  S --&gt; O[\"Intakes, journeys,&lt;br/&gt;money, social mix\"]\n  O --&gt; P[\"The simulator,&lt;br/&gt;and the options scored\"]"
+    "text": "From published data to options\n\n\n\n\n\nflowchart LR\n  d1[\"&lt;b&gt;Children&lt;/b&gt;&lt;br/&gt;census, postcodes,&lt;br/&gt;council projection\"]\n  d2[\"&lt;b&gt;Journeys&lt;/b&gt;&lt;br/&gt;walk and bus,&lt;br/&gt;routed\"]\n  d3[\"&lt;b&gt;What families ask for&lt;/b&gt;&lt;br/&gt;factsheets, catchment&lt;br/&gt;preference table\"]\n  d4[\"&lt;b&gt;Places and rules&lt;/b&gt;&lt;br/&gt;admission numbers,&lt;br/&gt;council priorities\"]\n  m[\"&lt;b&gt;Demand&lt;/b&gt;&lt;br/&gt;children shared by distance,&lt;br/&gt;attractiveness, catchment,&lt;br/&gt;competition&lt;br/&gt;⚙ year · map · site · appeal\"]\n  c{\"&lt;b&gt;Full?&lt;/b&gt;&lt;br/&gt;⚙ places\"}\n  p[\"&lt;b&gt;Priorities&lt;/b&gt; decide&lt;br/&gt;who is admitted&lt;br/&gt;⚙ rules\"]\n  r[\"&lt;b&gt;Refused&lt;/b&gt; re-offered:&lt;br/&gt;partner school,&lt;br/&gt;then 2nd preferences\"]\n  f[\"&lt;b&gt;Intakes&lt;/b&gt; →&lt;br/&gt;journeys&lt;br/&gt;disadvantaged mix&lt;br/&gt;budgets\"]\n  s[\"&lt;b&gt;29 options&lt;br/&gt;× 3 years&lt;/b&gt;&lt;br/&gt;and the&lt;br/&gt;simulator\"]\n  d1 & d2 & d3 --&gt; m --&gt; c\n  d4 --&gt; c\n  c -- yes --&gt; p --&gt; r --&gt; c\n  c -- no --&gt; f --&gt; s\n  classDef data fill:#f3f5f8,stroke:#9aa7b4,color:#1f3b57;\n  classDef ctl fill:#fdecd9,stroke:#d95f02,stroke-width:2px,color:#3d1c00;\n  classDef run fill:#eef4fb,stroke:#1f3b57,color:#102a43;\n  classDef out fill:#edf6ef,stroke:#2b7a4b,color:#102a43;\n  class d1,d2,d3,d4 data;\n  class m,c,p ctl;\n  class r run;\n  class f,s out;\n\n\n\n\n\n\nOrange steps are the ones the simulator lets you change (⚙). Moving any control re-runs everything from the start — about a twentieth of a second. Every step, opened up."
   },
   {
     "objectID": "slides.html#a-spatial-interaction-model",
     "href": "slides.html#a-spatial-interaction-model",
     "title": "Brighton & Hove secondary schools",
     "section": "A spatial interaction model",
-    "text": "A spatial interaction model\n\n\n\\[T_{ij} = A_i\\, O_i\\, W_j\\, c_{ij}^{-\\beta}\\, e^{\\gamma\\, \\text{in catchment}}\\, C_j^{\\delta}\\]\n\n\\(T_{ij}\\) — children from neighbourhood \\(i\\) choosing school \\(j\\)\n\\(O_i\\) — children living in \\(i\\)\n\\(W_j\\) — how attractive school \\(j\\) is\n\\(c_{ij}\\) — walk-and-bus minutes; \\(\\beta\\) how fast demand falls with them\n\\(\\gamma\\) — how strongly families follow their catchment\n\\(C_j\\) — rival schools nearby\n\\(A_i\\) — makes every neighbourhood place all its children\n\n\n\n\n\n\n\nflowchart TB\n  N[\"Each neighbourhood's children\"] --&gt; Sh[\"Shared across schools by&lt;br/&gt;distance, attractiveness,&lt;br/&gt;catchment, competition\"]\n  Sh --&gt; Cap{\"School full?\"}\n  Cap -- \"no\" --&gt; In[\"Admitted\"]\n  Cap -- \"yes\" --&gt; Pr[\"Council priorities decide&lt;br/&gt;who is admitted\"]\n  Pr --&gt; Re[\"The rest re-offered at their&lt;br/&gt;next choice with room\"]\n  Re --&gt; Cap"
+    "text": "A spatial interaction model\n\n\n\\[T_{ij} = A_i\\, O_i\\, W_j\\, c_{ij}^{-\\beta}\\, e^{\\gamma_h\\, \\text{in catchment}}\\, C_j^{\\delta}\\]\n\n\\(T_{ij}\\) — children from neighbourhood \\(i\\) choosing school \\(j\\)\n\\(O_i\\) — children living in \\(i\\)\n\\(W_j\\) — how attractive school \\(j\\) is\n\\(c_{ij}\\) — walk-and-bus minutes; \\(\\beta\\) how fast demand falls with them\n\\(\\gamma_h\\) — how strongly each catchment follows its map\n\\(C_j\\) — rival schools nearby\n\\(A_i\\) — makes every neighbourhood place all its children\n\n\n\n\n\n\n\nflowchart TB\n  N[\"Each neighbourhood's children\"] --&gt; Sh[\"Shared across schools by&lt;br/&gt;distance, attractiveness,&lt;br/&gt;catchment, competition\"]\n  Sh --&gt; Cap{\"School full?\"}\n  Cap -- \"no\" --&gt; In[\"Admitted\"]\n  Cap -- \"yes\" --&gt; Pr[\"Council priorities decide&lt;br/&gt;who is admitted\"]\n  Pr --&gt; Re[\"The rest re-offered at their&lt;br/&gt;next choice with room\"]\n  Re --&gt; Cap"
   },
   {
     "objectID": "slides.html#the-map-alone-every-school-equally-attractive",
     "href": "slides.html#the-map-alone-every-school-equally-attractive",
     "title": "Brighton & Hove secondary schools",
     "section": "The map alone: every school equally attractive",
-    "text": "The map alone: every school equally attractive\n\n\nFigure 7"
+    "text": "The map alone: every school equally attractive\n\n\nFigure 6"
   },
   {
     "objectID": "slides.html#adding-one-thing-at-a-time",
     "href": "slides.html#adding-one-thing-at-a-time",
     "title": "Brighton & Hove secondary schools",
     "section": "Adding one thing at a time",
-    "text": "Adding one thing at a time\n\n\nFigure 8"
+    "text": "Adding one thing at a time\n\n\nFigure 7"
   },
   {
     "objectID": "slides.html#longhills-modelled-catchment-as-the-model-gets-more-realistic",
     "href": "slides.html#longhills-modelled-catchment-as-the-model-gets-more-realistic",
     "title": "Brighton & Hove secondary schools",
     "section": "Longhill’s modelled catchment, as the model gets more realistic",
-    "text": "Longhill’s modelled catchment, as the model gets more realistic\n\n\nFigure 9"
+    "text": "Longhill’s modelled catchment, as the model gets more realistic\n\n\nFigure 10"
   },
   {
     "objectID": "slides.html#it-reproduces-the-2026-offers-which-it-was-not-fitted-to",
     "href": "slides.html#it-reproduces-the-2026-offers-which-it-was-not-fitted-to",
     "title": "Brighton & Hove secondary schools",
     "section": "It reproduces the 2026 offers, which it was not fitted to",
-    "text": "It reproduces the 2026 offers, which it was not fitted to\n\n\nFigure 10"
+    "text": "It reproduces the 2026 offers, which it was not fitted to\n\n\nFigure 14"
   },
   {
     "objectID": "slides.html#it-reproduces-where-each-catchments-families-want-to-go",
     "href": "slides.html#it-reproduces-where-each-catchments-families-want-to-go",
     "title": "Brighton & Hove secondary schools",
     "section": "It reproduces where each catchment’s families want to go",
-    "text": "It reproduces where each catchment’s families want to go\n\n\nFigure 11"
+    "text": "It reproduces where each catchment’s families want to go\n\n\nFigure 15"
   },
   {
     "objectID": "slides.html#the-same-system-year-by-year",
     "href": "slides.html#the-same-system-year-by-year",
     "title": "Brighton & Hove secondary schools",
     "section": "The same system, year by year",
-    "text": "The same system, year by year\n\n\nFigure 12"
+    "text": "The same system, year by year\n\n\nFigure 18"
   },
   {
     "objectID": "slides.html#the-same-lever-works-in-one-year-and-not-the-next",
     "href": "slides.html#the-same-lever-works-in-one-year-and-not-the-next",
     "title": "Brighton & Hove secondary schools",
     "section": "The same lever works in one year and not the next",
-    "text": "The same lever works in one year and not the next\n\n\nFigure 13"
+    "text": "The same lever works in one year and not the next\n\n\nFigure 19"
   },
   {
     "objectID": "slides.html#things-the-model-shows-that-intuition-would-not",
@@ -718,14 +718,14 @@
     "href": "slides.html#only-a-nearer-school-closes-the-access-gap",
     "title": "Brighton & Hove secondary schools",
     "section": "Only a nearer school closes the access gap",
-    "text": "Only a nearer school closes the access gap\n\n\nFigure 16"
+    "text": "Only a nearer school closes the access gap\n\n\nFigure 25"
   },
   {
     "objectID": "slides.html#a-smaller-longhill-at-the-top-of-elm-grove",
     "href": "slides.html#a-smaller-longhill-at-the-top-of-elm-grove",
     "title": "Brighton & Hove secondary schools",
     "section": "A smaller Longhill at the top of Elm Grove",
-    "text": "A smaller Longhill at the top of Elm Grove\n\n\nWhat it does (150 places, catchments redrawn)\n\nLonghill takes 123 in 2026 and 103 in 2030 — against 91 and 75 today.\nDeprived children’s extra journey falls from 3.5 to 0.0 minutes.\nWhitehawk’s disadvantaged children travel 24 minutes instead of 53.\nThe map drawn round it puts 5 of the 6 Whitehawk neighbourhoods back in Longhill’s catchment — as part of a redesign, not a reversal of the 2024 change.\nWith Cardinal Newman, King’s and Brighton Aldridge taking fewer: 134 in 2026 and 108 in 2030.\n\n\nWhat it costs\n\nA site — not costed in this work.\nIntakes more concentrated: segregation index 0.153 against 0.117.\nAbout 434 children a year in neighbourhoods that change catchment.\nLonger journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.\nLonghill still does not break even — about £0.5m a year short in 2030.\nIt needs families to follow a new map as closely as the one they have — the assumption every redraw result rests on."
+    "text": "A smaller Longhill at the top of Elm Grove\n\n\n\n\nTable 1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nOption\nLonghill intake, 2026 → 2030\nDeprived children’s extra journey\nWhitehawk’s disadvantaged children travel\nSegregation index\nLonghill’s annual position\n\n\n\n\nToday\n88 → 71\n3.7 min\n54 min\n0.116\n−£0.8m\n\n\nElm Grove, 150 places, map redrawn\n102 → 84\n0.4 min\n23 min\n0.148\n−£0.7m\n\n\nElm Grove package\n113 → 89\n0.5 min\n22 min\n0.147\n−£0.7m\n\n\n\n\n\n\n\n\n\n\nWhat it gains\n\nThe biggest cut in deprived children’s journeys of any option.\n4 of the 6 Whitehawk neighbourhoods back in Longhill’s catchment, as part of a redesign rather than a reversal.\nMore children for Longhill.\n\n\nWhat it costs\n\nA site, not costed here. Longhill still does not break even.\nAbout 337 children a year in neighbourhoods that change catchment; longer journeys for Rottingdean, Saltdean and Woodingdean.\nIntakes more concentrated — and that figure assumes families follow a new map as closely as today’s."
   },
   {
     "objectID": "slides.html#access-or-mixing-the-review-has-to-choose",
@@ -753,7 +753,7 @@
     "href": "slides.html#what-this-rests-on",
     "title": "Brighton & Hove secondary schools",
     "section": "What this rests on",
-    "text": "What this rests on\n\nA model calibrated to published catchment totals, not individual applications.\nCatchment attachment carried to redrawn maps at the strength families follow the maps they have — the assumption every redraw result depends on.\nFinances as a five-year steady state; site and capital costs not included.\nThe academies and faith schools modelled as responding to demand, not setting their own numbers.\nThe direction of each finding is more reliable than its size.\n\nFull document · Simulator · Code and data"
+    "text": "What this rests on\n\nA model calibrated to published catchment totals, not individual applications.\nCatchment attachment carried to redrawn maps at the strength families follow the maps they have — the assumption every redraw result depends on.\nFinances as a five-year steady state; site and capital costs not included.\nThe academies and faith schools modelled as responding to demand, not setting their own numbers.\nThe direction of each finding is more reliable than its size.\n\nFull document · The model, stage by stage · Simulator · Code and data"
   },
   {
     "objectID": "model-guide.html#what-it-is-2",
@@ -1433,5 +1433,103 @@
     "title": "The model, stage by stage",
     "section": "15.5 Following a number back",
     "text": "15.5 Following a number back\nEvery figure in the strategic view comes from one of the runs described in §14, which is the model of §2 to §10 with the disadvantage layer of §12 and the money of §13 read off the result. It should now be possible to follow any number back through these sections to a published source."
+  },
+  {
+    "objectID": "slides.html#some-schools-have-company-longhill-has-none",
+    "href": "slides.html#some-schools-have-company-longhill-has-none",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Some schools have company; Longhill has none",
+    "text": "Some schools have company; Longhill has none\n\n\nFigure 8"
+  },
+  {
+    "objectID": "slides.html#what-each-neighbourhood-has-within-reach",
+    "href": "slides.html#what-each-neighbourhood-has-within-reach",
+    "title": "Brighton & Hove secondary schools",
+    "section": "What each neighbourhood has within reach",
+    "text": "What each neighbourhood has within reach\n\n\nFigure 9"
+  },
+  {
+    "objectID": "slides.html#when-a-school-is-full",
+    "href": "slides.html#when-a-school-is-full",
+    "title": "Brighton & Hove secondary schools",
+    "section": "When a school is full",
+    "text": "When a school is full\n\n\nFigure 11"
+  },
+  {
+    "objectID": "slides.html#where-the-refused-children-go",
+    "href": "slides.html#where-the-refused-children-go",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Where the refused children go",
+    "text": "Where the refused children go\n\n\nFigure 12"
+  },
+  {
+    "objectID": "slides.html#faith-schools-draw-from-the-whole-city",
+    "href": "slides.html#faith-schools-draw-from-the-whole-city",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Faith schools draw from the whole city",
+    "text": "Faith schools draw from the whole city\n\n\nFigure 13"
+  },
+  {
+    "objectID": "slides.html#it-reproduces-who-the-council-admitted-and-why",
+    "href": "slides.html#it-reproduces-who-the-council-admitted-and-why",
+    "title": "Brighton & Hove secondary schools",
+    "section": "It reproduces who the council admitted, and why",
+    "text": "It reproduces who the council admitted, and why\n\n\nFigure 16"
+  },
+  {
+    "objectID": "slides.html#counting-disadvantage-by-neighbourhood-got-the-schools-in-the-wrong-order",
+    "href": "slides.html#counting-disadvantage-by-neighbourhood-got-the-schools-in-the-wrong-order",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Counting disadvantage by neighbourhood got the schools in the wrong order",
+    "text": "Counting disadvantage by neighbourhood got the schools in the wrong order\n\n\nFigure 17"
+  },
+  {
+    "objectID": "slides.html#what-the-falling-cohort-does-to-budgets",
+    "href": "slides.html#what-the-falling-cohort-does-to-budgets",
+    "title": "Brighton & Hove secondary schools",
+    "section": "What the falling cohort does to budgets",
+    "text": "What the falling cohort does to budgets\n\n\nFigure 20"
+  },
+  {
+    "objectID": "slides.html#pull-one-lever-and-the-effect-turns-up-somewhere-else",
+    "href": "slides.html#pull-one-lever-and-the-effect-turns-up-somewhere-else",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Pull one lever, and the effect turns up somewhere else",
+    "text": "Pull one lever, and the effect turns up somewhere else\n\n\nFigure 21"
+  },
+  {
+    "objectID": "slides.html#open-admissions-barely-changes-segregation",
+    "href": "slides.html#open-admissions-barely-changes-segregation",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Open admissions barely changes segregation",
+    "text": "Open admissions barely changes segregation\n\n\nFigure 22"
+  },
+  {
+    "objectID": "slides.html#measuring-disadvantage-better-changed-one-answer",
+    "href": "slides.html#measuring-disadvantage-better-changed-one-answer",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Measuring disadvantage better changed one answer",
+    "text": "Measuring disadvantage better changed one answer\n\n\nFigure 23"
+  },
+  {
+    "objectID": "slides.html#how-to-read-an-option",
+    "href": "slides.html#how-to-read-an-option",
+    "title": "Brighton & Hove secondary schools",
+    "section": "How to read an option",
+    "text": "How to read an option\n\n\nCompare in the same year. The cohort falls by a fifth by 2035. Read an option against doing nothing in that year.\nA cap that is never reached does nothing. Cutting Longhill to 150 changes only the count of empty places.\n\nSmall segregation differences are not findings. Anything under about 0.01 is within what re-measuring moved it.\nSome results lean on held assumptions. Journeys are measured directly; segregation after a move assumes a school keeps its draw on disadvantaged families at a new site.\n\n29 options, each run for 2026, 2030 and 2035 on every measure at once. How they were chosen, and seven rules for reading them."
+  },
+  {
+    "objectID": "slides.html#eight-options-four-priorities",
+    "href": "slides.html#eight-options-four-priorities",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Eight options, four priorities",
+    "text": "Eight options, four priorities\n\n\nFigure 24\n“Package without a move”: Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. “Elm Grove package”: the move, with Cardinal Newman 300, King’s 150, Brighton Aldridge 150."
+  },
+  {
+    "objectID": "slides.html#access-or-mixing-no-option-does-both",
+    "href": "slides.html#access-or-mixing-no-option-does-both",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Access or mixing? No option does both",
+    "text": "Access or mixing? No option does both\n\n\nFigure 26\nThe evidence leans towards access: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day. Whether shorter journeys raise attendance is what the council’s own records could settle."
   }
 ]

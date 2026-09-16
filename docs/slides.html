@@ -163,6 +163,7 @@ Adam Dennett, UCL Centre for Advanced Spatial Analysis
 <ul>
 <li>Built from <strong>published data only</strong> — no pupil-level records.</li>
 <li>The full working, every source and every caveat: <a href="https://adamdennett.github.io/bh-school-system/">The Brighton Secondary School System: a strategic view</a></li>
+<li>Every stage of the model, opened up for checking: <a href="https://adamdennett.github.io/bh-school-system/model-guide.html">The model, stage by stage</a></li>
 <li>Try any option yourself: <a href="https://adamdennett-bh-school-system.share.connect.posit.cloud/">the policy simulator</a></li>
 </ul>
 </section>
@@ -184,7 +185,7 @@ Adam Dennett, UCL Centre for Advanced Spatial Analysis
 </div><div class="column" style="width:45%;">
 <p><strong>Longhill</strong></p>
 <ul>
-<li>Takes about <strong>91</strong> children in 2026 and <strong>75</strong> in 2030, on 210 places.</li>
+<li>Takes about <strong>88</strong> children in 2026 and <strong>71</strong> in 2030, on 210 places.</li>
 <li>About <strong>£0.8m a year</strong> short of break-even in 2030.</li>
 <li>Sits at the far edge of the city, at Ovingdean.</li>
 </ul>
@@ -220,12 +221,6 @@ Figure&nbsp;4
 <img data-src="slides_files/figure-revealjs/fig-reserves-1.png" id="fig-reserves" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
 Figure&nbsp;5
 </p></section>
-<section id="small-schools-get-more-per-pupil-and-still-run-deficits" class="slide level2">
-<h2>Small schools get more per pupil and still run deficits</h2>
-
-<img data-src="slides_files/figure-revealjs/fig-size-finance-1.png" id="fig-size-finance" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;6
-</p></section>
 <section id="what-the-evidence-says" class="slide level2">
 <h2>What the evidence says</h2>
 <ul>
@@ -233,7 +228,7 @@ Figure&nbsp;6
 <li><strong>Families choose on the headline score</strong>, which largely describes the intake — so choice is self-fulfilling.</li>
 <li><strong>Admissions criteria only bind at some schools.</strong> Several schools offer a place to every first-preference applicant.</li>
 <li><strong>Physical access is unequal, in the worst direction.</strong> 29 neighbourhoods can reach <strong>no</strong> school place within 30 minutes by walking and bus, and access and child poverty go together.</li>
-<li>Children from the most deprived neighbourhoods travel <strong>3.7 minutes further</strong> each way than everyone else, under the map in force.</li>
+<li>Children from the most deprived neighbourhoods travel <strong>4.0 minutes further</strong> each way than everyone else, under the map in force.</li>
 </ul>
 </section></section>
 <section>
@@ -243,38 +238,53 @@ Figure&nbsp;6
 </section>
 <section id="from-published-data-to-options" class="slide level2">
 <h2>From published data to options</h2>
-<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell" data-reveal="true" data-fig-width="12" data-layout-align="default">
 <div class="cell-output-display">
 <div>
 <p></p><figure class=""><p></p>
 <div>
 <pre class="mermaid mermaid-js">flowchart LR
-  A["Where children live&lt;br/&gt;census, ONS small areas"] --&gt; M
-  B["Journey times&lt;br/&gt;routed walk and bus"] --&gt; M
-  C["What families ask for&lt;br/&gt;16 years of factsheets,&lt;br/&gt;catchment preferences"] --&gt; M
-  D["Catchment maps"] --&gt; M
-  M["Spatial interaction model&lt;br/&gt;M0 to M5"] --&gt; R["Admission numbers and&lt;br/&gt;the council's priorities"]
-  R --&gt; S["Refused children&lt;br/&gt;re-offered by 2nd preference"]
-  S --&gt; O["Intakes, journeys,&lt;br/&gt;money, social mix"]
-  O --&gt; P["The simulator,&lt;br/&gt;and the options scored"]
+  d1["&lt;b&gt;Children&lt;/b&gt;&lt;br/&gt;census, postcodes,&lt;br/&gt;council projection"]
+  d2["&lt;b&gt;Journeys&lt;/b&gt;&lt;br/&gt;walk and bus,&lt;br/&gt;routed"]
+  d3["&lt;b&gt;What families ask for&lt;/b&gt;&lt;br/&gt;factsheets, catchment&lt;br/&gt;preference table"]
+  d4["&lt;b&gt;Places and rules&lt;/b&gt;&lt;br/&gt;admission numbers,&lt;br/&gt;council priorities"]
+  m["&lt;b&gt;Demand&lt;/b&gt;&lt;br/&gt;children shared by distance,&lt;br/&gt;attractiveness, catchment,&lt;br/&gt;competition&lt;br/&gt;⚙ year · map · site · appeal"]
+  c{"&lt;b&gt;Full?&lt;/b&gt;&lt;br/&gt;⚙ places"}
+  p["&lt;b&gt;Priorities&lt;/b&gt; decide&lt;br/&gt;who is admitted&lt;br/&gt;⚙ rules"]
+  r["&lt;b&gt;Refused&lt;/b&gt; re-offered:&lt;br/&gt;partner school,&lt;br/&gt;then 2nd preferences"]
+  f["&lt;b&gt;Intakes&lt;/b&gt; →&lt;br/&gt;journeys&lt;br/&gt;disadvantaged mix&lt;br/&gt;budgets"]
+  s["&lt;b&gt;29 options&lt;br/&gt;× 3 years&lt;/b&gt;&lt;br/&gt;and the&lt;br/&gt;simulator"]
+  d1 &amp; d2 &amp; d3 --&gt; m --&gt; c
+  d4 --&gt; c
+  c -- yes --&gt; p --&gt; r --&gt; c
+  c -- no --&gt; f --&gt; s
+  classDef data fill:#f3f5f8,stroke:#9aa7b4,color:#1f3b57;
+  classDef ctl fill:#fdecd9,stroke:#d95f02,stroke-width:2px,color:#3d1c00;
+  classDef run fill:#eef4fb,stroke:#1f3b57,color:#102a43;
+  classDef out fill:#edf6ef,stroke:#2b7a4b,color:#102a43;
+  class d1,d2,d3,d4 data;
+  class m,c,p ctl;
+  class r run;
+  class f,s out;
 </pre>
 </div>
 <p></p></figure><p></p>
 </div>
 </div>
 </div>
+<p>Orange steps are the ones the simulator lets you change (⚙). Moving any control re-runs everything from the start — about a twentieth of a second. <a href="https://adamdennett.github.io/bh-school-system/model-guide.html#sec-algorithm">Every step, opened up.</a></p>
 </section>
 <section id="a-spatial-interaction-model" class="slide level2">
 <h2>A spatial interaction model</h2>
 <div class="columns">
 <div class="column" style="width:48%;">
-<p><span class="math display">\[T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma\, \text{in catchment}}\, C_j^{\delta}\]</span></p>
+<p><span class="math display">\[T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma_h\, \text{in catchment}}\, C_j^{\delta}\]</span></p>
 <ul>
 <li><span class="math inline">\(T_{ij}\)</span> — children from neighbourhood <span class="math inline">\(i\)</span> choosing school <span class="math inline">\(j\)</span></li>
 <li><span class="math inline">\(O_i\)</span> — children living in <span class="math inline">\(i\)</span></li>
 <li><span class="math inline">\(W_j\)</span> — how attractive school <span class="math inline">\(j\)</span> is</li>
 <li><span class="math inline">\(c_{ij}\)</span> — walk-and-bus minutes; <span class="math inline">\(\beta\)</span> how fast demand falls with them</li>
-<li><span class="math inline">\(\gamma\)</span> — how strongly families follow their catchment</li>
+<li><span class="math inline">\(\gamma_h\)</span> — how strongly each catchment follows its map</li>
 <li><span class="math inline">\(C_j\)</span> — rival schools nearby</li>
 <li><span class="math inline">\(A_i\)</span> — makes every neighbourhood place all its children</li>
 </ul>
@@ -303,19 +313,49 @@ Figure&nbsp;6
 <h2>The map alone: every school equally attractive</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-brightopia-1.png" id="fig-brightopia" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;7
+Figure&nbsp;6
 </p></section>
 <section id="adding-one-thing-at-a-time" class="slide level2">
 <h2>Adding one thing at a time</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-ladder-1.png" id="fig-ladder" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;7
+</p></section>
+<section id="some-schools-have-company-longhill-has-none" class="slide level2">
+<h2>Some schools have company; Longhill has none</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-cj-1.png" id="fig-cj" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
 Figure&nbsp;8
+</p></section>
+<section id="what-each-neighbourhood-has-within-reach" class="slide level2">
+<h2>What each neighbourhood has within reach</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-pull-1.png" id="fig-pull" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;9
 </p></section>
 <section id="longhills-modelled-catchment-as-the-model-gets-more-realistic" class="slide level2">
 <h2>Longhill’s modelled catchment, as the model gets more realistic</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-flows-1.png" id="fig-flows" width="1875" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;9
+Figure&nbsp;10
+</p></section>
+<section id="when-a-school-is-full" class="slide level2">
+<h2>When a school is full</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-ceiling-1.png" id="fig-ceiling" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;11
+</p></section>
+<section id="where-the-refused-children-go" class="slide level2">
+<h2>Where the refused children go</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-overflow-1.png" id="fig-overflow" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;12
+</p></section>
+<section id="faith-schools-draw-from-the-whole-city" class="slide level2">
+<h2>Faith schools draw from the whole city</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-faith-1.png" id="fig-faith" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;13
 </p></section></section>
 <section>
 <section id="does-the-model-reproduce-what-we-know" class="title-slide slide level1 center">
@@ -326,13 +366,25 @@ Figure&nbsp;9
 <h2>It reproduces the 2026 offers, which it was not fitted to</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-valid-offers-1.png" id="fig-valid-offers" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;10
+Figure&nbsp;14
 </p></section>
 <section id="it-reproduces-where-each-catchments-families-want-to-go" class="slide level2">
 <h2>It reproduces where each catchment’s families want to go</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-valid-cells-1.png" id="fig-valid-cells" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;11
+Figure&nbsp;15
+</p></section>
+<section id="it-reproduces-who-the-council-admitted-and-why" class="slide level2">
+<h2>It reproduces who the council admitted, and why</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-tiers-1.png" id="fig-tiers" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;16
+</p></section>
+<section id="counting-disadvantage-by-neighbourhood-got-the-schools-in-the-wrong-order" class="slide level2">
+<h2>Counting disadvantage by neighbourhood got the schools in the wrong order</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-neigh-1.png" id="fig-neigh" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;17
 </p></section></section>
 <section>
 <section id="a-system-that-moves" class="title-slide slide level1 center">
@@ -343,203 +395,80 @@ Figure&nbsp;11
 <h2>The same system, year by year</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-dynamic-1.png" id="fig-dynamic" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;12
+Figure&nbsp;18
 </p></section>
 <section id="the-same-lever-works-in-one-year-and-not-the-next" class="slide level2">
 <h2>The same lever works in one year and not the next</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-lever-years-1.png" id="fig-lever-years" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;13
+Figure&nbsp;19
+</p></section>
+<section id="what-the-falling-cohort-does-to-budgets" class="slide level2">
+<h2>What the falling cohort does to budgets</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-budgets-1.png" id="fig-budgets" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;20
 </p></section></section>
 <section>
 <section id="complex-interactions-surprising-results" class="title-slide slide level1 center">
 <h1>Complex interactions, surprising results</h1>
 
 </section>
-<section id="things-the-model-shows-that-intuition-would-not" class="slide level2">
-<h2>Things the model shows that intuition would not</h2>
+<section id="pull-one-lever-and-the-effect-turns-up-somewhere-else" class="slide level2">
+<h2>Pull one lever, and the effect turns up somewhere else</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-surprises-1.png" id="fig-surprises" width="1875" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;14
+Figure&nbsp;21
 </p></section>
-<section id="open-admissions-and-integration-a-finding-that-did-not-survive" class="slide level2">
-<h2>Open admissions and integration: a finding that did not survive</h2>
+<section id="open-admissions-barely-changes-segregation" class="slide level2">
+<h2>Open admissions barely changes segregation</h2>
 
-<img data-src="slides_files/figure-revealjs/fig-p6-reversal-1.png" id="fig-p6-reversal" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;15
+<img data-src="slides_files/figure-revealjs/fig-p6-1.png" id="fig-p6" width="1800" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;22
 </p></section>
-<section id="checked-and-corrected-along-the-way" class="slide level2">
-<h2>Checked, and corrected, along the way</h2>
-<p>The segregation results changed as the measure was tested against published figures.</p>
-<div class="cell">
-<div id="tbl-measures" class="cell quarto-float quarto-figure quarto-figure-center">
-<figure class="quarto-float quarto-float-tbl">
-<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-measures-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;1
-</figcaption>
-<div aria-describedby="tbl-measures-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<div class="cell-output-display">
-<table class="do-not-create-environment caption-top">
-<colgroup>
-<col style="width: 57%">
-<col style="width: 13%">
-<col style="width: 29%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">How disadvantaged pupils were counted</th>
-<th style="text-align: right;">Index today</th>
-<th style="text-align: right;">Whitehawk back to Longhill</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">By neighbourhood</td>
-<td style="text-align: right;">0.154</td>
-<td style="text-align: right;">0.137</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Whole-school shares, fitted on today’s map</td>
-<td style="text-align: right;">0.118</td>
-<td style="text-align: right;">0.140</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Whole-school shares, fitted before the policy change</td>
-<td style="text-align: right;">0.124</td>
-<td style="text-align: right;">0.125</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Year 7 offers, 2026 (the model’s measure)</td>
-<td style="text-align: right;">0.117</td>
-<td style="text-align: right;">0.122</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-</figure>
-</div>
-</div>
-<ul>
-<li>Scored <strong>by neighbourhood</strong>, the schools came out in the wrong order against DfE’s published shares.</li>
-<li>The published shares <strong>lag the policy</strong> by up to five years, so the model is now fitted to the <strong>first Year 7 offers</strong> under today’s map and rules (council factsheet, 2026).</li>
-<li>The Whitehawk redraw’s effect on segregation turned out <strong>too small to call</strong>. Its case rests on journeys and Longhill, not on segregation.</li>
-</ul>
-</section></section>
+<section id="measuring-disadvantage-better-changed-one-answer" class="slide level2">
+<h2>Measuring disadvantage better changed one answer</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-measures-1.png" id="fig-measures" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;23
+</p></section></section>
 <section>
 <section id="the-options" class="title-slide slide level1 center">
 <h1>The options</h1>
 
 </section>
-<section id="three-priorities-scored-at-once" class="slide level2">
-<h2>Three priorities, scored at once</h2>
-<div class="cell">
-<div id="tbl-options" class="cell quarto-float quarto-figure quarto-figure-center">
-<figure class="quarto-float quarto-float-tbl">
-<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-options-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;2
-</figcaption>
-<div aria-describedby="tbl-options-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<div class="cell-output-display">
-<table class="do-not-create-environment caption-top" style="width:100%;">
-<colgroup>
-<col style="width: 28%">
-<col style="width: 10%">
-<col style="width: 23%">
-<col style="width: 12%">
-<col style="width: 6%">
-<col style="width: 18%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Option</th>
-<th style="text-align: right;">Longhill intake</th>
-<th style="text-align: right;">Deprived children’s extra journey</th>
-<th style="text-align: right;">Segregation index</th>
-<th style="text-align: right;">Displaced</th>
-<th style="text-align: right;">Community schools’ balance</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">Today</td>
-<td style="text-align: right;">75</td>
-<td style="text-align: right;">3.5 min</td>
-<td style="text-align: right;">0.117</td>
-<td style="text-align: right;">2</td>
-<td style="text-align: right;">−£3.5m</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Whitehawk back to Longhill</td>
-<td style="text-align: right;">86</td>
-<td style="text-align: right;">3.2 min</td>
-<td style="text-align: right;">0.121</td>
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">−£3.5m</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Longhill 150, central schools trimmed</td>
-<td style="text-align: right;">75</td>
-<td style="text-align: right;">3.5 min</td>
-<td style="text-align: right;">0.118</td>
-<td style="text-align: right;">4</td>
-<td style="text-align: right;">−£3.5m</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Longhill at Elm Grove (150), map redrawn</td>
-<td style="text-align: right;">103</td>
-<td style="text-align: right;">0.0 min</td>
-<td style="text-align: right;">0.153</td>
-<td style="text-align: right;">2</td>
-<td style="text-align: right;">−£3.7m</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">CoMArt re-opened (not available)</td>
-<td style="text-align: right;">49</td>
-<td style="text-align: right;">2.2 min</td>
-<td style="text-align: right;">0.119</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">−£4.5m</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Package without a move</td>
-<td style="text-align: right;">92</td>
-<td style="text-align: right;">3.3 min</td>
-<td style="text-align: right;">0.122</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">−£3.1m</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Elm Grove package</td>
-<td style="text-align: right;">108</td>
-<td style="text-align: right;">0.1 min</td>
-<td style="text-align: right;">0.150</td>
-<td style="text-align: right;">2</td>
-<td style="text-align: right;">−£3.1m</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Longhill closed</td>
-<td style="text-align: right;">—</td>
-<td style="text-align: right;">4.2 min</td>
-<td style="text-align: right;">0.103</td>
-<td style="text-align: right;">2</td>
-<td style="text-align: right;">−£2.3m</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-</figure>
-</div>
-</div>
-<p>2030, council priorities. “Package without a move”: Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. “Elm Grove package”: Longhill at Elm Grove at 150 with the map redrawn, Cardinal Newman 300, King’s 150, Brighton Aldridge 150.</p>
+<section id="how-to-read-an-option" class="slide level2">
+<h2>How to read an option</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<p><strong>Compare in the same year.</strong> The cohort falls by a fifth by 2035. Read an option against doing nothing <em>in that year</em>.</p>
+<p><strong>A cap that is never reached does nothing.</strong> Cutting Longhill to 150 changes only the count of empty places.</p>
+</div><div class="column" style="width:50%;">
+<p><strong>Small segregation differences are not findings.</strong> Anything under about 0.01 is within what re-measuring moved it.</p>
+<p><strong>Some results lean on held assumptions.</strong> Journeys are measured directly; segregation after a move assumes a school keeps its draw on disadvantaged families at a new site.</p>
+</div></div>
+<p>29 options, each run for 2026, 2030 and 2035 on every measure at once. <a href="https://adamdennett.github.io/bh-school-system/model-guide.html#sec-scenarios">How they were chosen, and seven rules for reading them.</a></p>
+</section>
+<section id="eight-options-four-priorities" class="slide level2">
+<h2>Eight options, four priorities</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-options-1.png" id="fig-options" width="1875" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;24
+</p><p>“Package without a move”: Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. “Elm Grove package”: the move, with Cardinal Newman 300, King’s 150, Brighton Aldridge 150.</p>
 </section>
 <section id="only-a-nearer-school-closes-the-access-gap" class="slide level2">
 <h2>Only a nearer school closes the access gap</h2>
 
 <img data-src="slides_files/figure-revealjs/fig-gap-1.png" id="fig-gap" width="1650" class="r-stretch quarto-figure-center"><p class="caption">
-Figure&nbsp;16
-</p></section></section>
+Figure&nbsp;25
+</p></section>
+<section id="access-or-mixing-no-option-does-both" class="slide level2">
+<h2>Access or mixing? No option does both</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-tradeoff-1.png" id="fig-tradeoff" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;26
+</p><p>The evidence leans towards <strong>access</strong>: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day. Whether shorter journeys raise attendance is what the council’s own records could settle.</p>
+</section></section>
 <section>
 <section id="what-this-means-for-longhill" class="title-slide slide level1 center">
 <h1>What this means for Longhill</h1>
@@ -547,36 +476,81 @@ Figure&nbsp;16
 </section>
 <section id="a-smaller-longhill-at-the-top-of-elm-grove" class="slide level2">
 <h2>A smaller Longhill at the top of Elm Grove</h2>
+<div class="cell">
+<div id="tbl-elm" class="cell quarto-float quarto-figure quarto-figure-center">
+<figure class="quarto-float quarto-float-tbl">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-elm-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;1
+</figcaption>
+<div aria-describedby="tbl-elm-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="do-not-create-environment caption-top">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 15%">
+<col style="width: 18%">
+<col style="width: 22%">
+<col style="width: 9%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Option</th>
+<th style="text-align: right;">Longhill intake, 2026 → 2030</th>
+<th style="text-align: right;">Deprived children’s extra journey</th>
+<th style="text-align: right;">Whitehawk’s disadvantaged children travel</th>
+<th style="text-align: right;">Segregation index</th>
+<th style="text-align: right;">Longhill’s annual position</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Today</td>
+<td style="text-align: right;">88 → 71</td>
+<td style="text-align: right;">3.7 min</td>
+<td style="text-align: right;">54 min</td>
+<td style="text-align: right;">0.116</td>
+<td style="text-align: right;">−£0.8m</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Elm Grove, 150 places, map redrawn</td>
+<td style="text-align: right;">102 → 84</td>
+<td style="text-align: right;">0.4 min</td>
+<td style="text-align: right;">23 min</td>
+<td style="text-align: right;">0.148</td>
+<td style="text-align: right;">−£0.7m</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Elm Grove package</td>
+<td style="text-align: right;">113 → 89</td>
+<td style="text-align: right;">0.5 min</td>
+<td style="text-align: right;">22 min</td>
+<td style="text-align: right;">0.147</td>
+<td style="text-align: right;">−£0.7m</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
 <div class="columns">
 <div class="column" style="width:50%;">
-<p><strong>What it does</strong> (150 places, catchments redrawn)</p>
+<p><strong>What it gains</strong></p>
 <ul>
-<li>Longhill takes <strong>123</strong> in 2026 and <strong>103</strong> in 2030 — against 91 and 75 today.</li>
-<li>Deprived children’s extra journey falls from <strong>3.5</strong> to <strong>0.0</strong> minutes.</li>
-<li>Whitehawk’s disadvantaged children travel <strong>24</strong> minutes instead of <strong>53</strong>.</li>
-<li>The map drawn round it puts <strong>5 of the 6</strong> Whitehawk neighbourhoods back in Longhill’s catchment — as part of a redesign, not a reversal of the 2024 change.</li>
-<li>With Cardinal Newman, King’s and Brighton Aldridge taking fewer: <strong>134</strong> in 2026 and <strong>108</strong> in 2030.</li>
+<li>The biggest cut in deprived children’s journeys of any option.</li>
+<li><strong>4 of the 6</strong> Whitehawk neighbourhoods back in Longhill’s catchment, as part of a redesign rather than a reversal.</li>
+<li>More children for Longhill.</li>
 </ul>
 </div><div class="column" style="width:50%;">
 <p><strong>What it costs</strong></p>
 <ul>
-<li>A site — <strong>not costed</strong> in this work.</li>
-<li>Intakes more concentrated: segregation index <strong>0.153</strong> against 0.117.</li>
-<li>About <strong>434</strong> children a year in neighbourhoods that change catchment.</li>
-<li>Longer journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.</li>
-<li>Longhill <strong>still does not break even</strong> — about £0.5m a year short in 2030.</li>
-<li>It needs families to follow a <strong>new map</strong> as closely as the one they have — the assumption every redraw result rests on.</li>
+<li>A site, <strong>not costed</strong> here. Longhill <strong>still does not break even</strong>.</li>
+<li>About <strong>337</strong> children a year in neighbourhoods that change catchment; longer journeys for Rottingdean, Saltdean and Woodingdean.</li>
+<li>Intakes more concentrated — and that figure assumes families follow a <strong>new map</strong> as closely as today’s.</li>
 </ul>
 </div></div>
-</section>
-<section id="access-or-mixing-the-review-has-to-choose" class="slide level2">
-<h2>Access or mixing? The review has to choose</h2>
-<ul>
-<li>A school near Whitehawk <strong>shortens disadvantaged children’s journeys</strong> and <strong>concentrates them in one school</strong>. No option does both.</li>
-<li>The evidence here leans towards <strong>access</strong>: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day.</li>
-<li>What this work cannot show is whether <strong>shorter journeys raise attendance</strong> — the lever that matters most. The council’s own records can.</li>
-<li>Re-opening CoMArt would have given much of the access gain; it is off the table. Closing Longhill is the cheapest system and has the longest journeys in the east.</li>
-</ul>
 </section></section>
 <section>
 <section id="recommendations" class="title-slide slide level1 center">
@@ -614,7 +588,7 @@ Figure&nbsp;16
 <li>The academies and faith schools modelled as <strong>responding to demand</strong>, not setting their own numbers.</li>
 <li><strong>The direction of each finding is more reliable than its size.</strong></li>
 </ul>
-<p><a href="https://adamdennett.github.io/bh-school-system/">Full document</a> · <a href="https://adamdennett-bh-school-system.share.connect.posit.cloud/">Simulator</a> · <a href="https://github.com/adamdennett/bh-school-system">Code and data</a></p>
+<p><a href="https://adamdennett.github.io/bh-school-system/">Full document</a> · <a href="https://adamdennett.github.io/bh-school-system/model-guide.html">The model, stage by stage</a> · <a href="https://adamdennett-bh-school-system.share.connect.posit.cloud/">Simulator</a> · <a href="https://github.com/adamdennett/bh-school-system">Code and data</a></p>
 
 
 </section></section>

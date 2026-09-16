@@ -27,6 +27,7 @@ knitr::opts_chunk$set(dev = "ragg_png", dpi = 150)
 fmt_n   <- function(x, d = 0) formatC(round(x, d), big.mark = ",", format = "f", digits = d)
 fmt_pct <- function(x, d = 0) paste0(formatC(x, format = "f", digits = d), "%")
 gbp_m   <- function(x) sprintf("%s£%.1fm", ifelse(x < 0, "−", ""), abs(x) / 1e6)
+gbp_k   <- function(x) sprintf("%s£%sk", ifelse(x < 0, "−", ""), fmt_n(abs(x) / 1e3))
 
 inp <- readRDS(here::here("app", "data", "sim_inputs.rds"))
 cop <- bh_data("council_options.rds")
@@ -42,18 +43,20 @@ places <- sum(city$pan)
 kids   <- function(y) inp$demand$cohort[inp$demand$year == y]
 no30   <- acc$lsoa[acc$lsoa$places_30 < 1, ]
 
-INK <- "#1f3b57"; MUTED <- "#6b7785"; ACCENT <- "#2a78d6"
+INK <- "#1f3b57"; MUTED <- "#6b7785"; ACCENT <- "#2a78d6"; WARM <- "#d95f02"; BAD <- "#b2182b"
 theme_slide <- function(base = 16)
   ggplot2::theme_minimal(base) +
   ggplot2::theme(panel.grid.major.y = ggplot2::element_blank(),
                  panel.grid.minor = ggplot2::element_blank(),
                  plot.title = ggplot2::element_text(face = "bold", colour = INK),
                  plot.subtitle = ggplot2::element_text(colour = MUTED),
+                 plot.title.position = "plot",
                  axis.text = ggplot2::element_text(colour = INK))
 theme_map <- function(base = 14)
   ggplot2::theme_void(base) +
   ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", colour = INK),
                  plot.subtitle = ggplot2::element_text(colour = MUTED),
+                 plot.title.position = "plot",
                  legend.position = "right", strip.text = ggplot2::element_text(face = "bold", size = base))
 
 library(ggplot2)
@@ -65,13 +68,28 @@ catch <- bh_data("catchments_current.geojson") |> sf::st_transform(4326)
 sch   <- schools_sf(oi$schools) |> dplyr::filter(name != "Peacehaven Community School")
 rc    <- bh_data("reception_cohort.rds")
 sfin  <- bh_data("school_finance.rds")
-os    <- bh_data("open_scenarios.rds")
 brt   <- bh_data("brightopia.rds")
 mt    <- bh_data("model_terms.rds")
 fm    <- bh_data("flow_map.rds")
+p6x   <- bh_data("priority6_sweep.rds")
 elm_pt <- sf::st_as_sf(data.frame(e = oi$elm_grove$easting, n = oi$elm_grove$northing),
                        coords = c("e", "n"), crs = 27700) |> sf::st_transform(4326)
 CITY_X <- c(-0.25, -0.01); CITY_Y <- c(50.80, 50.885)
+
+# The simulator's own engine, run once for 2026, so the model slides show
+# the model as it is.
+source(here::here("app", "R", "model.R"))
+source(here::here("app", "R", "outcomes.R"))
+r26 <- run_sim(inp, year = 2026, rules = list(rule = "priorities"))
+d26 <- r26$flows
+ext <- inp$params$outside
+g26 <- unname(inp$params$gamma[d26$catchment]); g26[is.na(g26)] <- 0
+d26$util <- d26$Wj * d26$cij^(-inp$params$beta) *
+  exp(g26 * d26$in_catch + inp$params$delta * log(d26$Cj))
+is_ext <- d26$name %in% names(ext$W)
+d26$util[is_ext] <- unname(ext$W[d26$name[is_ext]]) * d26$km[is_ext]^(-ext$decay)
+catch_lab <- function(x) dplyr::coalesce(unname(CATCH_LABELS[CATCH_FROM_MODEL[x]]), x)
+sch_city <- inp$schools[inp$schools$city & !(inp$schools$hypothetical %in% TRUE), ]
 ```
 
 ## Before anything else
@@ -82,6 +100,7 @@ CITY_X <- c(-0.25, -0.01); CITY_Y <- c(50.80, 50.885)
 
 - Built from **published data only** --- no pupil-level records.
 - The full working, every source and every caveat: [The Brighton Secondary School System: a strategic view](https://adamdennett.github.io/bh-school-system/)
+- Every stage of the model, opened up for checking: [The model, stage by stage](https://adamdennett.github.io/bh-school-system/model-guide.html)
 - Try any option yourself: [the policy simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/)
 
 # The situation
@@ -109,8 +128,8 @@ CITY_X <- c(-0.25, -0.01); CITY_Y <- c(50.80, 50.885)
 ```{r fig-system-map}
 #| fig-width: 11
 #| fig-height: 6
-kids <- oi$zones |> dplyr::group_by(lsoa) |> dplyr::summarise(children = sum(Oi), .groups = "drop")
-kid_pts <- lsoa |> dplyr::inner_join(kids, by = c("lsoa21cd" = "lsoa")) |>
+kid_n <- oi$zones |> dplyr::group_by(lsoa) |> dplyr::summarise(children = sum(Oi), .groups = "drop")
+kid_pts <- lsoa |> dplyr::inner_join(kid_n, by = c("lsoa21cd" = "lsoa")) |>
   sf::st_point_on_surface() |> suppressWarnings()
 ggplot() +
   geom_sf(data = catch, aes(fill = catchment), alpha = 0.22, colour = "grey35", linewidth = 0.35) +
@@ -118,9 +137,9 @@ ggplot() +
   geom_sf(data = sch, shape = 21, fill = "white", colour = "black", size = 3.4, stroke = 1.1) +
   ggrepel::geom_text_repel(data = sch, aes(lon, lat, label = short_sch(name)), size = 4,
                            colour = INK, seed = 2, box.padding = 0.5, min.segment.length = 0) +
-  annotate("point", x = COMART$lon, y = COMART$lat, colour = "#b2182b", size = 3, shape = 4, stroke = 1.6) +
+  annotate("point", x = COMART$lon, y = COMART$lat, colour = BAD, size = 3, shape = 4, stroke = 1.6) +
   annotate("text", x = COMART$lon, y = COMART$lat - 0.004, label = "CoMArt (closed 2005)",
-           colour = "#b2182b", size = 3.4) +
+           colour = BAD, size = 3.4) +
   scale_fill_manual(values = CATCH_COLOURS, labels = CATCH_LABELS, name = "Catchment") +
   scale_size_area(max_size = 7, name = "Children per\nneighbourhood") +
   coord_sf(xlim = CITY_X, ylim = CITY_Y) +
@@ -136,16 +155,16 @@ ggplot() +
 #| fig-height: 5.4
 y7 <- rc$secondary_city; recp <- rc$reception_city; proj <- rc$projection
 ggplot() +
-  geom_ribbon(data = proj, aes(entry_year, ymin = lo, ymax = hi), fill = "#b2182b", alpha = 0.18) +
+  geom_ribbon(data = proj, aes(entry_year, ymin = lo, ymax = hi), fill = BAD, alpha = 0.18) +
   geom_line(data = recp, aes(year, rec_offers), colour = "#2c7fb8", linewidth = 1.1) +
   geom_line(data = y7, aes(year, y7_offers), colour = INK, linewidth = 1.3) +
-  geom_line(data = proj, aes(entry_year, central), colour = "#b2182b", linewidth = 1.2, linetype = "22") +
+  geom_line(data = proj, aes(entry_year, central), colour = BAD, linewidth = 1.2, linetype = "22") +
   annotate("text", x = min(recp$year) + 0.3, y = max(recp$rec_offers) * 1.03, label = "Reception offers",
            colour = "#2c7fb8", hjust = 0, size = 4.4) +
   annotate("text", x = min(y7$year) + 0.3, y = min(y7$y7_offers) * 0.93, label = "Year 7 offers",
            colour = INK, hjust = 0, size = 4.4, fontface = "bold") +
   annotate("text", x = max(proj$entry_year) - 0.2, y = max(proj$hi) * 1.06,
-           label = "Projected from children\nalready in primary school", colour = "#b2182b", hjust = 1, size = 4) +
+           label = "Projected from children\nalready in primary school", colour = BAD, hjust = 1, size = 4) +
   scale_y_continuous(labels = scales::label_comma(), limits = c(0, NA)) +
   labs(x = NULL, y = "Offers",
        title = "Reception offers turned down first; Year 7 follows seven years later",
@@ -231,23 +250,6 @@ ggplot(rp, aes(year, reserve_pct)) +
   theme_slide(12) + theme(axis.text.x = element_text(size = 7))
 ```
 
-## Small schools get more per pupil and still run deficits
-
-```{r fig-size-finance}
-#| fig-width: 11
-#| fig-height: 5.2
-sz <- os$size_fin |> dplyr::mutate(size_band = factor(size_band, levels = size_band))
-pa <- ggplot(sz, aes(size_band, income_pp)) + geom_col(fill = "#2166ac", width = 0.7) +
-  scale_y_continuous(labels = scales::label_dollar(prefix = "£", accuracy = 1)) +
-  labs(x = "Pupils on roll", y = NULL, subtitle = "Income per pupil") + theme_slide(14)
-pb <- ggplot(sz, aes(size_band, pct_deficit)) + geom_col(fill = "#b2182b", width = 0.7) +
-  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
-  labs(x = "Pupils on roll", y = NULL, subtitle = "Share of school-years in deficit") + theme_slide(14)
-(pa | pb) + plot_annotation(title = "A shrinking school is a financial problem, not just a smaller one",
-                            subtitle = "Every secondary school in England, by size",
-                            theme = theme_slide(15))
-```
-
 ## What the evidence says
 
 - **This is not mainly a school quality problem.** Most of what separates schools' headline results arrives with the children; the part a school can reach runs mostly through **attendance**.
@@ -261,28 +263,45 @@ pb <- ggplot(sz, aes(size_band, pct_deficit)) + geom_col(fill = "#b2182b", width
 ## From published data to options
 
 ```{mermaid}
+%%| fig-width: 12
 flowchart LR
-  A["Where children live<br/>census, ONS small areas"] --> M
-  B["Journey times<br/>routed walk and bus"] --> M
-  C["What families ask for<br/>16 years of factsheets,<br/>catchment preferences"] --> M
-  D["Catchment maps"] --> M
-  M["Spatial interaction model<br/>M0 to M5"] --> R["Admission numbers and<br/>the council's priorities"]
-  R --> S["Refused children<br/>re-offered by 2nd preference"]
-  S --> O["Intakes, journeys,<br/>money, social mix"]
-  O --> P["The simulator,<br/>and the options scored"]
+  d1["<b>Children</b><br/>census, postcodes,<br/>council projection"]
+  d2["<b>Journeys</b><br/>walk and bus,<br/>routed"]
+  d3["<b>What families ask for</b><br/>factsheets, catchment<br/>preference table"]
+  d4["<b>Places and rules</b><br/>admission numbers,<br/>council priorities"]
+  m["<b>Demand</b><br/>children shared by distance,<br/>attractiveness, catchment,<br/>competition<br/>⚙ year · map · site · appeal"]
+  c{"<b>Full?</b><br/>⚙ places"}
+  p["<b>Priorities</b> decide<br/>who is admitted<br/>⚙ rules"]
+  r["<b>Refused</b> re-offered:<br/>partner school,<br/>then 2nd preferences"]
+  f["<b>Intakes</b> →<br/>journeys<br/>disadvantaged mix<br/>budgets"]
+  s["<b>29 options<br/>× 3 years</b><br/>and the<br/>simulator"]
+  d1 & d2 & d3 --> m --> c
+  d4 --> c
+  c -- yes --> p --> r --> c
+  c -- no --> f --> s
+  classDef data fill:#f3f5f8,stroke:#9aa7b4,color:#1f3b57;
+  classDef ctl fill:#fdecd9,stroke:#d95f02,stroke-width:2px,color:#3d1c00;
+  classDef run fill:#eef4fb,stroke:#1f3b57,color:#102a43;
+  classDef out fill:#edf6ef,stroke:#2b7a4b,color:#102a43;
+  class d1,d2,d3,d4 data;
+  class m,c,p ctl;
+  class r run;
+  class f,s out;
 ```
+
+Orange steps are the ones the simulator lets you change (⚙). Moving any control re-runs everything from the start --- about a twentieth of a second. [Every step, opened up.](https://adamdennett.github.io/bh-school-system/model-guide.html#sec-algorithm)
 
 ## A spatial interaction model
 
 ::: {.columns}
 ::: {.column width="48%"}
-$$T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma\, \text{in catchment}}\, C_j^{\delta}$$
+$$T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma_h\, \text{in catchment}}\, C_j^{\delta}$$
 
 - $T_{ij}$ --- children from neighbourhood $i$ choosing school $j$
 - $O_i$ --- children living in $i$
 - $W_j$ --- how attractive school $j$ is
 - $c_{ij}$ --- walk-and-bus minutes; $\beta$ how fast demand falls with them
-- $\gamma$ --- how strongly families follow their catchment
+- $\gamma_h$ --- how strongly each catchment follows its map
 - $C_j$ --- rival schools nearby
 - $A_i$ --- makes every neighbourhood place all its children
 :::
@@ -309,7 +328,7 @@ ggplot(bt, aes(pan2026, modelled)) +
   geom_abline(slope = 1, intercept = 0, colour = "grey55", linetype = "31") +
   geom_point(aes(colour = fills), size = 4.5) +
   ggrepel::geom_text_repel(aes(label = short_sch(name)), size = 4.2, seed = 1, colour = INK) +
-  scale_colour_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b"),
+  scale_colour_manual(values = c(`TRUE` = "#2166ac", `FALSE` = BAD),
                       labels = c(`TRUE` = "Geography alone would fill it", `FALSE` = "It would not"), name = NULL) +
   scale_x_continuous(limits = c(0, NA)) + scale_y_continuous(limits = c(0, NA)) +
   labs(x = "Admission number, 2026", y = "Children drawn on geography alone",
@@ -334,8 +353,7 @@ p1 <- ggplot(lad, aes(model, mae_free)) +
   labs(x = NULL, y = "Average error, children per school",
        subtitle = "Error on the schools not rationing places") + theme_slide(13)
 gam <- tibble::tibble(catchment = names(mt$calibrated$gamma), gamma = unname(mt$calibrated$gamma)) |>
-  dplyr::mutate(label = unname(CATCH_LABELS[CATCH_FROM_MODEL[catchment]]),
-                label = forcats::fct_reorder(label, gamma))
+  dplyr::mutate(label = catch_lab(catchment), label = forcats::fct_reorder(label, gamma))
 p2 <- ggplot(gam, aes(gamma, label)) +
   geom_col(fill = ACCENT, width = 0.62) +
   geom_text(aes(label = sprintf("%.1f", gamma)), hjust = -0.25, size = 4.6, colour = INK) +
@@ -346,13 +364,84 @@ p2 <- ggplot(gam, aes(gamma, label)) +
                             theme = theme_slide(15))
 ```
 
+## Some schools have company; Longhill has none
+
+```{r fig-cj}
+#| fig-width: 11.5
+#| fig-height: 5.8
+W_run <- setNames(sch_city$W, sch_city$name)
+xy <- sch_city |> dplyr::select(name, easting, northing)
+pairs_km <- tidyr::expand_grid(name = xy$name, k = xy$name) |>
+  dplyr::filter(name != k) |>
+  dplyr::left_join(xy, by = "name") |>
+  dplyr::left_join(xy |> dplyr::rename(k = name, ke = easting, kn = northing), by = "k") |>
+  dplyr::mutate(km = pmax(sqrt((easting - ke)^2 + (northing - kn)^2) / 1000, 0.1),
+                contrib = unname(W_run[k]) * km^-inp$params$sigma,
+                short = short_sch(name))
+cn <- compete_now(sch_city, W_run, inp$params$sigma)
+cj <- tibble::tibble(name = names(cn), C = unname(cn)) |> dplyr::mutate(index = 100 * C / mean(C))
+pts <- sch_city |> dplyr::select(name, easting, northing) |>
+  sf::st_as_sf(coords = c("easting", "northing"), crs = 27700) |> sf::st_transform(4326)
+xy_ll <- sf::st_coordinates(pts)
+pts <- pts |> dplyr::mutate(short = short_sch(name), lon = xy_ll[, 1], lat = xy_ll[, 2]) |>
+  dplyr::left_join(cj, by = "name")
+ll <- sf::st_drop_geometry(pts) |> dplyr::select(name, lon, lat)
+segs <- pairs_km |> dplyr::filter(short %in% c("Dorothy Stringer", "Longhill")) |>
+  dplyr::left_join(ll, by = "name") |>
+  dplyr::left_join(ll |> dplyr::rename(k = name, klon = lon, klat = lat), by = "k")
+ggplot() +
+  geom_sf(data = catch, fill = "grey95", colour = "white", linewidth = 0.5) +
+  geom_segment(data = segs, aes(x = lon, y = lat, xend = klon, yend = klat,
+                                linewidth = contrib, colour = short), alpha = 0.5) +
+  geom_sf(data = pts, aes(size = C), shape = 21, fill = "white", colour = "black", stroke = 1) +
+  ggrepel::geom_text_repel(data = pts, aes(lon, lat, label = sprintf("%s  %.0f", short, index)),
+                           size = 4, colour = INK, seed = 11, box.padding = 0.5,
+                           segment.colour = "grey60", max.overlaps = Inf) +
+  scale_linewidth_continuous(range = c(0.3, 4), guide = "none") +
+  scale_size_continuous(range = c(2.5, 11), guide = "none") +
+  scale_colour_manual(values = c(`Dorothy Stringer` = WARM, Longhill = INK), name = NULL,
+                      labels = function(x) paste("pull of each rival on", x)) +
+  coord_sf(xlim = CITY_X, ylim = CITY_Y) +
+  labs(title = sprintf("Stringer and Varndean are %.0f metres apart; Longhill's nearest rival is %.1f km away",
+                       1000 * min(pairs_km$km), min(pairs_km$km[pairs_km$short == "Longhill"])),
+       subtitle = "Circle size and number: how much company each school has (city average = 100). Company helps a school slightly.") +
+  theme_map(14) + theme(legend.position = "top")
+```
+
+## What each neighbourhood has within reach
+
+```{r fig-pull}
+#| fig-width: 11.5
+#| fig-height: 5.8
+pull_z <- d26 |> dplyr::filter(pop == "either") |>
+  dplyr::group_by(zone) |>
+  dplyr::summarise(pull = sum(util), Oi = dplyr::first(Oi_pop), .groups = "drop") |>
+  dplyr::mutate(index = 100 * pull / stats::median(pull))
+pull_map <- lsoa |>
+  dplyr::inner_join(pull_z |>
+                      dplyr::inner_join(oi$zones |> dplyr::select(zone, lsoa), by = "zone") |>
+                      dplyr::group_by(lsoa) |>
+                      dplyr::summarise(index = stats::weighted.mean(index, Oi), .groups = "drop"),
+                    by = c("lsoa21cd" = "lsoa"))
+ggplot() +
+  geom_sf(data = pull_map, aes(fill = index), colour = NA) +
+  geom_sf(data = catch, fill = NA, colour = "white", linewidth = 0.35) +
+  geom_sf(data = sch, shape = 21, fill = "white", colour = "black", size = 2.8, stroke = 1) +
+  scale_fill_viridis_c(trans = "log10", breaks = c(30, 100, 300, 1000),
+                       name = "Pull within reach\n(median = 100)") +
+  coord_sf(xlim = CITY_X, ylim = CITY_Y) +
+  labs(title = "Between Stringer and Varndean families have two schools and a catchment bonus on both",
+       subtitle = "The model shares each neighbourhood's children in proportion to this total. Log scale: the range is more than a hundredfold.") +
+  theme_map(14)
+```
+
 ## Longhill's modelled catchment, as the model gets more realistic
 
 ```{r fig-flows}
 #| fig-width: 12.5
 #| fig-height: 5
 FM_LABELS <- c(M0 = "Distance only", M1 = "With what families ask for", M5 = "Full model")
-FM_COL <- c(Bus = "#2166ac", Walk = "#d95f02")
+FM_COL <- c(Bus = "#2166ac", Walk = WARM)
 fl <- fm$net |> dplyr::filter(name == "Longhill High School") |>
   dplyr::mutate(model = factor(model, names(FM_LABELS), FM_LABELS))
 fl_bb <- sf::st_bbox(fl)
@@ -371,6 +460,123 @@ ggplot() +
   labs(title = "Routed over the real network, Longhill's draw shrinks back towards its own catchment",
        subtitle = "Line width is modelled children on each street or bus segment. White dot: Longhill.") +
   theme_map(13) + theme(legend.position = "top")
+```
+
+## When a school is full
+
+```{r fig-ceiling}
+#| fig-width: 11.5
+#| fig-height: 5.6
+by_sch <- d26 |>
+  dplyr::group_by(name) |>
+  dplyr::summarise(wanted = sum(wanted), offered = sum(flow), .groups = "drop") |>
+  dplyr::inner_join(sch_city |> dplyr::select(name, pan), by = "name") |>
+  dplyr::mutate(short = forcats::fct_reorder(short_sch(name), pan))
+excess <- sum(pmax(by_sch$wanted - by_sch$pan, 0))
+cl <- by_sch |>
+  tidyr::pivot_longer(c(wanted, offered), names_to = "what", values_to = "n") |>
+  dplyr::mutate(what = factor(what, c("wanted", "offered"),
+                              c("Wanted", "Offered once the ceiling applies")))
+ggplot(cl, aes(n, short)) +
+  geom_segment(data = by_sch, aes(x = 0, xend = pan, y = short, yend = short),
+               colour = "grey86", linewidth = 9) +
+  geom_point(aes(colour = what, shape = what), size = 4.2) +
+  geom_text(data = by_sch, aes(x = pmax(pan, wanted), label = sprintf("   %d places", pan)),
+            hjust = 0, size = 4, colour = MUTED) +
+  scale_colour_manual(values = c(WARM, INK), name = NULL) +
+  scale_shape_manual(values = c(17, 16), name = NULL) +
+  scale_x_continuous(expand = expansion(mult = c(0.01, 0.2))) +
+  labs(x = "Children, 2026", y = NULL,
+       title = sprintf("%s children want a place that is not there", fmt_n(excess)),
+       subtitle = "Stringer and Blatchington Mill are wanted by fewer than they hold, and fill with children refused elsewhere") +
+  theme_slide(15) + theme(legend.position = "top")
+```
+
+## Where the refused children go
+
+```{r fig-overflow}
+#| fig-width: 12
+#| fig-height: 5.6
+# The engine's own cascade, re-run with bookkeeping (model guide, section 10).
+rl <- inp$rules
+kern <- inp$params$overflow
+cap_ov <- setNames(as.numeric(inp$schools$pan), inp$schools$name)
+cap_all <- c(cap_ov[!is.na(cap_ov)], setNames(rep(1e6, length(ext$W)), names(ext$W)))
+dsg <- inp$designs[["Current catchments"]]
+o_pop <- tapply(d26$Oi_pop, d26$orig, function(x) x[1])
+fsm_z <- setNames(inp$zones$fsm, inp$zones$zone)
+share_o <- setNames(unname(fsm_z[sub("#.*$", "", names(o_pop))]), names(o_pop))
+grp <- dsg$school[inp$schools$name[inp$schools$city & !inp$schools$faith]]
+single <- names(table(grp[!is.na(grp)]))[table(grp[!is.na(grp)]) == 1]
+in_c <- d26$in_catch == 1
+s6 <- unname(dsg$zone[d26$zone]) %in% single & !in_c
+com <- d26$name %in% rl$community
+st <- overflow_setup(d26$wanted, d26$orig, d26$name, d26$catchment, d26$pop, kern,
+                     partner_map(inp$params$exclusive))
+attribute <- function(refused, room) {
+  to_p <- st$pr; to_p[st$pr] <- room[st$p_idx[st$pr]]
+  part <- tibble::tibble(from = d26$name[to_p], to = d26$name[st$p_idx[to_p]],
+                         n = refused[to_p], route = "The other school of the pair")
+  rest <- refused; rest[to_p] <- 0
+  w <- st$bw * room; ws <- rowsum(w, st$oid)[st$oid, 1]
+  w2 <- st$u * room; ws2 <- rowsum(w2, st$oid)[st$oid, 1]
+  sh <- ifelse(ws > 0, w / ws, ifelse(ws2 > 0, w2 / ws2, 0))
+  kern_part <- tibble::tibble(oid = st$oid, from = d26$name, n = rest) |> dplyr::filter(n > 0) |>
+    dplyr::inner_join(tibble::tibble(oid = st$oid, to = d26$name, s = sh) |> dplyr::filter(s > 0),
+                      by = "oid", relationship = "many-to-many") |>
+    dplyr::transmute(from, to, n = n * s, route = "Where their catchment's second preferences go")
+  dplyr::bind_rows(part, kern_part)
+}
+ff <- d26$wanted * unname(share_o[d26$orig]); fn <- d26$wanted - ff
+moves <- list()
+for (it in 1:500) {
+  a <- tier_accept(ff, fn, d26$name, cap_all, cap_all, in_c, s6, com, rl$p6_share, rl$fsm_cap_share)
+  Hf <- ff * a$f; Hn <- fn * a$n; rf <- ff - Hf; rn <- fn - Hn
+  if (sum(rf + rn) <= 1e-6) break
+  room <- overflow_room(Hf + Hn, d26$name, cap_all)
+  if (!any(room)) break
+  moves[[it]] <- attribute(rf + rn, room)
+  ff <- Hf + overflow_add(rf, room, st); fn <- Hn + overflow_add(rn, room, st)
+}
+mv_all <- dplyr::bind_rows(moves)
+mv <- mv_all |>
+  dplyr::mutate(row = ifelse(route == "The other school of the pair",
+                             paste(short_sch(from), "→ its pair"),
+                             paste(short_sch(from), "→ second preferences"))) |>
+  dplyr::group_by(row, to = short_sch(to)) |>
+  dplyr::summarise(n = sum(n), .groups = "drop") |>
+  dplyr::filter(n > 0.5) |>
+  dplyr::mutate(row = forcats::fct_reorder(row, n, sum), to = forcats::fct_reorder(to, n, sum))
+ggplot(mv, aes(n, row, fill = to)) +
+  geom_col(width = 0.7, colour = "white", linewidth = 0.4) +
+  scale_fill_brewer(palette = "Set2", name = "Offered instead") +
+  labs(x = "Children, 2026", y = "Refused at",
+       title = sprintf("%.0f children are re-offered somewhere else, and the schools with room take them",
+                       sum(mv_all$n)),
+       subtitle = "First the other school of a pair, then wherever their catchment's second preferences point") +
+  theme_slide(15)
+```
+
+## Faith schools draw from the whole city
+
+```{r fig-faith}
+#| fig-width: 11.5
+#| fig-height: 5.2
+faith_n <- sch_city$name[sch_city$faith]
+mix <- d26 |>
+  dplyr::filter(name %in% c(faith_n, "Varndean School", "Longhill High School")) |>
+  dplyr::group_by(name, catchment) |> dplyr::summarise(n = sum(flow), .groups = "drop") |>
+  dplyr::group_by(name) |> dplyr::mutate(share = n / sum(n)) |> dplyr::ungroup() |>
+  dplyr::mutate(school = factor(short_sch(name), c("Cardinal Newman", "King's", "Varndean", "Longhill")),
+                Catchment = catch_lab(catchment))
+ggplot(mix, aes(share, forcats::fct_rev(school), fill = Catchment)) +
+  geom_col(width = 0.7, colour = "white", linewidth = 0.4) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  scale_fill_brewer(palette = "Set2", name = "Where the children live") +
+  labs(x = NULL, y = NULL,
+       title = "No catchment: their pull rests on attractiveness and distance alone",
+       subtitle = "Modelled intake by home catchment, 2026. Religion is in no published data, so it sits inside attractiveness.") +
+  theme_slide(15)
 ```
 
 # Does the model reproduce what we know?
@@ -419,25 +625,79 @@ ggplot(cells, aes(obs_share, modelled)) +
   theme_slide(14)
 ```
 
+## It reproduces who the council admitted, and why
+
+```{r fig-tiers}
+#| fig-width: 12
+#| fig-height: 5.6
+TIERS <- c("Free school meals (4, 5)", "Single-school catchment (6)",
+           "In catchment, incl. siblings (3, 7)", "Everyone else (8)")
+t_obs <- rl$outturn_2026 |>
+  dplyr::mutate(tier = dplyr::case_when(priority %in% 4:5 ~ TIERS[1], priority == 6 ~ TIERS[2],
+                                        priority %in% c(3, 7) ~ TIERS[3], priority == 8 ~ TIERS[4])) |>
+  dplyr::filter(!is.na(tier)) |>
+  dplyr::group_by(School = short_sch(school), tier) |>
+  dplyr::summarise(Council = sum(offers), .groups = "drop")
+t_mod <- r26$tiers |>
+  dplyr::filter(name %in% rl$rationing) |>
+  dplyr::transmute(School = short_sch(name), p45 = p45_in + p45_out, p6, p7, p8) |>
+  tidyr::pivot_longer(-School, names_to = "k", values_to = "Model") |>
+  dplyr::mutate(tier = TIERS[match(k, c("p45", "p6", "p7", "p8"))])
+t_obs |>
+  dplyr::inner_join(t_mod, by = c("School", "tier")) |>
+  tidyr::pivot_longer(c(Council, Model), names_to = "src", values_to = "n") |>
+  dplyr::mutate(tier = factor(tier, rev(TIERS))) |>
+  ggplot(aes(n, tier, fill = src)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+  facet_wrap(~ School, nrow = 1) +
+  scale_fill_manual(values = c(Council = INK, Model = WARM), name = NULL) +
+  labs(x = "Offers, September 2026", y = NULL,
+       title = "Close on catchment and priority 6; too generous on free school meals at Varndean",
+       subtitle = "The three schools that rationed places. The model cannot see siblings, who are admitted before free-school-meal children.") +
+  theme_slide(13) + theme(legend.position = "top", strip.text = element_text(face = "bold", size = 14))
+```
+
+## Counting disadvantage by neighbourhood got the schools in the wrong order
+
+```{r fig-neigh}
+#| fig-width: 11.5
+#| fig-height: 5.6
+inp$params$dis$fit |>
+  dplyr::transmute(short = short_sch(name), Neighbourhood = neighbourhood, School = target) |>
+  tidyr::pivot_longer(-short, names_to = "what", values_to = "share") |>
+  dplyr::mutate(short = forcats::fct_reorder(short, share, max),
+                what = factor(what, c("Neighbourhood", "School"),
+                              c("By the neighbourhoods its children come from",
+                                "What the school actually has (Year 7 offers or DfE)"))) |>
+  ggplot(aes(share, short)) +
+  geom_line(aes(group = short), colour = "grey75", linewidth = 1.1) +
+  geom_point(aes(colour = what), size = 4.2) +
+  scale_colour_manual(values = c(WARM, INK), name = NULL) +
+  scale_x_continuous(labels = scales::label_percent()) +
+  labs(x = "Disadvantaged share of the intake", y = NULL,
+       title = "In a mixed neighbourhood, better-off and poorer families choose different schools",
+       subtitle = "So the model now places disadvantaged children school by school, fitted to what each school actually admits") +
+  theme_slide(15) + theme(legend.position = "top", legend.direction = "vertical",
+                          legend.justification = "left")
+```
+
 # A system that moves
 
 ## The same system, year by year
 
 ```{r dyn-runs}
 #| include: false
-source(here::here("app", "R", "model.R"))
-source(here::here("app", "R", "outcomes.R"))
 city_s <- inp$schools |> dplyr::filter(city)
 YRS <- 2026:2035
 p_base <- setNames(city_s$pan, city_s$name)
 run_year <- function(y, pans = p_base)
   run_sim(inp, pans = pans, year = y, rules = list(rule = "priorities"))
-dyn <- purrr::map_dfr(YRS, function(y) {
-  run_year(y)$schools |> dplyr::filter(city) |> dplyr::transmute(year = y, name, intake, pan)
-})
+runs_y <- lapply(YRS, run_year)
+dyn <- purrr::map_dfr(seq_along(YRS), function(k)
+  runs_y[[k]]$schools |> dplyr::filter(city) |> dplyr::transmute(year = YRS[k], name, intake, pan))
 lh_of <- function(r) r$schools$intake[r$schools$name == "Longhill High School"]
-lever <- purrr::map_dfr(YRS, function(y) {
-  b <- lh_of(run_year(y))
+lever <- purrr::map_dfr(seq_along(YRS), function(k) {
+  y <- YRS[k]; b <- lh_of(runs_y[[k]])
   pc <- p_base; pc[c("Dorothy Stringer School", "Varndean School", "Blatchington Mill School")] <- c(300, 270, 300)
   pf <- p_base; pf[c("Cardinal Newman Catholic School", "King's School")] <- c(270, 150)
   tibble::tibble(year = y,
@@ -445,6 +705,8 @@ lever <- purrr::map_dfr(YRS, function(y) {
                  `Cardinal Newman 270 and King's 150` = lh_of(run_year(y, pf)) - b)
 })
 empty_by_year <- dyn |> dplyr::group_by(year) |> dplyr::summarise(empty = sum(pmax(pan - intake, 0)), .groups = "drop")
+money_y <- purrr::map_dfr(seq_along(YRS), function(k)
+  outcomes(inp, runs_y[[k]])$by_school |> dplyr::transmute(year = YRS[k], short, gap, gap_pct))
 ```
 
 ```{r fig-dynamic}
@@ -456,7 +718,7 @@ ggplot(dd, aes(year, intake, group = short)) +
   ggrepel::geom_text_repel(data = dd |> dplyr::filter(year == max(YRS)),
                            aes(label = short, colour = lh), hjust = 0, nudge_x = 0.3, direction = "y",
                            size = 4, segment.colour = "grey80", show.legend = FALSE) +
-  scale_colour_manual(values = c(`FALSE` = "grey55", `TRUE` = "#b2182b"), guide = "none") +
+  scale_colour_manual(values = c(`FALSE` = "grey55", `TRUE` = BAD), guide = "none") +
   scale_linewidth_manual(values = c(`FALSE` = 0.8, `TRUE` = 1.8), guide = "none") +
   scale_x_continuous(breaks = YRS, limits = c(2026, 2037.5)) +
   scale_y_continuous(limits = c(0, NA)) +
@@ -474,7 +736,7 @@ ggplot(dd, aes(year, intake, group = short)) +
 #| fig-width: 11
 #| fig-height: 5.6
 lv <- lever |> tidyr::pivot_longer(-year, names_to = "lever", values_to = "gain")
-LV_COL <- c("Stringer, Varndean and Blatchington Mill trimmed" = "#d95f02",
+LV_COL <- c("Stringer, Varndean and Blatchington Mill trimmed" = WARM,
             "Cardinal Newman 270 and King's 150" = INK)
 ggplot(lv, aes(year, gain, colour = lever)) +
   geom_hline(yintercept = 0, colour = "grey60") +
@@ -489,96 +751,172 @@ ggplot(lv, aes(year, gain, colour = lever)) +
   theme_slide(15)
 ```
 
+## What the falling cohort does to budgets
+
+```{r fig-budgets}
+#| fig-width: 12
+#| fig-height: 5.6
+mb <- money_y |>
+  dplyr::filter(year %in% c(2026, 2035)) |>
+  dplyr::mutate(year = factor(year), short = forcats::fct_reorder(short, gap_pct, min))
+n_def <- function(y) sum(money_y$gap[money_y$year == y] < 0)
+ggplot(mb, aes(gap_pct, short)) +
+  geom_vline(xintercept = 0, colour = "grey45") +
+  geom_line(aes(group = short), colour = "grey78", linewidth = 1.4) +
+  geom_point(aes(colour = year), size = 4.2) +
+  scale_colour_manual(values = c(`2026` = INK, `2035` = WARM), name = "Intake year") +
+  scale_x_continuous(labels = scales::label_percent()) +
+  labs(x = "Annual surplus or deficit, share of income", y = NULL,
+       title = sprintf("%d schools in deficit on the 2026 intake, %d on the 2035 one", n_def(2026), n_def(2035)),
+       subtitle = "Roll at five times the intake; 75% of lost funding cut from costs. One dot: the school fills in both years.") +
+  theme_slide(15) + theme(legend.position = "top")
+```
+
 # Complex interactions, surprising results
 
-## Things the model shows that intuition would not
+## Pull one lever, and the effect turns up somewhere else
 
 ```{r fig-surprises}
 #| fig-width: 12.5
-#| fig-height: 6
-p6s <- bh_data("priority6_sweep.rds")$sweep
-g_p6 <- function(fsm, y = 2026, p = 5) p6s$gorard[p6s$fsm == fsm & p6s$year == y & p6s$p6 == p]
-sur <- tibble::tribble(
-  ~panel, ~stage, ~value,
-  "Cut Longhill's admission number\n210 → 150\nLonghill's intake, 2030", "Before", co("today", "lh_intake"),
-  "Cut Longhill's admission number\n210 → 150\nLonghill's intake, 2030", "After",  co("lh150", "lh_intake"),
-  "Cut only the community schools\nto 1,920 places by 2035\nTheir annual balance, 2035 (£m)", "Before", co("today", "comm_gap", 2035) / 1e6,
-  "Cut only the community schools\nto 1,920 places by 2035\nTheir annual balance, 2035 (£m)", "After",  co("shrink", "comm_gap", 2035) / 1e6,
-  "Switch on the free school\nmeals priority\nSegregation index, 2026", "Before", g_p6(FALSE),
-  "Switch on the free school\nmeals priority\nSegregation index, 2026", "After",  g_p6(TRUE),
-  "Remove every oversubscription\npriority\nChildren displaced, 2026", "Before", co("today", "displaced", 2026),
-  "Remove every oversubscription\npriority\nChildren displaced, 2026", "After",  co("equal", "displaced", 2026)) |>
-  dplyr::mutate(stage = factor(stage, c("Before", "After")),
-                label = ifelse(abs(value) < 1, sprintf("%.3f", value), sprintf("%.1f", value)))
-ggplot(sur, aes(stage, value, fill = stage)) +
-  geom_col(width = 0.62) +
-  geom_hline(yintercept = 0, colour = "grey50") +
-  geom_text(aes(label = label, vjust = ifelse(value < 0, 1.4, -0.4)), size = 4.4, colour = INK) +
-  facet_wrap(~ panel, nrow = 1, scales = "free_y") +
-  scale_fill_manual(values = c(Before = "#b9c2cc", After = ACCENT), guide = "none") +
-  scale_y_continuous(expand = expansion(mult = c(0.15, 0.2))) +
-  labs(x = NULL, y = NULL,
-       title = "Pull one lever and the effect turns up somewhere else",
-       subtitle = str_wrap(paste("A smaller number does not bring children to Longhill; cutting only the schools the council runs sends children to the ones it does not;",
-                                 "a priority meant to widen access slightly concentrates disadvantage; and a fairer-looking lottery displaces three times as many children."), 130)) +
-  theme_slide(12) + theme(strip.text = element_text(size = 11, face = "bold"))
+#| fig-height: 6.2
+mini <- function(df, title, sub, money = FALSE) {
+  df <- df |> dplyr::mutate(stage = factor(stage, stage),
+                            lab = if (money) gbp_m(value) else fmt_n(value))
+  ggplot(df, aes(stage, value, fill = hi)) +
+    geom_col(width = 0.6) +
+    geom_hline(yintercept = 0, colour = "grey50") +
+    geom_text(aes(label = lab, vjust = ifelse(value < 0, 1.5, -0.5)), size = 5, colour = INK) +
+    scale_fill_manual(values = c(`FALSE` = "#b9c2cc", `TRUE` = ACCENT), guide = "none") +
+    scale_y_continuous(expand = expansion(mult = 0.22),
+                       labels = if (money) function(x) gbp_m(x) else waiver()) +
+    labs(x = NULL, y = NULL, title = title, subtitle = sub) +
+    theme_slide(13) + theme(plot.title = element_text(size = 14.5),
+                            plot.subtitle = element_text(size = 11.5))
+}
+s1 <- mini(tibble::tibble(stage = c("210 places", "150 places"),
+                          value = c(co("today", "lh_intake"), co("lh150", "lh_intake")), hi = c(FALSE, TRUE)),
+           "Cut Longhill's places: its intake does not move",
+           "Longhill's intake, 2030. It was never full.")
+s2 <- mini(tibble::tibble(stage = c("Today", "Only the council's\nschools cut", "Every school cut"),
+                          value = c(co("today", "comm_gap", 2035), co("shrink", "comm_gap", 2035),
+                                    co("shrink_all", "comm_gap", 2035)),
+                          hi = c(FALSE, TRUE, TRUE)),
+           "Cut only the council's schools: their budgets get worse",
+           "Community schools' combined balance, 2035. Children move to the others.", money = TRUE)
+s3 <- mini(tibble::tibble(stage = c("Today", "Central schools\ntrimmed"),
+                          value = c(co("today", "displaced"), co("central", "displaced")), hi = c(FALSE, TRUE)),
+           "Trim the central schools: twice as many displaced",
+           sprintf("Children refused their first choice, 2030. Longhill gains %.1f.",
+                   co("central", "lh_intake") - co("today", "lh_intake")))
+s4 <- mini(tibble::tibble(stage = c("Council\npriorities", "Equal chance\nfor all"),
+                          value = c(co("today", "displaced", 2026), co("equal", "displaced", 2026)),
+                          hi = c(FALSE, TRUE)),
+           sprintf("Drop the priorities: %.0f times as many displaced",
+                   co("equal", "displaced", 2026) / co("today", "displaced", 2026)),
+           "Children refused their first choice, 2026. Catchment families lose their edge.")
+(s1 | s2) / (s3 | s4)
 ```
 
-## Open admissions and integration: a finding that did not survive
+## Open admissions barely changes segregation
 
-```{r fig-p6-reversal}
+```{r fig-p6}
 #| fig-width: 12
-#| fig-height: 5.4
-p6l <- p6s |> dplyr::filter(fsm) |> dplyr::mutate(yr = factor(year))
+#| fig-height: 5.6
+p6l <- p6x$sweep |> dplyr::filter(fsm, p6 <= 25) |> dplyr::mutate(yr = factor(year))
+g5 <- p6l$gorard[p6l$year == 2026 & p6l$p6 == 5]
 pa <- ggplot(p6l, aes(p6, gorard, colour = yr)) +
-  geom_line(linewidth = 1.4) + geom_point(size = 2.4) +
-  scale_colour_manual(values = c(`2026` = INK, `2030` = "#d95f02"), name = NULL) +
-  scale_y_continuous(limits = c(0, 0.15)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = g5 - 0.01, ymax = g5 + 0.01,
+           fill = "grey80", alpha = 0.45) +
+  annotate("text", x = 12.5, y = g5 - 0.0085, label = "within measurement noise",
+           size = 4.2, colour = MUTED) +
+  geom_vline(xintercept = c(5, 20), linetype = "22", colour = "grey55") +
+  annotate("text", x = c(5, 20), y = 0.093, label = c("council's rule", "first proposal"),
+           hjust = -0.08, size = 4, colour = MUTED) +
+  geom_line(linewidth = 1.5) + geom_point(size = 2.6) +
+  scale_colour_manual(values = c(`2026` = INK, `2030` = WARM), name = NULL) +
   scale_x_continuous(labels = function(x) paste0(x, "%")) +
-  labs(x = "Share of community-school places for single-school catchments", y = "Segregation index",
-       subtitle = "More priority-6 places: segregation unchanged") +
-  theme_slide(13) + theme(legend.position = "top")
-wn <- bh_data("priority6_sweep.rds")$winners |>
-  tidyr::pivot_longer(c(dep_all, dep_p6), names_to = "who", values_to = "share") |>
-  dplyr::mutate(who = ifelse(who == "dep_all", "All the catchment's children", "Those who win a priority-6 place"))
-pb <- ggplot(wn, aes(share, catchment)) +
-  geom_line(aes(group = catchment), colour = "grey75", linewidth = 1.2) +
-  geom_point(aes(colour = who), size = 4) +
-  scale_colour_manual(values = c("All the catchment's children" = "#b9c2cc", "Those who win a priority-6 place" = ACCENT), name = NULL) +
+  coord_cartesian(ylim = c(0.09, 0.14)) +
+  labs(x = "Places open to single-school catchments (priority 6)", y = "Segregation index",
+       subtitle = "More open places: the index hardly moves") +
+  theme_slide(14) + theme(legend.position = "top")
+wn <- p6x$winners |>
+  dplyr::mutate(dir = ifelse(dep_p6 > dep_all, "Used by more disadvantaged families",
+                             "Used by less disadvantaged families"),
+                label = catch_lab(catchment)) |>
+  tidyr::pivot_longer(c(dep_all, dep_p6), names_to = "who", values_to = "share")
+pb <- ggplot(wn, aes(share, label)) +
+  geom_line(aes(group = label, colour = dir), linewidth = 3, alpha = 0.5) +
+  geom_point(aes(shape = who), size = 4.5, colour = INK) +
+  scale_colour_manual(values = c("Used by more disadvantaged families" = ACCENT,
+                                 "Used by less disadvantaged families" = WARM), guide = "none") +
+  scale_shape_manual(values = c(dep_all = 1, dep_p6 = 16),
+                     labels = c(dep_all = "Whole catchment",
+                                dep_p6 = "Priority-6 takers"), name = NULL) +
   scale_x_continuous(labels = scales::label_percent()) +
   labs(x = "Share disadvantaged", y = NULL,
-       subtitle = "Who uses it depends on the catchment") +
-  theme_slide(13) + theme(legend.position = "top")
-(pa | pb) + plot_annotation(
-  title = "An earlier version found open admissions made intakes more segregated",
-  subtitle = "Measured on disadvantaged pupils fitted to the council's Year 7 offers, that finding reverses to no effect",
+       subtitle = "Orange: taken by better-off families. Blue: by poorer ones.") +
+  theme_slide(14) + theme(legend.position = "top", legend.justification = "left")
+(pa | pb) + plot_layout(widths = c(1, 1.1)) + plot_annotation(
+  title = "Opening places to single-school catchments neither mixes nor separates intakes",
+  subtitle = "Who takes the places differs by catchment, and the effects cancel. An earlier version of the model said otherwise;\nthat finding did not survive a better measure of disadvantage.",
   theme = theme_slide(15))
 ```
 
-## Checked, and corrected, along the way
+## Measuring disadvantage better changed one answer
 
-The segregation results changed as the measure was tested against published figures.
-
-```{r tbl-measures}
-whx$measures |>
+```{r fig-measures}
+#| fig-width: 11.5
+#| fig-height: 5.4
+MEAS <- c("By neighbourhood" = "1  Counted by neighbourhood",
+          "Whole-school shares, fitted on today's map" = "2  DfE whole-school shares, today's map",
+          "Whole-school shares, fitted before the policy change" = "3  DfE whole-school shares, before the 2024 change",
+          "Year 7 offers, 2026 (the model's measure)" = "4  Year 7 offers, 2026 (used now)")
+dm <- whx$measures |>
   dplyr::filter(year == 2026) |>
   dplyr::select(measure, map, gorard) |>
   tidyr::pivot_wider(names_from = map, values_from = gorard) |>
-  dplyr::transmute(`How disadvantaged pupils were counted` = measure,
-                   `Index today` = sprintf("%.3f", today),
-                   `Whitehawk back to Longhill` = sprintf("%.3f", whitehawk)) |>
-  knitr::kable(align = "lrr")
+  dplyr::mutate(delta = whitehawk - today,
+                label = factor(unname(MEAS[measure]), rev(unname(MEAS))),
+                dir = ifelse(delta > 0, "more segregated", "less segregated"))
+ggplot(dm, aes(delta, label, fill = dir)) +
+  annotate("rect", xmin = -0.01, xmax = 0.01, ymin = -Inf, ymax = Inf, fill = "grey88") +
+  geom_col(width = 0.6) +
+  geom_vline(xintercept = 0, colour = "grey40") +
+  geom_text(aes(label = sprintf("%+.3f", delta), hjust = ifelse(delta > 0, -0.2, 1.2)),
+            size = 5, colour = INK) +
+  scale_fill_manual(values = c("more segregated" = BAD, "less segregated" = ACCENT), name = NULL) +
+  scale_x_continuous(expand = expansion(mult = 0.25)) +
+  labs(x = "Change in the segregation index, 2026",
+       y = "How disadvantage was counted",
+       title = "The Whitehawk redraw's effect on segregation flipped as the measure improved",
+       subtitle = "Grey band: within measurement noise. The case for the redraw rests on journeys and Longhill's intake.") +
+  theme_slide(15) + theme(legend.position = "top")
 ```
-
-- Scored **by neighbourhood**, the schools came out in the wrong order against DfE's published shares.
-- The published shares **lag the policy** by up to five years, so the model is now fitted to the **first Year 7 offers** under today's map and rules (council factsheet, 2026).
-- The Whitehawk redraw's effect on segregation turned out **too small to call**. Its case rests on journeys and Longhill, not on segregation.
 
 # The options
 
-## Three priorities, scored at once
+## How to read an option
 
-```{r tbl-options}
+::: {.columns}
+::: {.column width="50%"}
+**Compare in the same year.** The cohort falls by a fifth by 2035. Read an option against doing nothing *in that year*.
+
+**A cap that is never reached does nothing.** Cutting Longhill to 150 changes only the count of empty places.
+:::
+::: {.column width="50%"}
+**Small segregation differences are not findings.** Anything under about 0.01 is within what re-measuring moved it.
+
+**Some results lean on held assumptions.** Journeys are measured directly; segregation after a move assumes a school keeps its draw on disadvantaged families at a new site.
+:::
+:::
+
+29 options, each run for 2026, 2030 and 2035 on every measure at once. [How they were chosen, and seven rules for reading them.](https://adamdennett.github.io/bh-school-system/model-guide.html#sec-scenarios)
+
+## Eight options, four priorities
+
+```{r fig-options}
+#| fig-width: 12.5
+#| fig-height: 5.8
 show <- c("today", "whitehawk", "central", "elm", "comart", "package_e", "package_f", "close_lh")
 short <- c(today = "Today", whitehawk = "Whitehawk back to Longhill",
            central = "Longhill 150, central schools trimmed",
@@ -587,20 +925,34 @@ short <- c(today = "Today", whitehawk = "Whitehawk back to Longhill",
            package_e = "Package without a move",
            package_f = "Elm Grove package",
            close_lh = "Longhill closed")
-cop$runs |>
+MEAS_O <- c(lh_intake = "Longhill's intake", dep_gap = "Deprived children's extra journey (min)",
+            gorard = "Segregation index", displaced = "Children displaced",
+            comm_gap = "Community schools' balance (£m)")
+ob <- cop$runs |>
   dplyr::filter(year == 2030, id %in% show) |>
-  dplyr::mutate(id = factor(id, show)) |>
-  dplyr::arrange(id) |>
-  dplyr::transmute(Option = unname(short[as.character(id)]),
-                   `Longhill intake` = ifelse(is.na(lh_intake), "---", fmt_n(lh_intake)),
-                   `Deprived children's extra journey` = sprintf("%.1f min", ifelse(abs(dep_gap) < 0.05, 0, dep_gap)),
-                   `Segregation index` = sprintf("%.3f", gorard),
-                   Displaced = fmt_n(displaced),
-                   `Community schools' balance` = gbp_m(comm_gap)) |>
-  knitr::kable(align = "lrrrrr")
+  dplyr::mutate(comm_gap = comm_gap / 1e6,
+                dep_gap = ifelse(abs(dep_gap) < 0.05, 0, dep_gap),
+                label = factor(unname(short[id]), rev(unname(short[show]))),
+                elm = id %in% c("elm", "package_f")) |>
+  tidyr::pivot_longer(names(MEAS_O), names_to = "m", values_to = "v") |>
+  dplyr::mutate(m = factor(unname(MEAS_O[m]), MEAS_O))
+ref <- ob |> dplyr::filter(id == "today") |> dplyr::select(m, ref = v)
+ggplot(ob, aes(v, label)) +
+  geom_vline(data = ref, aes(xintercept = ref), colour = "grey70") +
+  geom_point(aes(colour = elm), size = 4.2, na.rm = TRUE) +
+  facet_wrap(~ m, nrow = 1, scales = "free_x",
+             labeller = labeller(m = label_wrap_gen(13))) +
+  scale_colour_manual(values = c(`FALSE` = INK, `TRUE` = ACCENT), guide = "none") +
+  scale_x_continuous(n.breaks = 3) +
+  labs(x = NULL, y = NULL,
+       title = "Each option helps one priority and costs another",
+       subtitle = "2030, council priorities. Grey line: today. Blue: Longhill at the top of Elm Grove. Longhill closed has no intake to show.") +
+  theme_slide(13) +
+  theme(strip.text = element_text(face = "bold", size = 12, hjust = 0),
+        panel.spacing.x = unit(3, "lines"))
 ```
 
-2030, council priorities. "Package without a move": Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. "Elm Grove package": Longhill at Elm Grove at 150 with the map redrawn, Cardinal Newman 300, King's 150, Brighton Aldridge 150.
+"Package without a move": Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. "Elm Grove package": the move, with Cardinal Newman 300, King's 150, Brighton Aldridge 150.
 
 ## Only a nearer school closes the access gap
 
@@ -613,50 +965,80 @@ gap <- cop$runs |>
                 label = unname(short[as.character(id)]),
                 elm = id %in% c("elm", "package_f"),
                 label = forcats::fct_reorder(label, dep_gap))
-ggplot2::ggplot(gap, ggplot2::aes(dep_gap, label)) +
-  ggplot2::geom_col(ggplot2::aes(fill = elm), width = 0.62, show.legend = FALSE) +
-  ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f min", dep_gap)),
-                     hjust = -0.15, size = 5, colour = INK) +
-  ggplot2::scale_fill_manual(values = c(`FALSE` = "#9aa7b4", `TRUE` = ACCENT)) +
-  ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0, 0.18))) +
-  ggplot2::labs(x = "Extra minutes children from the most deprived neighbourhoods travel, each way", y = NULL,
-                title = "How much further deprived children travel than everyone else",
-                subtitle = "2030, council priorities. Blue: Longhill at the top of Elm Grove.") +
+ggplot(gap, aes(dep_gap, label)) +
+  geom_col(aes(fill = elm), width = 0.62, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("%.1f min", dep_gap)), hjust = -0.15, size = 5, colour = INK) +
+  scale_fill_manual(values = c(`FALSE` = "#9aa7b4", `TRUE` = ACCENT)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.18))) +
+  labs(x = "Extra minutes children from the most deprived neighbourhoods travel, each way", y = NULL,
+       title = "How much further deprived children travel than everyone else",
+       subtitle = "2030, council priorities. Blue: Longhill at the top of Elm Grove.") +
   theme_slide(15)
 ```
+
+## Access or mixing? No option does both
+
+```{r fig-tradeoff}
+#| fig-width: 11.5
+#| fig-height: 5.6
+tr <- cop$runs |>
+  dplyr::filter(year == 2030) |>
+  dplyr::mutate(dep_gap = ifelse(abs(dep_gap) < 0.05, 0, dep_gap),
+                shown = id %in% show,
+                label = ifelse(shown, unname(short[id]), NA_character_),
+                elm = id %in% c("elm", "package_f"))
+ggplot(tr, aes(dep_gap, gorard)) +
+  geom_point(data = tr |> dplyr::filter(!shown), colour = "grey78", size = 2.6) +
+  geom_point(data = tr |> dplyr::filter(shown), aes(colour = elm), size = 4.6) +
+  ggrepel::geom_text_repel(data = tr |> dplyr::filter(shown), aes(label = label, colour = elm),
+                           size = 4.2, seed = 5, box.padding = 0.6, show.legend = FALSE) +
+  scale_colour_manual(values = c(`FALSE` = INK, `TRUE` = ACCENT), guide = "none") +
+  labs(x = "Deprived children's extra journey, minutes  (← better)",
+       y = "Segregation index  (↓ better)",
+       title = "A school near Whitehawk shortens journeys and concentrates disadvantage",
+       subtitle = "2030, all 29 options (grey), the eight above labelled. Nothing reaches the bottom-left corner.") +
+  theme_slide(15)
+```
+
+The evidence leans towards **access**: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day. Whether shorter journeys raise attendance is what the council's own records could settle.
 
 # What this means for Longhill
 
 ## A smaller Longhill at the top of Elm Grove
 
+```{r tbl-elm}
+elm_rows <- c("today", "elm", "package_f")
+elm_lab <- c(today = "Today", elm = "Elm Grove, 150 places, map redrawn",
+             package_f = "Elm Grove package")
+tibble::tibble(id = elm_rows) |>
+  dplyr::mutate(
+    Option = unname(elm_lab[id]),
+    `Longhill intake, 2026 → 2030` = sprintf("%s → %s", fmt_n(vapply(id, co, 0, col = "lh_intake", y = 2026)),
+                                             fmt_n(vapply(id, co, 0, col = "lh_intake"))),
+    `Deprived children's extra journey` = sprintf("%.1f min", pmax(0, vapply(id, co, 0, col = "dep_gap"))),
+    `Whitehawk's disadvantaged children travel` = sprintf("%.0f min", vapply(id, whe, 0, col = "minutes_disadvantaged")),
+    `Segregation index` = sprintf("%.3f", vapply(id, co, 0, col = "gorard")),
+    `Longhill's annual position` = gbp_m(vapply(id, co, 0, col = "lh_gap"))) |>
+  dplyr::select(-id) |>
+  knitr::kable(align = "lrrrrr")
+```
+
 ::: {.columns}
 ::: {.column width="50%"}
-**What it does** (150 places, catchments redrawn)
+**What it gains**
 
-- Longhill takes **`r fmt_n(co("elm", "lh_intake", 2026))`** in 2026 and **`r fmt_n(co("elm", "lh_intake"))`** in 2030 --- against `r fmt_n(co("today", "lh_intake", 2026))` and `r fmt_n(co("today", "lh_intake"))` today.
-- Deprived children's extra journey falls from **`r sprintf("%.1f", co("today", "dep_gap"))`** to **`r sprintf("%.1f", max(0, co("elm", "dep_gap")))`** minutes.
-- Whitehawk's disadvantaged children travel **`r sprintf("%.0f", whe("elm", "minutes_disadvantaged"))`** minutes instead of **`r sprintf("%.0f", whe("today", "minutes_disadvantaged"))`**.
-- The map drawn round it puts **`r cop$elm_moves$whitehawk_to_longhill` of the `r cop$elm_moves$whitehawk_zones`** Whitehawk neighbourhoods back in Longhill's catchment --- as part of a redesign, not a reversal of the 2024 change.
-- With Cardinal Newman, King's and Brighton Aldridge taking fewer: **`r fmt_n(co("package_f", "lh_intake", 2026))`** in 2026 and **`r fmt_n(co("package_f", "lh_intake"))`** in 2030.
+- The biggest cut in deprived children's journeys of any option.
+- **`r cop$elm_moves$whitehawk_to_longhill` of the `r cop$elm_moves$whitehawk_zones`** Whitehawk neighbourhoods back in Longhill's catchment, as part of a redesign rather than a reversal.
+- More children for Longhill.
 :::
 ::: {.column width="50%"}
 **What it costs**
 
-- A site --- **not costed** in this work.
-- Intakes more concentrated: segregation index **`r sprintf("%.3f", co("elm", "gorard"))`** against `r sprintf("%.3f", co("today", "gorard"))`.
-- About **`r fmt_n(cop$elm_moves$children)`** children a year in neighbourhoods that change catchment.
-- Longer journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.
-- Longhill **still does not break even** --- about `r gbp_m(-co("elm", "lh_gap"))` a year short in 2030.
-- It needs families to follow a **new map** as closely as the one they have --- the assumption every redraw result rests on.
+- A site, **not costed** here. Longhill **still does not break even**.
+- About **`r fmt_n(cop$elm_moves$children)`** children a year in neighbourhoods that change catchment; longer journeys for Rottingdean, Saltdean and Woodingdean.
+- Intakes more concentrated --- and that figure assumes families follow a **new map** as closely as today's.
 :::
 :::
-
-## Access or mixing? The review has to choose
-
-- A school near Whitehawk **shortens disadvantaged children's journeys** and **concentrates them in one school**. No option does both.
-- The evidence here leans towards **access**: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day.
-- What this work cannot show is whether **shorter journeys raise attendance** --- the lever that matters most. The council's own records can.
-- Re-opening CoMArt would have given much of the access gain; it is off the table. Closing Longhill is the cheapest system and has the longest journeys in the east.
 
 # Recommendations
 
@@ -686,4 +1068,4 @@ ggplot2::ggplot(gap, ggplot2::aes(dep_gap, label)) +
 - The academies and faith schools modelled as **responding to demand**, not setting their own numbers.
 - **The direction of each finding is more reliable than its size.**
 
-[Full document](https://adamdennett.github.io/bh-school-system/) · [Simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/) · [Code and data](https://github.com/adamdennett/bh-school-system)
+[Full document](https://adamdennett.github.io/bh-school-system/) · [The model, stage by stage](https://adamdennett.github.io/bh-school-system/model-guide.html) · [Simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/) · [Code and data](https://github.com/adamdennett/bh-school-system)
