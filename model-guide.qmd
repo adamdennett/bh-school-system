@@ -1403,7 +1403,7 @@ ggplot() +
   geom_sf(data = sch_sf, shape = 21, fill = "white", colour = "black", size = 2.6) +
   geom_sf_text(data = gsf %>% st_point_on_surface() %>% suppressWarnings(),
                aes(label = sprintf("%.1f", gamma)), size = 5, fontface = "bold",
-               colour = "white") +
+               colour = "white", nudge_y = 0.006) +
   scale_fill_viridis_c(option = "mako", direction = -1, name = "γ") +
   coord_sf(expand = TRUE) +
   labs(title = "How closely each catchment's families follow their map",
