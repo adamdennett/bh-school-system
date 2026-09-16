@@ -325,6 +325,20 @@ attendance or their circumstances. This is not an argument that schools
 do not matter --- it is an argument that the council's lever is
 attendance, and attendance is not an admissions policy.
 
+**For disadvantaged pupils, concentration is not the harm it is assumed
+to be.** Nationally, once absence and prior attainment are accounted
+for, disadvantaged pupils do slightly *better* in schools with more
+disadvantaged pupils, not worse. The effect is small, and it appears to
+run through schools organised to serve those pupils rather than through
+concentration itself --- but it points the opposite way to the
+council's aim of reducing concentrations. Brighton Aldridge is the local
+example: about half its pupils are disadvantaged, and its disadvantaged
+pupils leave with better GCSE results than comparable pupils elsewhere
+in England (@sec-concentration-evidence). So where an option here raises
+the segregation index, that counts against it under the council's
+policy aim; it is not, on the evidence, a cost to disadvantaged pupils'
+results.
+
 **Admissions criteria only bind at some schools.**
 `r ex_open` of the `r nrow(ex_rat)` schools offered a place to every
 first-preference applicant. For those schools the catchment rule, the
@@ -976,6 +990,67 @@ how much of that the school is responsible for. Families reading the
 published headline are answering the first question while believing they
 are answering the second --- and section 5 shows that this has a
 measurable effect on where demand actually goes.
+
+### For disadvantaged pupils, the direction reverses {#sec-concentration-evidence}
+
+The fall in Attainment 8 that goes with a higher disadvantaged share is
+an average over all pupils. [How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html)
+fits the same model separately for disadvantaged and non-disadvantaged
+pupils, and the two disagree about direction.
+
+- **For non-disadvantaged pupils** a school with more disadvantaged
+  pupils is associated with lower attainment, even after their own
+  attendance and prior attainment are accounted for.
+- **For disadvantaged pupils** it is associated with slightly *higher*
+  attainment, once absence and low prior attainment are accounted for.
+  The report finds this in the four-year panel and in each year
+  separately, and under different measures of disadvantaged attainment
+  and of school disadvantage ([robustness checks](https://adamdennett.github.io/school_attainment_tool/model_experiments.html#sec-directionality),
+  [model results](https://adamdennett.github.io/school_attainment_tool/model_results.html#disadvantaged-pupils)). It is strongest in the non-GCSE
+  qualifications of the Attainment 8 'open' element.
+- **The effect is small, and it is mostly about the schools.** In the
+  full multilevel model the coefficient shrinks towards zero once region,
+  local authority and Ofsted rating are allowed for. The report's reading
+  is that disadvantaged pupils do not gain simply from being together;
+  they gain because schools with many of them --- in some places and with
+  some inspection records --- have learned to serve them well, including
+  through well-targeted vocational routes.
+
+The report is explicit that this is **not an argument for concentrating
+disadvantaged pupils**, and that mixed intakes may have benefits it does
+not measure. Its argument is narrower: where a city's geography already
+concentrates disadvantage in some schools, deconcentration pursued at
+the cost of longer journeys is unlikely to help the pupils it is meant to
+help, and may harm them.
+
+::: {.callout-note appearance="simple"}
+## Brighton Aldridge is the local example
+
+Brighton Aldridge Community Academy has about half its pupils
+disadvantaged, some of the city's highest absence, and around 30% of its
+pupils arriving with low prior attainment. On the same panel model's
+contextualised results, a disadvantaged pupil leaving BACA in 2024--25
+did about **5.7 Attainment 8 points better** than a comparable pupil at a
+similar school elsewhere in England, and about **3.1 points better on
+average over four years** --- the strongest result in the city for
+disadvantaged pupils, and far larger than the fraction of a point that
+changing a school's disadvantage mix would be expected to deliver. Ofsted
+rated the school Good in every area in April 2025.
+
+@sec-noise applies to BACA as to any school: a single year of
+disadvantaged results is one draw, and the four-year figure is the one to
+lean on. It is still well above anything the redistribution of pupils
+could deliver.
+:::
+
+**What follows for this document.** Several options in @sec-weighing ---
+Longhill at Elm Grove, Whitehawk back in Longhill's catchment --- raise
+the segregation index because they put more disadvantaged children in
+the same school. The council's policy aim treats that as a cost. The
+national evidence does not: provided the school is organised and funded
+for the intake it gets, a more concentrated intake is not a worse one for
+its disadvantaged pupils. The segregation index is reported here because
+the council asks for it, not because it measures harm.
 
 ## How much can a school change at all? {#sec-school-effects}
 
@@ -8772,7 +8847,10 @@ council's case for asking them rests on exactly this comparison.
   neighbourhoods it moves are `r fmt_pct(100 * whx$area$disadvantaged_share, 0)`
   disadvantaged against `r fmt_pct(100 * whx$area$city_share, 0)` across
   the city. Which way that trade should go is a judgement, and the
-  council should make it knowing both halves.
+  council should make it knowing both halves --- and knowing that the
+  higher index counts against the redraw under the council's aim of
+  evening out intakes, not on the evidence about disadvantaged pupils'
+  results (@sec-concentration-evidence).
 - *Access against segregation.* Elm Grove all but closes the gap between
   deprived children's journeys and everyone else's, and it concentrates
   disadvantaged children in one school: the index rises from
@@ -8784,8 +8862,11 @@ council's case for asking them rests on exactly this comparison.
   schools' headline results arrives with the children rather than being
   added by the school (@sec-school-effects), so a more mixed intake is a
   weak lever on outcomes, while the journey is made by every child twice
-  a day. What the document cannot show is whether shorter journeys raise
-  attendance; the council's records could.
+  a day. For disadvantaged pupils the national evidence goes further:
+  they do slightly better, not worse, where they are concentrated in a
+  school organised for them, and Brighton Aldridge is the city's own
+  example (@sec-concentration-evidence). What the document cannot show is
+  whether shorter journeys raise attendance; the council's records could.
 - *Longhill against short journeys.* Trimming the central schools helps
   Longhill for two or three years and lengthens journeys for the
   children moved. It should be done only with the Whitehawk redraw, and
@@ -8871,7 +8952,11 @@ Whitehawk question as part of a redesign. So it leads.
    one school. Whether evening out chances means the first or the
    second, and whether shorter journeys raise attendance, are questions
    the review can answer from the council's own records and this
-   document cannot.
+   document cannot. It should weigh the national evidence that
+   disadvantaged pupils do no worse --- slightly better --- in schools
+   where they are concentrated and well served
+   (@sec-concentration-evidence), before treating a more concentrated
+   intake as a cost.
 
 Together --- Longhill at Elm Grove at 150 with the catchments redrawn,
 Cardinal Newman at 300, King's at 150 and Brighton Aldridge at 150 ---

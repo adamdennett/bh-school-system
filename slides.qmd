@@ -256,6 +256,7 @@ ggplot(rp, aes(year, reserve_pct)) +
 - **Families choose on the headline score**, which largely describes the intake --- so choice is self-fulfilling.
 - **Admissions criteria only bind at some schools.** Several schools offer a place to every first-preference applicant.
 - **Physical access is unequal, in the worst direction.** `r nrow(no30)` neighbourhoods can reach **no** school place within 30 minutes by walking and bus, and access and child poverty go together.
+- **Concentrated disadvantage is not the harm it is assumed to be.** Nationally, disadvantaged pupils do slightly *better* in schools with more of them, once absence and prior attainment are allowed for. Brighton Aldridge is the local example: its disadvantaged pupils leave with about **3 GCSE points more** than comparable pupils elsewhere (four-year average; 5.7 in 2024-25).
 - Children from the most deprived neighbourhoods travel **`r sprintf("%.1f", co("today", "dep_gap", 2026))` minutes further** each way than everyone else, under the map in force.
 
 # How the model works
@@ -1010,7 +1011,7 @@ ggplot(tr, aes(dep_gap, gorard)) +
   theme_slide(15)
 ```
 
-The evidence leans towards **access**: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day. Whether shorter journeys raise attendance is what the council's own records could settle.
+The evidence leans towards **access**. A more mixed intake is a weak lever on results, and for disadvantaged pupils the national evidence runs the other way: they do slightly better where they are concentrated in a school organised for them, as at Brighton Aldridge. The higher index counts against an option under the council's aim, not on the evidence about results. Whether shorter journeys raise attendance is what the council's own records could settle.
 
 # What this means for Longhill
 
@@ -1046,7 +1047,7 @@ tibble::tibble(id = elm_rows) |>
 
 - A site, **not costed** here. Longhill **still does not break even**.
 - About **`r fmt_n(cop$elm_moves$children)`** children a year in neighbourhoods that change catchment; longer journeys for Rottingdean, Saltdean and Woodingdean.
-- Intakes more concentrated --- and that figure assumes families follow a **new map** as closely as today's.
+- Intakes more concentrated: a cost under the council's aim, **not a measured cost to disadvantaged pupils' results**. The figure also assumes families follow a **new map** as closely as today's.
 :::
 :::
 
@@ -1060,7 +1061,7 @@ tibble::tibble(id = elm_rows) |>
 4. **Ask Cardinal Newman (300), King's (150) and Brighton Aldridge (150)** to take fewer, and every school to share the fall in proportion by 2030.
 5. **Trim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean and only with a catchment redraw.**
 6. **Publish where priority 6's places went.**
-7. **Ask the inequalities review to settle the measure** --- journeys or mixing --- and whether journey length affects attendance.
+7. **Ask the inequalities review to settle the measure** --- journeys or mixing --- and whether journey length affects attendance, weighing the evidence that disadvantaged pupils do no worse where they are concentrated and well served.
 
 ## Next steps
 

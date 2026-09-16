@@ -3275,6 +3275,15 @@ tibble::tribble(
   school.
 - **It is fitted on one year.** A single admissions round, on the current
   map, under the current rules.
+- **A higher index is not a measured harm.** The Gorard index
+  describes how unevenly disadvantaged children are spread, which is what
+  the council's policy aim is framed around. It says nothing about their
+  results. The national evidence in
+  [How to Pull the Right Lever](https://adamdennett.github.io/school_attainment_tool/index.html) is that disadvantaged
+  pupils do slightly better, not worse, in schools with more of them once
+  absence and prior attainment are allowed for, and the strategic view
+  sets out what that means for the options
+  ([the strategic view](https://adamdennett.github.io/bh-school-system/#sec-concentration-evidence)).
 - **A scenario's segregation number is only as good as $\lambda$.** The
   model holds the pull fixed while it moves boundaries and schools, which
   assumes a school's relationship with disadvantaged families travels
