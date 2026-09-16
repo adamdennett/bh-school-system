@@ -398,7 +398,7 @@ them the pupil projections put next in line.
    through its own admissions guide.
 4. **Treat the bus network as an admissions instrument.** It is the only
    lever here that widens choice without taking anything from anyone.
-5. **Release six tables** (§9) that would convert most of the bands in
+5. **Release ten tables** (§9) that would convert most of the bands in
    this document into estimates.
 
 ## How confident to be
@@ -8288,8 +8288,39 @@ all are aggregates of data the council already holds.
 | 2 | Full preference ordering, anonymised, by year | Turn section 5's ten-point association into a discrete-choice model |
 | 3 | Allocated school by home LSOA, including schools outside the city | Measure the actual outflow the council's forecasts assume |
 | 4 | Criterion under which each place was allocated | Establish directly which criteria bind, rather than inferring it |
-| 5 | Children allocated a school they did not name, and which | Test the council's stated "nearest school with places" practice |
+| 5 | Children allocated a school they did not name, by school, year and home catchment | Test the council's stated "nearest school with places" practice, and complete each school's intake: the published offer counts are counted by preference rank, so a child placed at a school they did not name does not appear in them |
 | 6 | Journey actually made, or at least distance, per allocation | Separate potential accessibility from realised accessibility |
+| 7 | Offers by admission criterion for every school, every year | The admissions guide gives the priority breakdown only for the schools that rationed places; the rest would show how the tiered ceiling behaves where it barely binds |
+| 8 | Offers to children living outside the city, by school | The model contains Brighton & Hove children only. Schools that admit across a wider area --- the faith schools above all --- fill some places the model cannot see |
+| 9 | The catchment preference table for each round separately, not pooled | Let each school's attractiveness be fitted year by year, so a change such as a new Ofsted judgement shows up when it happens rather than being averaged away |
+| 10 | In each paired catchment, how many applicants named one school of the pair, both, or neither | Fit the share who would take only one of the pair each year, rather than holding it fixed |
+
+```{r data-asks-fp}
+#| include: false
+fp_all <- bh_data("factsheet_panel.rds")$factsheets
+fp_of <- function(p, y, col) {
+  v <- fp_all[[col]][grepl(p, fp_all$name) & fp_all$year == y]
+  stopifnot(length(v) == 1)
+  v
+}
+```
+
+The last four follow from where the model's remaining error sits. Its
+intakes for September 2026 match the council's offers closely at most
+schools and miss at two: it gives Brighton Aldridge too few children and
+Hove Park too many
+([model guide](https://adamdennett.github.io/bh-school-system/model-guide.html#sec-end)).
+The published factsheets show why both are hard for a model fitted to a
+pooled table. Brighton Aldridge's first preferences rose from
+`r fp_of("Brighton Aldridge", 2025, "pref1")` to
+`r fp_of("Brighton Aldridge", 2026, "pref1")` in the first round after
+its April 2025 Ofsted judgement, and Hove Park's second preferences fell
+from `r fp_of("Hove Park", 2025, "pref2")` to
+`r fp_of("Hove Park", 2026, "pref2")` in the same round. A model whose
+attractiveness is an average of earlier rounds cannot follow a change
+that happens in one. Releases 9 and 10 would let it, and releases 5, 7
+and 8 would let the model be checked against every child placed rather
+than only those offered a school they named.
 
 LSOAs average about 1,500 residents and 650 households. A cohort-year
 count at LSOA level is not disclosive in the way a postcode-level count
@@ -9147,8 +9178,8 @@ requires the rebuild.
 ::: {.callout-note appearance="simple"}
 ## What is deliberately not here
 
-**The council's admissions records.** @sec-data-asks lists the six
-fields that would replace a modelled flow with an observed one
+**The council's admissions records.** @sec-data-asks lists the
+releases that would replace a modelled flow with an observed one
 throughout sections 7 and 8. They are not public and this document does
 not use them.
 

@@ -2475,10 +2475,10 @@ sibling already at a school. Most siblings live in the catchment, so
 they sit inside tier 7, and the comparison below folds the council's
 published priority 3 into tier 7 for that reason.
 
-The tie-break *inside* each priority is a random draw, not distance.
-That is what makes a proportional cut within a tier the right average,
-and it was confirmed on the pupil records by the private allocation
-engine rather than assumed.
+The tie-break *inside* each priority is a random draw, not distance: the
+council's published admission arrangements break ties by random
+allocation. That is what makes a proportional cut within a tier the right
+average.
 :::
 
 ## Who counts as FSM

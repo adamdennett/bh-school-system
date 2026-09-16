@@ -4223,7 +4223,7 @@ Figure&nbsp;18: Each school’s places against how many families ask for it. The
 </div>
 <div class="callout-body-container callout-body">
 <p>Looked-after children, children with SEN or exceptional need, and siblings cannot be told apart in flows between neighbourhoods and schools — nothing in the published data says which children have a sibling already at a school. Most siblings live in the catchment, so they sit inside tier 7, and the comparison below folds the council’s published priority 3 into tier 7 for that reason.</p>
-<p>The tie-break <em>inside</em> each priority is a random draw, not distance. That is what makes a proportional cut within a tier the right average, and it was confirmed on the pupil records by the private allocation engine rather than assumed.</p>
+<p>The tie-break <em>inside</em> each priority is a random draw, not distance: the council’s published admission arrangements break ties by random allocation. That is what makes a proportional cut within a tier the right average.</p>
 </div>
 </div>
 </section>
@@ -5045,7 +5045,7 @@ Figure&nbsp;20: Where refused children are re-offered, over all rounds of the ca
 </section>
 <section id="why-it-recomputes-rather-than-updates" class="level2" data-number="11.4">
 <h2 data-number="11.4" class="anchored" data-anchor-id="why-it-recomputes-rather-than-updates"><span class="header-section-number">11.4</span> Why it recomputes rather than updates</h2>
-<p>Everything above takes about 0.06 seconds for the model and another 0.05 for all of the outcome measures, on 5,824 zone-school rows. That is fast enough that the simulator does not attempt to update anything incrementally: every change to any control re-runs the whole sequence from step 1. Nothing is cached between runs, so nothing can be stale, and two runs with identical settings are identical to the last decimal place.</p>
+<p>Everything above takes about 0.05 seconds for the model and another 0.05 for all of the outcome measures, on 5,824 zone-school rows. That is fast enough that the simulator does not attempt to update anything incrementally: every change to any control re-runs the whole sequence from step 1. Nothing is cached between runs, so nothing can be stale, and two runs with identical settings are identical to the last decimal place.</p>
 <p>It also means the comparisons the simulator shows — this scenario against the baseline, or a school’s fill now against 2030 — are two complete runs compared afterwards, not one run adjusted.</p>
 </section>
 </section>
@@ -9706,10 +9706,10 @@ Figure&nbsp;26: Modelled intake against the offers the council actually made for
 <span id="cb81-2475"><a href="#cb81-2475" aria-hidden="true" tabindex="-1"></a>they sit inside tier 7, and the comparison below folds the council's</span>
 <span id="cb81-2476"><a href="#cb81-2476" aria-hidden="true" tabindex="-1"></a>published priority 3 into tier 7 for that reason.</span>
 <span id="cb81-2477"><a href="#cb81-2477" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb81-2478"><a href="#cb81-2478" aria-hidden="true" tabindex="-1"></a>The tie-break *inside* each priority is a random draw, not distance.</span>
-<span id="cb81-2479"><a href="#cb81-2479" aria-hidden="true" tabindex="-1"></a>That is what makes a proportional cut within a tier the right average,</span>
-<span id="cb81-2480"><a href="#cb81-2480" aria-hidden="true" tabindex="-1"></a>and it was confirmed on the pupil records by the private allocation</span>
-<span id="cb81-2481"><a href="#cb81-2481" aria-hidden="true" tabindex="-1"></a>engine rather than assumed.</span>
+<span id="cb81-2478"><a href="#cb81-2478" aria-hidden="true" tabindex="-1"></a>The tie-break *inside* each priority is a random draw, not distance: the</span>
+<span id="cb81-2479"><a href="#cb81-2479" aria-hidden="true" tabindex="-1"></a>council's published admission arrangements break ties by random</span>
+<span id="cb81-2480"><a href="#cb81-2480" aria-hidden="true" tabindex="-1"></a>allocation. That is what makes a proportional cut within a tier the right</span>
+<span id="cb81-2481"><a href="#cb81-2481" aria-hidden="true" tabindex="-1"></a>average.</span>
 <span id="cb81-2482"><a href="#cb81-2482" aria-hidden="true" tabindex="-1"></a>:::</span>
 <span id="cb81-2483"><a href="#cb81-2483" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb81-2484"><a href="#cb81-2484" aria-hidden="true" tabindex="-1"></a><span class="fu">## Who counts as FSM</span></span>

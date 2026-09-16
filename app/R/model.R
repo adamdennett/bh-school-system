@@ -188,10 +188,9 @@ partner_map <- function(ex) {
 #' siblings - cannot be told apart in zone-level flows. Most siblings live
 #' in the catchment, so they sit inside tier 7.
 #'
-#' The private allocation engine (BH_Pupil_Destinations,
-#' R/20_admissions_allocation.R) confirms, on the pupil records, that the
-#' tie-break inside each priority is random rather than by distance, which
-#' is why the proportional cut inside a tier is the right mean-field.
+#' The council's published admission arrangements break ties inside each
+#' priority by random allocation rather than by distance, which is why the
+#' proportional cut inside a tier is the right mean-field.
 #'
 #' @param ff,fn flows of FSM-eligible children and of everyone else
 #' @param in_c,s6,com logical per flow row: lives in the destination's

@@ -1068,7 +1068,7 @@ tibble::tibble(id = elm_rows) |>
 - **Cost the Elm Grove site**, and re-run the move on the council's own records before deciding.
 - **Draw the Elm Grove catchment with Rottingdean, Saltdean and Woodingdean in the room**, before rather than after.
 - **Check the disadvantaged-intake calibration against a second year** of Year 7 offers.
-- **Release six small tables** the council already holds --- applicants' home areas, full preferences, allocations and the criterion each place was given under --- which would turn most of the ranges here into estimates.
+- **Release ten small tables** the council already holds --- applicants' home areas, full preferences, allocations, the criterion each place was given under, offers to children outside the city, and the catchment preference table for each year --- which would turn most of the ranges here into estimates.
 - **Link journeys to attendance** in the council's records, for the inequalities review.
 
 ## What this rests on
