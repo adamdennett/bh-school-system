@@ -278,7 +278,7 @@ Figure&nbsp;5
 <section id="a-spatial-interaction-model" class="slide level2">
 <h2>A spatial interaction model</h2>
 <div class="columns">
-<div class="column" style="width:48%;">
+<div class="column" style="width:40%;">
 <p><span class="math display">\[T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma_h\, \text{in catchment}}\, C_j^{\delta}\]</span></p>
 <ul>
 <li><span class="math inline">\(T_{ij}\)</span> — children from neighbourhood <span class="math inline">\(i\)</span> choosing school <span class="math inline">\(j\)</span></li>
@@ -289,25 +289,84 @@ Figure&nbsp;5
 <li><span class="math inline">\(C_j\)</span> — rival schools nearby</li>
 <li><span class="math inline">\(A_i\)</span> — makes every neighbourhood place all its children</li>
 </ul>
-</div><div class="column" style="width:52%;">
-<div class="cell" data-reveal="true" data-layout-align="default">
+</div><div class="column" style="width:60%;">
+<p><strong>Four neighbourhoods and four schools, 2026</strong></p>
+<div style="font-size: 0.62em;">
+<div class="cell">
 <div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">flowchart TB
-  N["Each neighbourhood's children"] --&gt; Sh["Shared across schools by&lt;br/&gt;distance, attractiveness,&lt;br/&gt;catchment, competition"]
-  Sh --&gt; Cap{"School full?"}
-  Cap -- "no" --&gt; In["Admitted"]
-  Cap -- "yes" --&gt; Pr["Council priorities decide&lt;br/&gt;who is admitted"]
-  Pr --&gt; Re["The rest re-offered at their&lt;br/&gt;next choice with room"]
-  Re --&gt; Cap
-</pre>
+<table class="caption-top">
+<colgroup>
+<col style="width: 52%">
+<col style="width: 9%">
+<col style="width: 10%">
+<col style="width: 8%">
+<col style="width: 8%">
+<col style="width: 4%">
+<col style="width: 4%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Neighbourhood <span class="math inline">\(i\)</span></th>
+<th style="text-align: center;">Stringer</th>
+<th style="text-align: center;">Varndean</th>
+<th style="text-align: center;">Longhill</th>
+<th style="text-align: center;">C. Newman</th>
+<th style="text-align: right;"><span class="math inline">\(A_i\)</span></th>
+<th style="text-align: right;"><span class="math inline">\(O_i\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">E01016901<br><small>Varndean–Dorothy Stringer catchment</small></td>
+<td style="text-align: center;">7.6 (12.5)</td>
+<td style="text-align: center;">20.7 (15.5)</td>
+<td style="text-align: center;">0.0 (0.0)</td>
+<td style="text-align: center;">0.8 (0.6)</td>
+<td style="text-align: right;">2.8</td>
+<td style="text-align: right;">29.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">E01016880<br><small>Hove Park–Blatchington Mill catchment</small></td>
+<td style="text-align: center;">0.3 (0.3)</td>
+<td style="text-align: center;">0.6 (0.2)</td>
+<td style="text-align: center;">0.0 (0.0)</td>
+<td style="text-align: center;">3.5 (2.9)</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">27.1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">E01016979<br><small>Hove Park–Blatchington Mill catchment</small></td>
+<td style="text-align: center;">0.2 (0.2)</td>
+<td style="text-align: center;">0.3 (0.0)</td>
+<td style="text-align: center;">0.0 (0.0)</td>
+<td style="text-align: center;">2.8 (2.3)</td>
+<td style="text-align: right;">6.0</td>
+<td style="text-align: right;">25.5</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">E01016997<br><small>Hove Park–Blatchington Mill catchment</small></td>
+<td style="text-align: center;">0.5 (0.4)</td>
+<td style="text-align: center;">1.0 (0.0)</td>
+<td style="text-align: center;">0.1 (0.1)</td>
+<td style="text-align: center;">5.1 (4.3)</td>
+<td style="text-align: right;">26.2</td>
+<td style="text-align: right;">24.3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><span class="math inline">\(W_j\)</span></td>
+<td style="text-align: center;">0.59</td>
+<td style="text-align: center;">1.08</td>
+<td style="text-align: center;">0.10</td>
+<td style="text-align: center;">3.23</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+</tr>
+</tbody>
+</table>
 </div>
-<p></p></figure><p></p>
 </div>
 </div>
-</div>
+<p><small style="font-size: 0.6em;">Each cell is <span class="math inline">\(T_{ij}\)</span>: children wanting that school, with the number offered once the admission ceiling applies in brackets. Six other destinations sit off the right-hand side, so the rows do not sum to <span class="math inline">\(O_i\)</span>. <a href="https://adamdennett.github.io/bh-school-system/model-guide.html#sec-end">The worked matrix in the model guide.</a></small></p>
 </div></div>
 </section>
 <section id="the-map-alone-every-school-equally-attractive" class="slide level2">

@@ -295,7 +295,7 @@ Orange steps are the ones the simulator lets you change (⚙). Moving any contro
 ## A spatial interaction model
 
 ::: {.columns}
-::: {.column width="48%"}
+::: {.column width="40%"}
 $$T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma_h\, \text{in catchment}}\, C_j^{\delta}$$
 
 - $T_{ij}$ --- children from neighbourhood $i$ choosing school $j$
@@ -306,16 +306,48 @@ $$T_{ij} = A_i\, O_i\, W_j\, c_{ij}^{-\beta}\, e^{\gamma_h\, \text{in catchment}
 - $C_j$ --- rival schools nearby
 - $A_i$ --- makes every neighbourhood place all its children
 :::
-::: {.column width="52%"}
-```{mermaid}
-flowchart TB
-  N["Each neighbourhood's children"] --> Sh["Shared across schools by<br/>distance, attractiveness,<br/>catchment, competition"]
-  Sh --> Cap{"School full?"}
-  Cap -- "no" --> In["Admitted"]
-  Cap -- "yes" --> Pr["Council priorities decide<br/>who is admitted"]
-  Pr --> Re["The rest re-offered at their<br/>next choice with room"]
-  Re --> Cap
+::: {.column width="60%"}
+**Four neighbourhoods and four schools, 2026**
+
+::: {style="font-size: 0.62em;"}
+```{r matrix-4x4}
+mx_z <- oi$zones |> dplyr::filter(area != "Expansion area") |>
+  dplyr::arrange(dplyr::desc(Oi)) |> dplyr::slice(1:4)
+mx_s <- c("Dorothy Stringer School", "Varndean School",
+          "Longhill High School", "Cardinal Newman Catholic School")
+mx_cell <- d26 |>
+  dplyr::filter(zone %in% mx_z$zone, name %in% mx_s) |>
+  dplyr::group_by(zone, name) |>
+  dplyr::summarise(wanted = sum(wanted), offered = sum(flow), .groups = "drop")
+mx_A <- d26 |> dplyr::filter(zone %in% mx_z$zone, pop == "either") |>
+  dplyr::group_by(zone) |> dplyr::summarise(A = 1 / sum(util), .groups = "drop")
+W5 <- setNames(inp$schools$W, inp$schools$name)
+W5 <- W5 / mean(W5[names(W5) %in% sch_city$name])
+cell <- function(z, s) with(mx_cell[mx_cell$zone == z & mx_cell$name == s, ],
+                            if (length(wanted)) sprintf("%.1f (%.1f)", wanted, offered) else "---")
+lab_of <- function(z) {
+  p <- strsplit(z, "|", fixed = TRUE)[[1]]
+  sprintf("%s<br><small>%s catchment</small>", p[1], gsub(" / ", "–", catch_lab(p[2]), fixed = TRUE))
+}
+tab <- data.frame(
+  i = c(vapply(mx_z$zone, lab_of, ""), "$W_j$"),
+  s1 = c(vapply(mx_z$zone, cell, "", s = mx_s[1]), sprintf("%.2f", W5[[mx_s[1]]])),
+  s2 = c(vapply(mx_z$zone, cell, "", s = mx_s[2]), sprintf("%.2f", W5[[mx_s[2]]])),
+  s3 = c(vapply(mx_z$zone, cell, "", s = mx_s[3]), sprintf("%.2f", W5[[mx_s[3]]])),
+  s4 = c(vapply(mx_z$zone, cell, "", s = mx_s[4]), sprintf("%.2f", W5[[mx_s[4]]])),
+  A  = c(sprintf("%.1f", mx_A$A[match(mx_z$zone, mx_A$zone)]), ""),
+  O  = c(sprintf("%.1f", mx_z$Oi), ""))
+rownames(tab) <- NULL
+names(tab) <- c("Neighbourhood $i$", "Stringer", "Varndean", "Longhill",
+                "C. Newman", "$A_i$", "$O_i$")
+knitr::kable(tab, align = "lccccrr", escape = FALSE)
 ```
+:::
+
+<small style="font-size: 0.6em;">Each cell is $T_{ij}$: children wanting that school, with the number
+offered once the admission ceiling applies in brackets. Six other
+destinations sit off the right-hand side, so the rows do not sum to $O_i$.
+[The worked matrix in the model guide.](https://adamdennett.github.io/bh-school-system/model-guide.html#sec-end)</small>
 :::
 :::
 
