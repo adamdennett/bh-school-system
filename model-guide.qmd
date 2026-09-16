@@ -64,7 +64,7 @@ $$
 | $W_j$ | how attractive school $j$ is, net of where it stands | §3 |
 | $c_{ij}$ | routed walk-and-bus journey time from $i$ to $j$ | §4 |
 | $\beta$ | distance decay | §5 |
-| $\gamma_h$ | catchment term, fitted for each catchment $h$ | to follow |
+| $\gamma_h$ | catchment term, fitted for each catchment $h$ | §6 |
 | $C_j$, $\delta$ | competing destinations | to follow |
 | $A_i$ | balancing factor: every neighbourhood places all of its children | to follow |
 | $y$ | entry year, carried as a superscript | §2.7 |
@@ -620,6 +620,130 @@ tibble(name = names(W5), W5 = as.numeric(W5)) %>%
        title = "What the balancing does to the starting values") +
   theme_bh()
 ```
+
+## What point in time does $W_j$ belong to? {#sec-wj-time}
+
+$W_j$ is **fixed**. One number per school, no year subscript, used for
+2026 and for 2035 alike. That deserves stating plainly, because it is the
+assumption a reader is least likely to notice and the one that a school
+can falsify fastest.
+
+Two windows go into it:
+
+```{r wj-window}
+#| tbl-cap: "The observations behind the attractiveness term."
+fp <- bh_data("factsheet_panel.rds")
+tibble::tribble(
+  ~Layer, ~Source, ~Window,
+  "Starting values: weighted preferences per place",
+  "Council allocation factsheets",
+  sprintf("%d rounds, %d onwards", fp$pref_years, fp$attract_from),
+  "Fitted values: balanced to first preferences",
+  "Council's catchment-level preference table",
+  sprintf("%d rounds, %s", length(cal$rounds), paste(cal$rounds, collapse = ", ")),
+  "Rank discount inside the window",
+  "A second preference counts this much of a first",
+  sprintf("%.2f, and a third %.2f", fp$wpref_decay, fp$wpref_decay^2)) %>%
+  knitr::kable(align = "lll")
+```
+
+So the model's attractiveness describes the city as families have treated
+it over the last three to five admissions rounds. It is a recent average,
+not a long-run constant, and not a snapshot of one year either — a single
+round moves too much to fit to.
+
+**Why that matters: the ordering is not stable over a decade.**
+
+```{r fig-wj-time}
+#| fig-cap: "First preferences for each school, from the published allocation factsheets. Nothing here is modelled. The shaded band is the window the attractiveness term is built from."
+#| fig-height: 5
+fs <- fp$factsheets %>% filter(name != "Total") %>%
+  mutate(School = short_sch(name),
+         hl = School %in% c("King's", "Hove Park", "Longhill"))
+ggplot(fs, aes(year, pref1, group = School)) +
+  annotate("rect", xmin = fp$attract_from - 0.5, xmax = max(fs$year) + 0.4,
+           ymin = -Inf, ymax = Inf, fill = "#1f3b57", alpha = 0.07) +
+  geom_line(data = fs %>% filter(!hl), colour = "grey75", linewidth = 0.7) +
+  geom_line(data = fs %>% filter(hl), aes(colour = School), linewidth = 1.3) +
+  ggrepel::geom_text_repel(
+    data = fs %>% filter(hl, year == max(year)), aes(label = School, colour = School),
+    hjust = 0, nudge_x = 0.4, direction = "y", size = 4, seed = 2, show.legend = FALSE) +
+  scale_colour_manual(values = c(`King's` = "#7570b3", `Hove Park` = "#d95f02",
+                                Longhill = "#b2182b"), guide = "none") +
+  scale_x_continuous(breaks = seq(2010, 2026, 4), limits = c(2010, 2029)) +
+  expand_limits(y = 0) +
+  labs(x = NULL, y = "First preferences",
+       title = "How a school is regarded is not a constant",
+       subtitle = sprintf("Published factsheets, %d to %d. Shaded: the rounds the attractiveness term uses.",
+                          min(fs$year), max(fs$year))) +
+  theme_bh()
+```
+
+Over sixteen years King's first preferences roughly doubled while Hove
+Park's roughly halved, in the same part of the same city. A $W_j$ built
+from 2014 would put those two schools the other way round from a $W_j$
+built from 2026. Reputations move, and they can move quickly: a new head,
+a turn in attendance or results, a building programme, an Ofsted
+judgement.
+
+::: {.callout-important}
+## How the model handles this, and what it cannot do
+
+**What it does.** It fixes attractiveness at its recent value and gives
+you a slider to move it. Every scenario in the strategic view that says
+"a school half as attractive again" is that slider, and §3.6 converts a
+slider position into points of Attainment 8 so the size of the
+assumption is legible rather than abstract.
+
+**What it does not do.** Attractiveness never responds to anything the
+model itself produces. A school whose roll falls does not become less
+wanted in the next year of the run; a school whose intake changes does
+not see its results, and therefore its reputation, move with it. The
+feedback loop the strategic view describes — a more disadvantaged intake,
+lower headline scores, fewer preferences, a more disadvantaged intake
+still — is **outside** this model. Where that loop is real, a run over ten
+years understates how far apart schools drift.
+
+That is the clearest case in this document for making time explicit
+rather than implicit: $O_i$ already carries a year, and the natural next
+step would be to let $W_j$ carry one too.
+:::
+
+## Why there is no exponent on $W_j$ {#sec-wj-alpha}
+
+The general form of a production-constrained model carries a power on
+attractiveness as well as on cost:
+
+$$T_{ij} \;=\; A_i\, O_i\, W_j^{\alpha}\, c_{ij}^{-\beta}$$
+
+Here $\alpha$ is absent, which is the same as fixing it at 1. That is a
+deliberate choice and it follows from what $W_j$ is.
+
+**A fitted quantity does not need a parameter to scale it.** $W_j$ is not
+a proxy standing in for attractiveness; it *is* attractiveness, balanced
+until the model reproduces each school's share of the city's first
+preferences. An exponent on it would be a second free parameter doing the
+same job as the balancing, and the two would trade off against each other:
+any $\alpha$ can be absorbed by re-balancing $W$, because
+$(W^{1/\alpha})^{\alpha} = W$. Fitting both would be fitting the same
+thing twice, and the pair would not be identified.
+
+**It would be needed if $W_j$ were a proxy.** Suppose attractiveness were
+taken crudely as the number of pupils on roll, or as the admission
+number, or as Attainment 8 — all of which this work carries as
+alternative specifications (§3.2). None of those *is* pull; each is a
+measurable thing believed to move with it, and there is no reason the
+relationship should be one-for-one. A school twice the size is not
+necessarily twice as wanted. An exponent would then be exactly the right
+device: $\alpha$ fitted to observed flows would say how strongly demand
+responds to the proxy, and $\alpha = 1$ would be a finding rather than an
+assumption. In the classic retail application that is precisely what the
+exponent on floorspace does.
+
+So the rule is: **balance it, or scale it, but not both.** This model
+balances. A version of it built on roll or on published attainment, which
+is what anyone without the council's preference table would have to do,
+should carry an $\alpha$ and fit it.
 
 ## Where it sits in the matrix
 
@@ -1215,3 +1339,292 @@ journey times would be wrong.
 3. Should the out-of-city decay be re-fitted once more than one year of
    destination data is available, or replaced by a proper choice model
    for schools in another authority?
+# $\gamma_h$: how much living in the catchment counts {#sec-gamma}
+
+```{r gamma-setup}
+#| include: false
+gam <- cal$gamma
+gam_lab <- setNames(unname(CATCH_LABELS[CATCH_FROM_MODEL[names(gam)]]), names(gam))
+r_now <- run_sim(inp, year = 2026, rules = list(rule = "priorities"))
+```
+
+## What it is
+
+$\gamma_h$ is the bonus a school gets for being **in the family's own
+catchment**. It sits in the exponent, so it multiplies a school's pull:
+
+$$\text{pull} \;\propto\; W_j\, c_{ij}^{-\beta} \times
+\begin{cases} e^{\gamma_{h(i)}} & \text{if } j \text{ is a school of } i\text{'s catchment}\\ 1 & \text{otherwise}\end{cases}$$
+
+The subscript matters: $\gamma$ is indexed by **$h(i)$, the catchment the
+family lives in**, not by the school. Stringer / Varndean families are
+modelled as following their map more closely than Brighton Aldridge's
+families follow theirs, and that is a statement about families rather
+than about schools.
+
+::: {.callout-important}
+## This is about what families name, not about who gets admitted
+
+Admission priority is a separate stage of the model (§8, to follow):
+when a school is oversubscribed the council's criteria decide who is
+offered a place, and living in the catchment is one of them. $\gamma_h$
+is doing something different and earlier. It says how much more likely a
+family is to **want** a school because it is the one their map points
+them to — through habit, siblings, the school bus, or simply reading the
+catchment as a statement about where their child belongs.
+
+The distinction is why the strategic view can find that catchment
+priority allocates nothing at an undersubscribed school while the
+catchment still matters a great deal there: nobody is turned away, but
+the map still shapes what families ask for.
+:::
+
+## The fitted values
+
+```{r gamma-table}
+#| tbl-cap: "The catchment term fitted for each catchment, and what it does to a school's pull. A term of 0 would mean the map makes no difference to what families name."
+tibble(catchment = names(gam), gamma = as.numeric(gam)) %>%
+  mutate(Catchment = unname(gam_lab[catchment]),
+         `Fitted $\\gamma_h$` = sprintf("%.1f", gamma),
+         `Multiplies a catchment school's pull by` = sprintf("%.1f×", exp(gamma))) %>%
+  arrange(desc(gamma)) %>%
+  select(Catchment, `Fitted $\\gamma_h$`, `Multiplies a catchment school's pull by`) %>%
+  knitr::kable(align = "lrr")
+```
+
+```{r fig-gamma-map}
+#| fig-cap: "The fitted catchment term by catchment. Darker is a population that follows its map more closely, once distance and attractiveness are accounted for."
+#| fig-height: 5
+gsf <- catch_sf %>%
+  left_join(tibble(catchment = unname(CATCH_FROM_MODEL[names(gam)]),
+                   gamma = as.numeric(gam)), by = "catchment")
+ggplot() +
+  geom_sf(data = gsf, aes(fill = gamma), colour = "white", linewidth = 0.5) +
+  geom_sf(data = sch_sf, shape = 21, fill = "white", colour = "black", size = 2.6) +
+  geom_sf_text(data = gsf %>% st_point_on_surface() %>% suppressWarnings(),
+               aes(label = sprintf("%.1f", gamma)), size = 5, fontface = "bold",
+               colour = "white") +
+  scale_fill_viridis_c(option = "mako", direction = -1, name = "γ") +
+  coord_sf(expand = TRUE) +
+  labs(title = "How closely each catchment's families follow their map",
+       subtitle = "Fitted to the council's catchment-level preference table") +
+  theme_void(12) +
+  theme(plot.title = element_text(face = "bold", colour = "#1f3b57"),
+        plot.subtitle = element_text(colour = "grey35"))
+```
+
+Stringer / Varndean, at `r sprintf("%.1f", gam[["DS_Varndean"]])`, and
+Longhill, at `r sprintf("%.1f", gam[["Longhill"]])`, are the two most
+attached populations in the city; Brighton Aldridge's, at
+`r sprintf("%.1f", gam[["BACA"]])`, the least. Those two facts do much of
+the work in every relocation and redraw result in the strategic view,
+because a move trades one against the other.
+
+## How they are fitted
+
+The council's evidence to the Schools Adjudicator includes a
+catchment-level preference table: how many first, second and third
+preferences each catchment's children gave each school, pooled over
+`r length(mt$calibrated$rounds)` rounds. That is a flow matrix — coarse,
+but a matrix — and it is enough to fit one term per catchment.
+
+The loop is:
+
+1. Take the current catchment terms and **balance $W_j$** so the model
+   reproduces each school's share of the city's first preferences (§3).
+2. For one catchment, try every $\gamma$ on a grid from
+   `r sprintf("%.0f", 0)` to `r sprintf("%.0f", 4)` in steps of 0.1,
+   re-balancing $W_j$ at each step, and keep the value that minimises the
+   **Poisson deviance** between the modelled and observed shares in that
+   table.
+3. Repeat for each catchment, then sweep again until nothing moves.
+
+The deviance is the right loss here because the cells are counts of
+preferences: it weights a cell by how many families it contains, so a
+catchment that gives 400 first preferences counts for more than one that
+gives 40.
+
+```{r fig-gamma-profile}
+#| fig-cap: "The fit against each candidate value, catchment by catchment. The point is the value chosen: the bottom of each curve. A flat curve would mean the data cannot distinguish one value from another."
+#| fig-height: 5
+cal$profile %>%
+  mutate(Catchment = unname(gam_lab[catchment])) %>%
+  group_by(Catchment) %>%
+  mutate(rel = deviance - min(deviance)) %>%
+  ungroup() %>%
+  ggplot(aes(gamma, rel)) +
+  geom_line(colour = "#1f3b57", linewidth = 0.9) +
+  geom_point(data = ~ .x %>% group_by(Catchment) %>% slice_min(rel, n = 1),
+             colour = "#d95f02", size = 2.6) +
+  facet_wrap(~ Catchment, scales = "free_y") +
+  labs(x = "Catchment term (γ)", y = "Deviance above the best fit",
+       title = "Each catchment's own curve, and where it bottoms out",
+       subtitle = "Lower is a better fit to the council's preference table") +
+  theme_bh(11)
+```
+
+## What the fitting buys
+
+```{r gamma-fit}
+#| tbl-cap: "How well each specification reproduces the council's preference table. M4 is one catchment term for the whole city, fitted against offers; M5 is one per catchment, fitted against preferences."
+cal$fit %>%
+  transmute(Model = ifelse(model == "M4", "One term for the whole city (M4)",
+                           "One term per catchment (M5)"),
+            `Poisson deviance` = fmt_n(deviance),
+            `Cell error (percentage points)` = sprintf("%.1f", cell_rmse_pp)) %>%
+  knitr::kable(align = "lrr")
+```
+
+```{r fig-gamma-own}
+#| fig-cap: "The share of each catchment's first preferences that go to its own school or schools: what the council's table records, and what each specification produces."
+#| fig-height: 4.6
+cal$own %>%
+  mutate(Catchment = unname(gam_lab[home])) %>%
+  tidyr::pivot_longer(c(observed, M4, M5), names_to = "src", values_to = "share") %>%
+  mutate(src = recode(src, observed = "Observed",
+                      M4 = "One term for the city", M5 = "One term per catchment"),
+         src = factor(src, c("Observed", "One term for the city", "One term per catchment")),
+         Catchment = forcats::fct_reorder(Catchment, share, .fun = max)) %>%
+  ggplot(aes(share, Catchment, colour = src, shape = src)) +
+  geom_point(size = 3.6) +
+  scale_colour_manual(values = c("#1f3b57", "grey65", "#d95f02"), name = NULL) +
+  scale_shape_manual(values = c(16, 15, 17), name = NULL) +
+  scale_x_continuous(labels = label_percent()) +
+  labs(x = "Share of the catchment's first preferences going to its own school", y = NULL,
+       title = "A single city-wide term cannot reproduce the pattern",
+       subtitle = "Fitting one term per catchment does, and it is the same model otherwise") +
+  theme_bh() + theme(legend.position = "top")
+```
+
+The gain is large and it is concentrated where it matters. A single
+city-wide term puts Stringer / Varndean's own-school share at
+`r fmt_pct(100 * cal$own$M4[cal$own$home == "DS_Varndean"], 0)` against an
+observed `r fmt_pct(100 * cal$own$observed[cal$own$home == "DS_Varndean"], 0)`,
+and Longhill's at
+`r fmt_pct(100 * cal$own$M4[cal$own$home == "Longhill"], 0)` against
+`r fmt_pct(100 * cal$own$observed[cal$own$home == "Longhill"], 0)`. Fitting
+each catchment separately reproduces both.
+
+## What the slider does
+
+The simulator's catchment slider multiplies **every** fitted term by the
+same factor, from 0 to 2. At 0 the map stops mattering to what families
+name and the model becomes distance and attractiveness alone; at 2 every
+catchment's attachment doubles in the exponent, which is a very strong
+map indeed. At 1 it uses the fitted values.
+
+That single multiplier is deliberately blunt. It answers "what if
+families follow their catchments more, or less, than they do now?"
+without pretending to know which catchment would change.
+
+```{r gamma-slider}
+#| tbl-cap: "What the slider does to the share of children modelled at a school in their own catchment, 2026, council priorities."
+purrr::map_dfr(c(0, 0.5, 1, 1.5, 2), function(g) {
+  rr <- run_sim(inp, year = 2026, gamma = g, rules = list(rule = "priorities"))
+  tibble(`Slider` = sprintf("%.1f×", g),
+         `At a school in their own catchment` = fmt_pct(100 * rr$in_catch_share, 0))
+}) %>%
+  knitr::kable(align = "lr")
+```
+
+## Where it sits in the matrix
+
+Unlike $O_i$ and $W_j$, the catchment term does not live in a margin. It
+is a **mask over the interior**: for each neighbourhood, the cells of
+schools in its own catchment are multiplied by $e^{\gamma_h}$ and the
+rest are left alone.
+
+```{r matrix-gamma}
+#| tbl-cap: "The four neighbourhoods again. A cell marked with the multiplier is one where the school is in that neighbourhood's catchment; the others are untouched."
+dsg <- inp$designs[["Current catchments"]]
+cellmark <- function(zone, school) {
+  in_c <- !is.na(dsg$school[school]) && dsg$school[school] == dsg$zone[zone]
+  h <- unname(dsg$zone[zone])
+  if (in_c) sprintf("$T_{ij} \\times %.1f$", exp(gam[[h]])) else "$T_{ij}$"
+}
+data.frame(
+  Neighbourhood = c(sub("[|].*$", "", ex_zones$zone), "$W_j$"),
+  `Dorothy Stringer` = c(vapply(ex_zones$zone, cellmark, "", school = sch4[1]),
+                         sprintf("%.2f", W5[[sch4[1]]])),
+  Varndean = c(vapply(ex_zones$zone, cellmark, "", school = sch4[2]),
+               sprintf("%.2f", W5[[sch4[2]]])),
+  Longhill = c(vapply(ex_zones$zone, cellmark, "", school = sch4[3]),
+               sprintf("%.2f", W5[[sch4[3]]])),
+  `Cardinal Newman` = c(vapply(ex_zones$zone, cellmark, "", school = sch4[4]),
+                        sprintf("%.2f", W5[[sch4[4]]])),
+  `$O_i$ (2026)` = c(sprintf("%.1f", ex_zones$Oi), ""),
+  check.names = FALSE) %>%
+  knitr::kable(align = "lccccr")
+```
+
+Cardinal Newman is in nobody's catchment: it and King's admit city-wide
+on faith criteria, so no cell in their columns is ever multiplied. In the
+two paired catchments **both** schools are in catchment, which is what
+makes those catchments different objects from the four single-school
+ones.
+
+## Checks you can run
+
+```{r gamma-checks}
+#| tbl-cap: "What the catchment terms should satisfy."
+prof_flat <- cal$profile %>% group_by(catchment) %>%
+  summarise(span = diff(range(deviance)), .groups = "drop")
+tibble::tribble(
+  ~Check, ~Result,
+  "Every catchment's fit has an interior minimum",
+  sprintf("fitted %.1f to %.1f, grid 0 to 4", min(gam), max(gam)),
+  "The data can tell one value from another",
+  sprintf("deviance spans %s to %s across the grid",
+          fmt_n(min(prof_flat$span)), fmt_n(max(prof_flat$span))),
+  "Fitting per catchment beats one term for the city",
+  sprintf("deviance %s against %s", fmt_n(cal$fit$deviance[cal$fit$model == "M5"]),
+          fmt_n(cal$fit$deviance[cal$fit$model == "M4"])),
+  "Modelled children at a catchment school, today",
+  fmt_pct(100 * r_now$in_catch_share, 0),
+  "Slider at zero removes the map entirely",
+  fmt_pct(100 * run_sim(inp, year = 2026, gamma = 0,
+                        rules = list(rule = "priorities"))$in_catch_share, 0)) %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+::: {.callout-warning}
+## The assumption every redraw result depends on
+
+The terms are fitted on the map families have lived with, and then
+**carried unchanged to any other map**. A redraw in the simulator moves
+which schools count as in catchment; it does not change how strongly a
+family follows the line.
+
+That is the single most consequential assumption in this work. If
+families follow a new boundary less closely than the one they know —
+which the strategic view finds some evidence for in what happened after
+2024 — then every redraw result here is too optimistic about how many
+children the redraw moves. The strategic view reports the halved-term
+version of the relocation runs for exactly this reason.
+:::
+
+- **The term is fitted on the pre-2024 map**, because that is the map the
+  preference table covers.
+- **It bundles several mechanisms.** Siblings already at the school, the
+  free bus, habit, and the sense that the catchment school is *the*
+  school all end up in one number, because the table cannot separate
+  them.
+- **It is a home-catchment term, not a school term.** A school in two
+  catchments — none exist today, but CoMArt opening would create one —
+  takes each catchment's own strength.
+- **Paired catchments are a single object here.** A Stringer / Varndean
+  family gets the bonus on both schools, and which of the two they prefer
+  is left to $W_j$, distance, and the exclusivity populations.
+
+## Questions this raises
+
+1. Should the term decay when a boundary changes — a family newly placed
+   in a catchment following it less closely than one that has been in it
+   for years?
+2. Should it vary with how many schools a catchment contains, rather than
+   being one number per catchment?
+3. Would first preferences by small area, before and after the 2024
+   change, let the normative half of this be separated from the
+   procedural half?
