@@ -65,7 +65,7 @@ $$
 | $c_{ij}$ | routed walk-and-bus journey time from $i$ to $j$ | §4 |
 | $\beta$ | distance decay | §5 |
 | $\gamma_h$ | catchment term, fitted for each catchment $h$ | §6 |
-| $C_j$, $\delta$ | competing destinations | to follow |
+| $C_j$, $\delta$ | competing destinations | §7 |
 | $A_i$ | balancing factor: every neighbourhood places all of its children | to follow |
 | $y$ | entry year, carried as a superscript | §2.7 |
 
@@ -75,6 +75,7 @@ and the re-offering of refused children. Each gets its own section after
 the terms above.
 
 ::: {.callout-note}
+
 ## The year is the only dynamic element, and it enters in one place
 
 Nothing in the equation carries a time subscript except $O_i$. Journey
@@ -199,6 +200,7 @@ zones use the ONS age share; the `r fmt_n(sum(is.na(z$prop)))` in the
 expansion area outside the city fall back to postcode counts alone.
 
 ::: {.callout-note appearance="simple"}
+
 ## Why not divide a ward by postcode count
 
 Splitting a ward's children by how many postcodes each LSOA holds assumes
@@ -213,6 +215,7 @@ where nothing finer is published.
 :::
 
 ::: {.callout-important}
+
 ## Corrected: a split LSOA used to be counted twice
 
 Until this version, each zone of a split LSOA inherited the **whole**
@@ -687,6 +690,7 @@ a turn in attendance or results, a building programme, an Ofsted
 judgement.
 
 ::: {.callout-important}
+
 ## How the model handles this, and what it cannot do
 
 **What it does.** It fixes attractiveness at its recent value and gives
@@ -797,7 +801,7 @@ answers "how good would this school have to be to fill?" — and it is an
 association, not a lever: Attainment 8 is itself largely a description of
 who a school admits.
 
-## Checks you can run {#sec-oi-checks}
+## Checks you can run {#sec-wj-checks}
 
 ```{r wj-checks}
 #| tbl-cap: "Identities and fits that should hold for the attractiveness term."
@@ -853,6 +857,7 @@ tibble::tribble(
 3. Should a school's attractiveness respond to its own intake over time,
    which is the feedback loop the strategic view describes but the model
    does not contain?
+
 # $c_{ij}$: the journey from a neighbourhood to a school {#sec-cij}
 
 ```{r cij-setup}
@@ -1184,6 +1189,7 @@ everything across `r length(env$betas)` values from
 and reports which conclusions survive the whole range.
 
 ::: {.callout-note appearance="simple"}
+
 ## What would pin it down
 
 A Poisson regression of flows on log journey time with an origin fixed
@@ -1339,6 +1345,7 @@ journey times would be wrong.
 3. Should the out-of-city decay be re-fitted once more than one year of
    destination data is available, or replaced by a proper choice model
    for schools in another authority?
+
 # $\gamma_h$: how much living in the catchment counts {#sec-gamma}
 
 ```{r gamma-setup}
@@ -1363,6 +1370,7 @@ families follow theirs, and that is a statement about families rather
 than about schools.
 
 ::: {.callout-important}
+
 ## This is about what families name, not about who gets admitted
 
 Admission priority is a separate stage of the model (§8, to follow):
@@ -1590,6 +1598,7 @@ tibble::tribble(
 ## What to be careful about
 
 ::: {.callout-warning}
+
 ## The assumption every redraw result depends on
 
 The terms are fitted on the map families have lived with, and then
@@ -1628,3 +1637,302 @@ version of the relocation runs for exactly this reason.
 3. Would first preferences by small area, before and after the 2024
    change, let the normative half of this be separated from the
    procedural half?
+
+# $C_j$ and $\delta$: the company a school keeps {#sec-cj}
+
+```{r cj-setup}
+#| include: false
+DELTA <- inp$params$delta
+SIGMA <- inp$params$sigma
+sch_city <- inp$schools[inp$schools$city & !(inp$schools$hypothetical %in% TRUE), ]
+W_run <- setNames(sch_city$W, sch_city$name)
+xy <- sch_city %>% select(name, easting, northing)
+pairs_km <- tidyr::expand_grid(name = xy$name, k = xy$name) %>%
+  filter(name != k) %>%
+  left_join(xy, by = "name") %>%
+  left_join(xy %>% rename(k = name, ke = easting, kn = northing), by = "k") %>%
+  mutate(km = pmax(sqrt((easting - ke)^2 + (northing - kn)^2) / 1000, 0.1),
+         Wk = unname(W_run[k]), contrib = Wk * km^-SIGMA,
+         short = short_sch(name), k_short = short_sch(k))
+
+sch_elm <- sch_city
+lh_row <- sch_elm$name == "Longhill High School"
+sch_elm$easting[lh_row] <- sch_city$elm_easting[lh_row]
+sch_elm$northing[lh_row] <- sch_city$elm_northing[lh_row]
+C_now <- compete_now(sch_city, W_run, SIGMA)
+C_elm <- compete_now(sch_elm, W_run, SIGMA)
+
+Cj <- tibble(name = names(C_now), C = unname(C_now),
+             C_elm = unname(C_elm[names(C_now)])) %>%
+  mutate(short = short_sch(name), index = 100 * C / mean(C),
+         index_elm = 100 * C_elm / mean(C), mult = (C / mean(C))^DELTA)
+cj_of <- function(s, col) Cj[[col]][Cj$short == s]
+min_km <- function(s) min(pairs_km$km[pairs_km$short == s])
+rmse0 <- function(x) x$rmse[abs(x$value) < 1e-8]
+r2_0  <- function(x) x$r2[abs(x$value) < 1e-8]
+```
+
+## What it is
+
+$C_j$ measures **how much company a school has**: how many other schools
+stand close to it, weighted by how wanted each of them is.
+
+$$C_j \;=\; \sum_{k \neq j} W_k\, d_{jk}^{-\sigma}, \qquad \sigma = `r sprintf("%.0f", SIGMA)`$$
+
+$d_{jk}$ is the straight-line distance in kilometres between two
+**schools**, and it deliberately carries a different symbol from
+$c_{ij}$: nobody travels from one school to another, so routing it would
+mean nothing. All that is wanted is a measure of how clustered the
+schools are. With $\sigma$ at `r sprintf("%.0f", SIGMA)` the term reduces
+to *the sum of the rivals' attractiveness per kilometre they are away*.
+
+It enters the model as a power on the pull:
+
+$$\text{pull} \;\propto\; W_j\, c_{ij}^{-\beta}\, e^{\gamma_{h}\mathbb{1}[\cdot]}\, C_j^{\,\delta}, \qquad \delta = `r sprintf("%+.1f", DELTA)`$$
+
+The reasoning is Fotheringham's: a plain gravity model is misspecified
+when destinations cluster, because people choose an area first and a
+destination within it second. Left out, the clustering does not go away —
+it is absorbed by the distance parameter instead.
+
+## Brighton in one term
+
+```{r fig-cj-map}
+#| fig-cap: "Each school sized by the company it keeps, with its score on an index where the city average is 100. The lines open up the two extremes: every rival's contribution to Dorothy Stringer's total in orange, and to Longhill's in navy. A thicker line is a bigger contribution."
+#| fig-height: 5.0
+sch_pts <- sch_city %>%
+  select(name, easting, northing) %>%
+  st_as_sf(coords = c("easting", "northing"), crs = 27700) %>%
+  st_transform(4326) %>%
+  mutate(short = short_sch(name),
+         lon = st_coordinates(.)[, 1], lat = st_coordinates(.)[, 2]) %>%
+  left_join(Cj %>% select(name, C, index), by = "name")
+lonlat <- sch_pts %>% st_drop_geometry() %>% select(name, lon, lat)
+segs <- pairs_km %>%
+  filter(short %in% c("Dorothy Stringer", "Longhill")) %>%
+  left_join(lonlat, by = "name") %>%
+  left_join(lonlat %>% rename(k = name, klon = lon, klat = lat), by = "k")
+
+ggplot() +
+  geom_sf(data = catch_sf, fill = "grey96", colour = "white", linewidth = 0.5) +
+  geom_segment(data = segs, aes(x = lon, y = lat, xend = klon, yend = klat,
+                                linewidth = contrib, colour = short), alpha = 0.5) +
+  geom_sf(data = sch_pts, aes(size = C), shape = 21, fill = "white",
+          colour = "black", stroke = 0.9) +
+  ggrepel::geom_text_repel(
+    data = sch_pts, aes(lon, lat, label = sprintf("%s\n%.0f", short, index)),
+    size = 2.9, lineheight = 0.9, colour = "#1f3b57", seed = 11,
+    box.padding = 0.45, point.padding = 0.3, min.segment.length = 0.2,
+    segment.colour = "grey55", segment.size = 0.3, max.overlaps = Inf) +
+  scale_linewidth_continuous(range = c(0.2, 3.4), guide = "none") +
+  scale_size_continuous(range = c(2, 9), guide = "none") +
+  scale_colour_manual(values = c(`Dorothy Stringer` = "#d95f02", Longhill = "#1f3b57"),
+                      name = NULL,
+                      labels = function(x) paste("contributions to", x)) +
+  coord_sf(expand = TRUE, clip = "off") +
+  labs(title = "Five hundred metres from a rival, or five kilometres",
+       subtitle = "The competing-destinations term by school, city average = 100") +
+  theme_void(12) +
+  theme(plot.title = element_text(face = "bold", colour = "#1f3b57"),
+        plot.subtitle = element_text(colour = "grey35"),
+        legend.position = "top")
+```
+
+The two ends of the city are different objects on this measure.
+
+```{r cj-contrib}
+#| tbl-cap: "What the term is made of at its two extremes. Each row is one rival: how far away it is, how wanted it is, and what it therefore contributes."
+pairs_km %>%
+  filter(short %in% c("Dorothy Stringer", "Longhill")) %>%
+  group_by(short) %>% arrange(desc(contrib), .by_group = TRUE) %>%
+  mutate(rank = row_number(), total = sum(contrib)) %>%
+  filter(rank <= 3) %>% ungroup() %>%
+  transmute(School = sprintf("%s (total %.2f)", short, total),
+            Rival = k_short, `Distance (km)` = sprintf("%.2f", km),
+            `Its $W_k$` = sprintf("%.2f", Wk),
+            Contribution = sprintf("%.2f", contrib)) %>%
+  knitr::kable(align = "llrrr")
+```
+
+Varndean stands `r sprintf("%.0f", 1000 * min_km("Dorothy Stringer"))`
+metres from Dorothy Stringer, and Cardinal Newman — the most wanted
+school in the city on $W_j$ — is under two kilometres from both. Those
+two rivals alone contribute more to Stringer's term than **all nine** of
+Longhill's rivals contribute to its own. On an index with the city
+average at 100, Stringer scores
+`r sprintf("%.0f", cj_of("Dorothy Stringer", "index"))` and Longhill
+`r sprintf("%.0f", cj_of("Longhill", "index"))`.
+
+Two features of the term follow from how it is built, and both matter in
+the simulator:
+
+- **It uses the attractiveness in force, not a fixed table.** Pull an
+  attractiveness slider and every *other* school's $C_j$ moves too,
+  because $W_k$ sits inside the sum.
+- **It is a sum over the schools that exist in a run.** Close a school and
+  its neighbours lose the company it was providing; open CoMArt in East
+  Brighton and Longhill gains some.
+
+## What the fitted exponent does
+
+$\delta$ was fitted by grid search over
+`r sprintf("%+.1f to %+.1f", min(mt$delta_fit$value), max(mt$delta_fit$value))`,
+against the offers the council made in the most recent round, with the
+capacity ceiling and the catchment term already in place (§6 explains why
+the ceiling goes in first).
+
+```{r fig-cj-delta}
+#| fig-cap: "How much the term improves the fit, for three versions of the model. Each curve is that version's error against the offers made, relative to itself at δ = 0, so below 1 means the term is earning its place. The shaded half is the sign Fotheringham's argument predicts."
+#| fig-height: 4.8
+dprof <- bind_rows(
+  mt$delta_fit   %>% mutate(v = "With the ceiling and the catchment term"),
+  mt$delta_alone %>% mutate(v = "With the ceiling only"),
+  mt$delta_nocap %>% mutate(v = "With neither")) %>%
+  group_by(v) %>% mutate(rel = rmse / rmse[abs(value) < 1e-8]) %>% ungroup() %>%
+  mutate(v = factor(v, c("With the ceiling and the catchment term",
+                         "With the ceiling only", "With neither")))
+ggplot(dprof, aes(value, rel, colour = v)) +
+  annotate("rect", xmin = min(dprof$value), xmax = 0, ymin = -Inf, ymax = Inf,
+           fill = "#b2182b", alpha = 0.05) +
+  geom_hline(yintercept = 1, colour = "grey60", linewidth = 0.4) +
+  geom_line(linewidth = 1) +
+  geom_point(data = dprof %>% group_by(v) %>% slice_min(rel, n = 1) %>% ungroup(),
+             size = 3, show.legend = FALSE) +
+  annotate("text", x = min(dprof$value) + 0.05, y = 1.55, hjust = 0, vjust = 1,
+           size = 3.5, colour = "#b2182b", lineheight = 0.95,
+           label = "rivals take share\n(competing destinations)") +
+  scale_colour_manual(values = c("#1f3b57", "#d95f02", "grey60"), name = NULL) +
+  coord_cartesian(ylim = c(0.8, 1.6)) +
+  labs(x = "δ", y = "Error, relative to the same model at δ = 0",
+       title = sprintf("Fitted at δ = %+.1f, on the wrong side of zero", DELTA),
+       subtitle = "Dots mark each version's best value") +
+  theme_bh() +
+  theme(legend.position = "top", legend.direction = "vertical",
+        legend.justification = "left")
+```
+
+**The sign is not the one the term was added to test.** A negative
+$\delta$ is the competing-destinations prediction: rivals nearby take
+share. The fit lands at `r sprintf("%+.1f", DELTA)` — a school does
+slightly *better* for having company. That is agglomeration, the pattern
+of retail parks and restaurant streets, rather than the correction
+Fotheringham proposed. Negative values are not marginally worse but much
+worse: at $\delta = -1$ the error is about
+`r sprintf("%.1f", mt$delta_fit$rmse[which.min(abs(mt$delta_fit$value + 1))] / min(mt$delta_fit$rmse))`
+times its best.
+
+Three things keep the finding modest:
+
+- **The gain is small.** RMSE falls from
+  `r sprintf("%.1f", rmse0(mt$delta_fit))` at $\delta = 0$ to
+  `r sprintf("%.1f", min(mt$delta_fit$rmse))` at the fitted value, and
+  $R^2$ from `r sprintf("%.3f", r2_0(mt$delta_fit))` to
+  `r sprintf("%.3f", mt$delta_fit$r2[which.min(mt$delta_fit$rmse)])`.
+- **Without the ceiling it does nothing at all.** Fitted with no capacity
+  constraint the best value is `r sprintf("%+.1f", mt$delta_nocap_hat)`
+  and the error moves only from `r sprintf("%.1f", rmse0(mt$delta_nocap))`
+  to `r sprintf("%.1f", min(mt$delta_nocap$rmse))` — the grey curve above,
+  which barely dips below its own starting point. What the term appears to explain is mostly rationing.
+- **It and $\gamma$ are partly substitutes.** With the ceiling but no
+  catchment term, $\delta$ on its own fits at
+  `r sprintf("%+.1f", mt$delta_alone_hat)` and reaches much the same
+  error. Both terms hand extra pull to the same central schools by
+  different routes, so neither is a clean estimate of its own mechanism.
+
+```{r cj-multiplier}
+#| tbl-cap: "What the term does to each school's pull at the fitted exponent. A multiplier of 1 would be no effect. The last column is the same index with Longhill rebuilt at Elm Grove, which changes the distances every school is measured against."
+Cj %>% arrange(desc(index)) %>%
+  transmute(School = short,
+            `$C_j$ (city average = 100)` = sprintf("%.0f", index),
+            `Multiplies its pull by` = sprintf("%.2f", mult),
+            `$C_j$ with Longhill at Elm Grove` = sprintf("%.0f", index_elm)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+So the effect on pull runs from about
+`r sprintf("%.2f", min(Cj$mult))` for the most isolated school to
+`r sprintf("%.2f", max(Cj$mult))` for the most crowded: Longhill's pull
+is cut by roughly `r sprintf("%.0f", 100 * (1 - min(Cj$mult)))`% against
+the city average and Stringer's raised by about
+`r sprintf("%.0f", 100 * (max(Cj$mult) - 1))`%. Smaller than $\gamma$ or
+$\beta$, but not nothing.
+
+## Why it is in the model at all
+
+Three reasons, none of them "it improved the fit a lot":
+
+1. **It is the standard correction** for a gravity model over clustered
+   destinations. Leaving it out does not remove the clustering; it loads
+   it onto $\beta$, and the distance parameter then means two things at
+   once.
+2. **It moves when a school moves.** Rebuilt at Elm Grove, Longhill's
+   term rises from `r sprintf("%.0f", cj_of("Longhill", "index"))` to
+   `r sprintf("%.0f", cj_of("Longhill", "index_elm"))` — still below
+   average, but no longer alone on the eastern edge. That is a real
+   difference between the two sites and the model should see it. It is
+   also a correction made in this version: before it, competition was
+   measured from Ovingdean even in runs where the school had moved.
+3. **It records a negative finding.** That a compact city of ten schools
+   shows no competing-destinations effect is worth reporting, and it is
+   at least consistent with the structure: a production-constrained model
+   already normalises each neighbourhood's choices across every school
+   through $A_i$ (§8), which is where much of the work the term would
+   otherwise do has already been done.
+
+## Checks you can run
+
+```{r cj-checks}
+#| tbl-cap: "What the competing-destinations term should satisfy."
+tibble::tribble(
+  ~Check, ~Result,
+  "Schools in the sum",
+  sprintf("%d city schools; out-of-city destinations carry no C_j at all",
+          nrow(sch_city)),
+  "Distances are school to school, straight line",
+  sprintf("%.2f km to %.2f km", min(pairs_km$km), max(pairs_km$km)),
+  "Closest pair in the city",
+  sprintf("%s and %s, %.0f m", pairs_km$short[which.min(pairs_km$km)],
+          pairs_km$k_short[which.min(pairs_km$km)], 1000 * min(pairs_km$km)),
+  "Most isolated school",
+  sprintf("%s, nearest rival %.1f km", Cj$short[which.min(Cj$C)],
+          min_km(Cj$short[which.min(Cj$C)])),
+  "Rivals are attractiveness-weighted",
+  "yes: an unwanted neighbour counts for less than a wanted one",
+  "Effect on pull at the fitted exponent",
+  sprintf("%.2f to %.2f times", min(Cj$mult), max(Cj$mult)),
+  "Measured from where each school stands in the run",
+  sprintf("yes: Longhill scores %.0f at Ovingdean and %.0f at Elm Grove",
+          cj_of("Longhill", "index"), cj_of("Longhill", "index_elm"))) %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+- **$\sigma$ is set, not fitted.** The decay on school-to-school distance
+  is fixed at `r sprintf("%.0f", SIGMA)`. Fitting it as well as $\delta$
+  on ten destination margins would be asking too much of the data.
+- **Ten schools.** Every statement here rests on ten points, and two
+  tight pairs — Stringer with Varndean, Blatchington Mill with Hove Park
+  — dominate the variation.
+- **It is entangled with $W_j$ and with $\gamma$.** The sum uses the
+  attractiveness that was itself balanced with this term in place, and
+  §6's catchment term can do much of the same work.
+- **Straight lines, not journeys.** Two schools half a kilometre apart
+  across a railway are as close, on this measure, as two half a kilometre
+  apart on the same street.
+- **Fitted on offers, not preferences.** Unlike $\gamma_h$, which was
+  refitted against the catchment preference table, $\delta$ was fitted
+  against the offers made — and those are shaped by the ceiling as much
+  as by choice.
+
+## Questions this raises
+
+1. Should $\delta$ be refitted against preferences, as $\gamma_h$ now is?
+   That is the cleaner question, and this is the last term still fitted
+   against the older target.
+2. Is the positive sign real, or is it standing in for something the
+   model is missing — the faith schools' city-wide draw, say, which
+   happens to sit in the crowded middle of the city?
+3. Would a nested form — choose an area, then a school within it —
+   represent the paired catchments better than an exponent on clustering
+   does?
