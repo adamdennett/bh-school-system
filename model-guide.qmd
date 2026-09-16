@@ -1090,7 +1090,7 @@ neighbourhood to every city school, leg by leg, on the same network and
 the same weekday-morning timetable the model uses.
 
 ```{r fig-cij-routes}
-#| fig-cap: "Indicative routes from the worked neighbourhood to each city school. Choose a school on the right. Walking legs are orange and follow the street network; bus legs are blue, follow the service's own route and are labelled with the service number. Schools the model caps at walking time are routed on foot only. The route starts at the neighbourhood's centre, so its time differs a little from the model's, which averages over every postcode in the neighbourhood."
+#| fig-cap: "Indicative routes from the worked neighbourhood to each city school. Choose a school on the right. Walking legs are orange and follow the street network; bus legs are blue, follow the service's own route and are labelled with the service number. Schools the model caps at walking time are routed on foot only. The route starts at the neighbourhood's centre, so its time differs a little from the model's, which averages over every postcode in the neighbourhood. Both ends are snapped to the nearest street, so a line can stop just short of its marker."
 gr_bb <- sf::st_bbox(gr_legs)
 sch_pts <- schools_sf(oi$schools) %>%
   filter(name %in% gr_sum$school)
@@ -1144,7 +1144,26 @@ mr %>%
                    options = layersControlOptions(collapsed = FALSE)) %>%
   hideGroup("Catchment boundaries") %>%
   addLegend("bottomright", colors = unname(GR_COL), labels = names(GR_COL),
-            title = "Leg", opacity = 0.9)
+            title = "Leg", opacity = 0.9) %>%
+  # Zoom to the chosen school's route, on load and whenever it changes.
+  htmlwidgets::onRender("
+    function(el, x) {
+      var map = this;
+      function fitRoute(group) {
+        var b = L.latLngBounds([]);
+        group.eachLayer(function(l) {
+          if (l instanceof L.Polyline) b.extend(l.getBounds());
+        });
+        if (b.isValid()) map.fitBounds(b.pad(0.25), {maxZoom: 16});
+      }
+      map.on('baselayerchange', function(e) { fitRoute(e.layer); });
+      setTimeout(function() {
+        var active = el.querySelector('.leaflet-control-layers-base input:checked');
+        if (!active || !active.nextSibling || !map.layerManager) return;
+        var grp = map.layerManager.getLayerGroup(active.nextSibling.textContent.trim(), false);
+        if (grp) fitRoute(grp);
+      }, 300);
+    }")
 ```
 
 ```{r cij-routes-table}
