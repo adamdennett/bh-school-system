@@ -2464,3 +2464,277 @@ tibble::tribble(
    uncertainty in a marginal neighbourhood's outcome is visible?
 3. Should the academies' and faith schools' own criteria be modelled from
    their published admission policies rather than left proportional?
+
+# Re-offering the children who are refused {#sec-overflow}
+
+```{r ov-setup}
+#| include: false
+# The cascade, re-run here with bookkeeping so the guide can say where
+# each refused child goes. The arithmetic is ipf_priorities() line for
+# line; the only additions are the tables of movements, and the final
+# flows are checked against the engine's below.
+kern <- inp$params$overflow
+cap_ov <- setNames(as.numeric(inp$schools$pan), inp$schools$name)
+ext_ov <- names(inp$params$outside$W)
+cap_all_ov <- c(cap_ov[!is.na(cap_ov)],
+                setNames(rep(1e6, length(ext_ov)), ext_ov))
+dsg_ov <- inp$designs[["Current catchments"]]
+o_pop_ov <- tapply(d_ai$Oi_pop, d_ai$orig, function(x) x[1])
+fsm_z <- setNames(inp$zones$fsm, inp$zones$zone)
+share_ov <- setNames(unname(fsm_z[sub("#.*$", "", names(o_pop_ov))]),
+                     names(o_pop_ov))
+grp_ov <- dsg_ov$school[inp$schools$name[inp$schools$city & !inp$schools$faith]]
+single_ov <- names(table(grp_ov[!is.na(grp_ov)]))[table(grp_ov[!is.na(grp_ov)]) == 1]
+in_c_ov <- d_ai$in_catch == 1
+s6_ov <- unname(dsg_ov$zone[d_ai$zone]) %in% single_ov & !in_c_ov
+com_ov <- d_ai$name %in% rl$community
+partner_ov <- partner_map(inp$params$exclusive)
+st_ov <- overflow_setup(d_ai$wanted, d_ai$orig, d_ai$name, d_ai$catchment,
+                        d_ai$pop, kern, partner_ov)
+
+attribute <- function(refused, room, st, name) {
+  to_p <- st$pr; to_p[st$pr] <- room[st$p_idx[st$pr]]
+  out <- list()
+  if (any(to_p))
+    out$partner <- tibble(from = name[to_p], to = name[st$p_idx[to_p]],
+                          n = refused[to_p], route = "Partner school")
+  rest <- refused; rest[to_p] <- 0
+  w <- st$bw * room; ws <- rowsum(w, st$oid)[st$oid, 1]
+  w2 <- st$u * room; ws2 <- rowsum(w2, st$oid)[st$oid, 1]
+  share <- ifelse(ws > 0, w / ws, ifelse(ws2 > 0, w2 / ws2, 0))
+  fr <- tibble(oid = st$oid, from = name, n = rest) %>% filter(n > 0)
+  to <- tibble(oid = st$oid, to = name, s = share) %>% filter(s > 0)
+  out$kernel <- fr %>%
+    inner_join(to, by = "oid", relationship = "many-to-many") %>%
+    transmute(from, to, n = n * s, route = "Second preferences")
+  bind_rows(out)
+}
+
+ffv <- d_ai$wanted * unname(share_ov[d_ai$orig]); fnv <- d_ai$wanted - ffv
+ov_att <- list(); ov_rounds <- c()
+for (it in 1:500) {
+  acc <- tier_accept(ffv, fnv, d_ai$name, cap_all_ov, cap_all_ov,
+                     in_c_ov, s6_ov, com_ov, rl$p6_share, rl$fsm_cap_share)
+  Hf <- ffv * acc$f; Hn <- fnv * acc$n; rf <- ffv - Hf; rn <- fnv - Hn
+  ov_rounds <- c(ov_rounds, sum(rf + rn))
+  if (sum(rf + rn) <= 1e-6) { ffv <- Hf; fnv <- Hn; break }
+  room <- overflow_room(Hf + Hn, d_ai$name, cap_all_ov)
+  if (!any(room)) { ffv <- Hf; fnv <- Hn; break }
+  ov_att[[it]] <- attribute(rf + rn, room, st_ov, d_ai$name) %>% mutate(round = it)
+  ffv <- Hf + overflow_add(rf, room, st_ov)
+  fnv <- Hn + overflow_add(rn, room, st_ov)
+}
+ov_gap <- max(abs((ffv + fnv) - d_ai$flow))
+A_ov <- bind_rows(ov_att)
+by_route <- A_ov %>% group_by(route) %>% summarise(n = sum(n), .groups = "drop")
+route_n <- function(r) by_route$n[by_route$route == r]
+
+kern_tbl <- tibble(key = names(kern), share = unname(kern)) %>%
+  tidyr::separate(key, c("catchment", "school"), sep = " ", extra = "merge")
+
+# Model catchment codes to the labels used everywhere else in this work.
+catch_lab <- function(x) {
+  out <- unname(CATCH_LABELS[CATCH_FROM_MODEL[x]])
+  dplyr::coalesce(out, x)
+}
+```
+
+## Why a proportional cut is not enough
+
+The ceiling in §9 tells each full school how many of its applicants it
+can take. It does not say what happens to the rest. Left there, the
+production constraint of §8 would rescale each neighbourhood's remaining
+flows to place its children — which spreads a child refused at Varndean
+across *every* other school in proportion to how much they wanted each
+one first.
+
+That is not what happens. A family refused at Varndean who would also
+take Dorothy Stringer gets Dorothy Stringer. A family refused at Cardinal
+Newman goes where families in their part of the city put their second
+preference. So refused demand is re-offered explicitly, in two steps, and
+only ever to schools that still have room.
+
+## Step one: the partner school
+
+In the two paired catchments — Stringer with Varndean, Hove Park with
+Blatchington Mill — a family who would take either school and is refused
+at one is offered the other before anything else is considered.
+
+```{r ov-partner}
+#| tbl-cap: "The partner map. It follows the family's own catchment, so it holds under any boundary design."
+tibble(key = names(partner_ov), partner = unname(partner_ov)) %>%
+  tidyr::separate(key, c("Catchment", "Refused at"), sep = " ", extra = "merge") %>%
+  transmute(Catchment = catch_lab(Catchment),
+            `Refused at` = short_sch(`Refused at`),
+            `Offered instead` = short_sch(partner)) %>%
+  knitr::kable(align = "lll")
+```
+
+The families who would take **only** one of the pair are excluded from
+this step: they are carried as populations of their own (§8), and a child
+who would not take Stringer is never sent there.
+
+## Step two: the second preferences of their catchment
+
+Everything else is shared among the schools with room, in proportion to
+the **second preferences families in that home catchment actually gave**.
+That is the council's catchment preference table, pooled over
+`r length(cal$rounds)` rounds, normalised within each catchment:
+
+```{r ov-kernel}
+#| tbl-cap: "The three schools each catchment's families most often name second. Sixty numbers in all — six catchments by ten schools."
+kern_tbl %>%
+  group_by(catchment) %>% slice_max(share, n = 3) %>% ungroup() %>%
+  transmute(Catchment = catch_lab(catchment),
+            School = short_sch(school),
+            `Share of the catchment's second preferences` = fmt_pct(100 * share)) %>%
+  knitr::kable(align = "llr")
+```
+
+A catchment-level table would send every neighbourhood in Longhill's
+catchment the same way, so it is modulated by where the neighbourhood
+actually is. Each neighbourhood's weight on school $j$ is
+
+$$b_{ij} \;=\; k_{h(i),j} \times \frac{u_{ij}}{\bar u_{h(i),j}}$$
+
+where $u_{ij}$ is the share of $i$'s children the model sent to $j$
+before rationing and $\bar u$ is the average of that share across the
+catchment. A neighbourhood at the Patcham end of Varndean's catchment
+therefore sends more of its overflow to Patcham than one at the other
+end, without anyone having to write that rule down.
+
+::: {.callout-note}
+## When a school has moved
+
+The second preferences in the table were given with the schools where
+they stand today. If a run moves one — Longhill to Elm Grove — the
+comparison $u/\bar u$ is made against the flows *at today's sites*, so a
+catchment that the move brings a school nearer to sends it more of its
+overflow. Without that correction the kernel would be read against a
+city the families answering it never saw. With no move, the two are the
+same flow and nothing changes.
+:::
+
+## What it does in 2026
+
+```{r fig-ov-flows}
+#| fig-cap: "Where refused children are re-offered, over all rounds of the cascade. The partner route is the paired catchments; everything else follows the home catchment's second preferences."
+#| fig-height: 5.2
+flows_plot <- A_ov %>%
+  group_by(from = short_sch(from), to = short_sch(to), route) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  filter(n > 0.5) %>%
+  mutate(from = forcats::fct_reorder(from, n, sum),
+         to = forcats::fct_reorder(to, n, sum))
+ggplot(flows_plot, aes(n, from, fill = to)) +
+  geom_col(width = 0.7, colour = "white", linewidth = 0.4) +
+  facet_wrap(~ route, ncol = 1, scales = "free_y") +
+  scale_fill_brewer(palette = "Set2", name = "Offered instead") +
+  labs(x = "Children", y = "Refused at",
+       title = sprintf("%.0f children are re-offered somewhere else",
+                       sum(A_ov$n)),
+       subtitle = sprintf("2026 entry, current catchment map. %.0f take the partner school, %.0f follow second preferences",
+                          route_n("Partner school"), route_n("Second preferences"))) +
+  theme_bh() +
+  theme(legend.position = "right",
+        strip.text = element_text(face = "bold", hjust = 0))
+```
+
+The cascade runs `r length(ov_rounds)` rounds, refusing
+`r paste(sprintf("%.0f", head(ov_rounds, length(ov_rounds) - 1)), collapse = ", then ")`,
+then nobody. Re-offered demand can overfill a school with a little
+room left, so the next round cuts it back and re-offers the excess again;
+the totals fall away quickly because each round has less to place and
+fewer schools to place it in.
+
+Two things in that chart are worth stating plainly. The largest single
+movement in the city is **Varndean to Dorothy Stringer**
+(`r sprintf("%.0f", sum(A_ov$n[short_sch(A_ov$from) == "Varndean" & short_sch(A_ov$to) == "Dorothy Stringer"]))`
+children by both routes together), which is why Stringer finishes full
+despite being wanted first by fewer children than it has places for. And
+the schools receiving the overflow are, in order,
+`r paste(head(A_ov %>% group_by(to) %>% summarise(n = sum(n)) %>% arrange(desc(n)) %>% pull(to) %>% short_sch(), 3), collapse = ", ")`
+— the schools with room, not the schools nearest the refusal.
+
+## This is where displacement comes from
+
+The strategic view's **displacement** measure is the difference between
+the two quantities this section connects: what a neighbourhood's children
+wanted, and what they were offered. A child who is counted as displaced
+is a child who appears somewhere in the chart above.
+
+```{r ov-displaced}
+#| tbl-cap: "The neighbourhoods losing most children to the ceiling, 2026. Displacement is demand that was refused, wherever it ended up."
+d_ai %>%
+  mutate(lost = pmax(wanted - flow, 0)) %>%
+  group_by(zone) %>%
+  summarise(Oi = first(Oi), catchment = first(catchment),
+            lost = sum(lost), .groups = "drop") %>%
+  slice_max(lost, n = 6) %>%
+  transmute(Neighbourhood = sub("[|].*$", "", zone),
+            Catchment = catch_lab(catchment),
+            `Children` = sprintf("%.0f", Oi),
+            `Refused their first choice` = sprintf("%.0f", lost),
+            `Share` = fmt_pct(100 * lost / Oi)) %>%
+  knitr::kable(align = "llrrr")
+```
+
+## Checks you can run
+
+```{r ov-checks}
+#| tbl-cap: "What the re-offering should satisfy. The first row is the important one: the cascade above is run independently of the engine and lands in the same place."
+tibble::tribble(
+  ~Check, ~Result,
+  "This section's cascade reproduces the engine's flows",
+  if (ov_gap == 0) "exactly, to the last decimal place" else
+    sprintf("largest difference %.0e children", ov_gap),
+  "Rounds to convergence",
+  sprintf("%d, refusing %s", length(ov_rounds),
+          paste(sprintf("%.0f", ov_rounds), collapse = " then ")),
+  "Everything refused is re-offered",
+  sprintf("%.0f refused over all rounds, %.0f re-offered",
+          sum(ov_rounds), sum(A_ov$n)),
+  "Re-offers only go to schools with room",
+  sprintf("largest final intake above an admission number: %.2f children",
+          max(by_sch$offered - by_sch$pan)),
+  "The partner route is only for families who would take both",
+  sprintf("%.0f children, all of them in the two paired catchments",
+          route_n("Partner school")),
+  "Nobody is left unplaced",
+  sprintf("%s children in, %s children out",
+          fmt_n(round(sum(d_ai$Oi_pop[!duplicated(d_ai$orig)]))),
+          fmt_n(round(sum(d_ai$flow))))) %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+- **The kernel is fixed, and it is pre-2024.** The second preferences
+  come from the catchment table the council published for the old
+  boundaries. Under a redrawn map the model still uses them, modulated by
+  proximity but not re-estimated.
+- **Second preferences are not a preference for a school with room.** The
+  table records what families named when the school they wanted was still
+  possible. A family whose second choice is also full is handled by the
+  next round, which is a reasonable mechanism but not an observed one.
+- **Overflow stays in the city.** The kernel has entries for the ten city
+  schools only, so a refused child is never re-offered a school outside
+  Brighton and Hove — although out-of-city schools are in the choice set
+  at the first stage (§8) and take
+  `r sprintf("%.0f", sum(d_ai$flow[d_ai$name %in% ext_ov]))` children in
+  2026 that way.
+- **It is demand, not children.** Every quantity here is a fraction of a
+  neighbourhood's cohort, so "68 children take the partner school" means
+  68 children's worth of demand spread over many neighbourhoods.
+- **Refusal has no cost.** A family refused twice is no less likely to be
+  placed than one refused once, and nothing in the model records how far
+  down their own list a child ends up.
+
+## Questions this raises
+
+1. Should the kernel be re-estimated for a redrawn map, or is the
+   proximity modulation enough?
+2. Should third preferences enter, rather than the cascade re-using
+   second preferences in every round?
+3. Should a refused child be allowed out of the city, as they can be at
+   the first stage?
