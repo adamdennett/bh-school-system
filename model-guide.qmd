@@ -66,7 +66,7 @@ $$
 | $\beta$ | distance decay | §5 |
 | $\gamma_h$ | catchment term, fitted for each catchment $h$ | §6 |
 | $C_j$, $\delta$ | competing destinations | §7 |
-| $A_i$ | balancing factor: every neighbourhood places all of its children | to follow |
+| $A_i$ | balancing factor: every neighbourhood places all of its children | §8 |
 | $y$ | entry year, carried as a superscript | §2.7 |
 
 Two further stages are applied to the $T_{ij}$ this produces: the
@@ -1936,3 +1936,246 @@ tibble::tribble(
 3. Would a nested form — choose an area, then a school within it —
    represent the paired catchments better than an exponent on clustering
    does?
+
+# $A_i$: the balancing factor {#sec-ai}
+
+```{r ai-setup}
+#| include: false
+r_ai <- run_sim(inp, year = 2026, rules = list(rule = "priorities"))
+d_ai <- r_ai$flows
+ext_ai <- inp$params$outside
+g_ai <- unname(inp$params$gamma[d_ai$catchment]); g_ai[is.na(g_ai)] <- 0
+d_ai$util <- d_ai$Wj * d_ai$cij^(-inp$params$beta) *
+  exp(g_ai * d_ai$in_catch + inp$params$delta * log(d_ai$Cj))
+is_ext <- d_ai$name %in% names(ext_ai$W)
+d_ai$util[is_ext] <- unname(ext_ai$W[d_ai$name[is_ext]]) *
+  d_ai$km[is_ext]^(-ext_ai$decay)
+
+# The engine's own answer, to check the hand computation against.
+own <- tapply(d_ai$util, d_ai$orig, sum)
+d_ai$A <- 1 / own[d_ai$orig]
+d_ai$by_hand <- d_ai$util * d_ai$Oi_pop * d_ai$A
+ai_gap <- max(abs(d_ai$by_hand - d_ai$wanted))
+
+pull_z <- d_ai %>% filter(pop == "either") %>%
+  group_by(zone) %>%
+  summarise(pull = sum(util), Oi = first(Oi_pop), catchment = first(catchment),
+            ext_share = sum(util[name %in% names(ext_ai$W)]) / sum(util),
+            .groups = "drop") %>%
+  mutate(A = 1 / pull, index = 100 * pull / stats::median(pull))
+
+row_chk <- d_ai %>% group_by(orig) %>%
+  summarise(Oi = first(Oi_pop), wanted = sum(wanted), final = sum(flow), .groups = "drop")
+
+ZC <- "E01016901|DS_Varndean|DS_Varndean"
+ZE <- "E01017012|Longhill|Longhill"
+worked <- function(zz) d_ai %>% filter(zone == zz, pop == "either")
+ai_tbl <- function(zz) {
+  worked(zz) %>%
+    transmute(School = short_sch(name), `Journey (min)` = sprintf("%.0f", cij),
+              `$W_j$` = ifelse(is.na(Wj), "—", sprintf("%.2f", Wj)),
+              `In catchment` = ifelse(in_catch == 1, "yes", ""),
+              Pull = signif(util, 3),
+              `Share of the row` = sprintf("%.1f%%", 100 * util / sum(util)),
+              Children = sprintf("%.1f", wanted)) %>%
+    arrange(desc(Pull)) %>%
+    mutate(Pull = format(Pull, scientific = TRUE, digits = 3)) %>%
+    head(6)
+}
+ai_of <- function(zz) 1 / sum(worked(zz)$util)
+oi_of <- function(zz) worked(zz)$Oi_pop[1]
+```
+
+## What it is
+
+$A_i$ is not a thing anyone chooses or observes. It is whatever number
+makes each neighbourhood's row of the matrix add up to the children who
+live there:
+
+$$\sum_j T_{ij}^{\,y} = O_i^{\,y} \quad\Longrightarrow\quad
+A_i^{\,y} \;=\; \frac{1}{\sum_k W_k\, c_{ik}^{-\beta}\,
+e^{\gamma_{h(i)}\mathbb{1}[\cdot]}\, C_k^{\delta}}$$
+
+Call the denominator the neighbourhood's **total pull**: everything the
+city offers it, discounted by how hard each school is to reach. $A_i$ is
+its reciprocal, and the model then divides the children of $i$ between
+schools in proportion to each school's share of that total:
+
+$$T_{ij} \;=\; O_i \times \frac{\text{pull}_{ij}}{\sum_k \text{pull}_{ik}}$$
+
+This is what "production-constrained" means, and it is the single
+strongest assumption in the model. **Every child is placed somewhere.**
+Demand cannot leak away, and it cannot grow because the city got better:
+if every school became less attractive tomorrow, $A_i$ would simply rise
+to compensate and exactly the same children would be distributed in
+exactly the same proportions.
+
+## Computed per population, not per zone
+
+One subtlety: the model does not balance over zones but over
+**origin-populations**. In the two paired catchments some families will
+take one of the pair but not the other, so a zone there carries up to
+three populations with different choice sets, each balanced on its own.
+
+```{r ai-pops}
+#| tbl-cap: "The origin-populations the model balances over. Each is a group of children with its own choice set, and therefore its own balancing factor."
+d_ai %>% distinct(orig, pop, zone) %>%
+  count(pop, name = "Origins") %>%
+  mutate(Population = ifelse(pop == "either", "Everyone else", pop)) %>%
+  select(Population, Origins) %>%
+  knitr::kable(align = "lr")
+```
+
+That is `r fmt_n(nrow(row_chk))` origins over
+`r fmt_n(n_distinct(d_ai$zone))` zones, and it matters because a child
+who would not take Varndean must have Varndean *out of the denominator*,
+not merely low in it. Otherwise refusing them at Dorothy Stringer would
+send them next door.
+
+## What the total pull looks like
+
+```{r fig-ai-map}
+#| fig-cap: "The denominator of the balancing factor: how much school, weighted by how reachable it is, each neighbourhood has available. Drawn on a log scale, because the range is more than eightyfold. Zone values are carried up to LSOAs, weighted by children."
+#| fig-height: 5
+pull_map <- lsoa_sf %>%
+  inner_join(pull_z %>% inner_join(zone_lsoa %>% select(zone, lsoa), by = "zone") %>%
+               group_by(lsoa) %>%
+               summarise(index = weighted.mean(index, Oi), .groups = "drop"),
+             by = c("lsoa21cd" = "lsoa"))
+ggplot() +
+  geom_sf(data = pull_map, aes(fill = index), colour = NA) +
+  geom_sf(data = catch_sf, fill = NA, colour = "white", linewidth = 0.3) +
+  geom_sf(data = sch_sf, shape = 21, fill = "white", colour = "black",
+          size = 2.4, stroke = 0.9) +
+  scale_fill_viridis_c(option = "viridis", trans = "log10",
+                       name = "Total pull\n(median = 100)",
+                       breaks = c(30, 100, 300, 1000)) +
+  labs(title = "What each neighbourhood has within reach",
+       subtitle = "The sum the balancing factor divides by, current catchment map, 2026") +
+  theme_void(12) +
+  theme(plot.title = element_text(face = "bold", colour = "#1f3b57"),
+        plot.subtitle = element_text(colour = "grey35"))
+```
+
+The range is extreme — from
+`r sprintf("%.0f", min(pull_z$index))` to
+`r sprintf("%.0f", max(pull_z$index))` on an index with the median at 100
+— and most of it is the catchment term compounding with distance. A
+neighbourhood between Dorothy Stringer and Varndean has two schools it
+can walk to *and* the catchment bonus on both. A neighbourhood in
+Ovingdean has one school within easy reach, with the lowest $W_j$ in the
+city.
+
+For the far east of the city the denominator also contains schools
+outside it. In a typical Longhill-catchment neighbourhood they are
+`r sprintf("%.1f%%", 100 * weighted.mean(pull_z$ext_share[pull_z$catchment == "Longhill"], pull_z$Oi[pull_z$catchment == "Longhill"]))`
+of the total pull, and they are under
+`r sprintf("%.1f%%", 100 * max(pull_z$ext_share[!pull_z$catchment %in% c("Longhill", "BACA")]))`
+everywhere west of Brighton Aldridge's.
+
+## Two rows, worked
+
+```{r ai-worked-central}
+#| tbl-cap: "A neighbourhood between the two Fiveways schools. Top six destinations of fourteen; the rest are rounding."
+ai_tbl(ZC) %>% knitr::kable(align = "lrrlrrr")
+```
+
+`r sprintf("%.0f", oi_of(ZC))` children, total pull
+`r sprintf("%.3f", 1 / ai_of(ZC))`, so
+$A_i = `r sprintf("%.2f", ai_of(ZC))`$.
+
+```{r ai-worked-east}
+#| tbl-cap: "A neighbourhood in Longhill's catchment. The same table, the same city, a different world."
+ai_tbl(ZE) %>% knitr::kable(align = "lrrlrrr")
+```
+
+`r sprintf("%.0f", oi_of(ZE))` children, total pull
+`r sprintf("%.4f", 1 / ai_of(ZE))`, so
+$A_i = `r sprintf("%.1f", ai_of(ZE))`$ — about
+`r sprintf("%.0f", ai_of(ZE) / ai_of(ZC))` times the first.
+
+Read the two tables side by side and the model's behaviour is visible in
+one page. In the first, `r sprintf("%.0f%%", 100 * sum(worked(ZC)$util[worked(ZC)$in_catch == 1]) / sum(worked(ZC)$util))`
+of the row goes to the two catchment schools before anything else is
+considered. In the second, the catchment school takes
+`r sprintf("%.0f%%", 100 * sum(worked(ZE)$util[worked(ZE)$in_catch == 1]) / sum(worked(ZE)$util))`,
+and the second destination is Priory School in Lewes, outside the city
+altogether.
+
+::: {.callout-note}
+## The balancing factor is not the accessibility index, but it is close
+
+The strategic view reports an accessibility index for each
+neighbourhood. That is the same sum with the behavioural terms stripped
+out — attractiveness and journey time only, no catchment bonus, no
+competition term, city schools alone. The two rank neighbourhoods
+similarly but not identically (Spearman
+$\rho = `r sprintf("%.2f", cor(pull_z$pull, acc$zone$A_hansen[match(pull_z$zone, acc$zone$zone)], method = "spearman"))`$),
+and the difference is mostly the catchment term: it rewards the
+neighbourhoods that are already close to a wanted school.
+:::
+
+## Where it sits in the sequence
+
+$A_i$ is applied to the **uncapped** pull, before any admission number is
+consulted. The model first works out what families want, and only then
+rations it (§9), re-offering the children who are refused (§10).
+
+The constraint survives that. After the ceiling and the re-offering, the
+row still sums to the children who live there — nobody is lost in
+rationing, they are only placed elsewhere:
+
+```{r ai-checks}
+#| tbl-cap: "What the balancing factor should satisfy. Every number here is computed from the run, not asserted."
+tibble::tribble(
+  ~Check, ~Result,
+  "Origins balanced",
+  sprintf("%s populations over %s zones", fmt_n(nrow(row_chk)),
+          fmt_n(n_distinct(d_ai$zone))),
+  "Rows sum to their children, before the ceiling",
+  sprintf("largest error %.0e children", max(abs(row_chk$wanted - row_chk$Oi))),
+  "Rows still sum to their children, after it",
+  sprintf("largest error %.2f children", max(abs(row_chk$final - row_chk$Oi))),
+  "City total placed",
+  sprintf("%s children in 2026, all of them", fmt_n(round(sum(d_ai$flow)))),
+  "Recomputing the flows by hand reproduces the engine",
+  sprintf("largest difference %.0e children", ai_gap),
+  "Range of the balancing factor",
+  sprintf("%.2f to %.1f", min(pull_z$A), max(pull_z$A)),
+  "Out-of-city schools are inside the denominator",
+  "yes: they compete for children like any other destination") %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+- **No demand response.** Because the row is fixed at $O_i$, nothing the
+  model does can make families leave the state system, home-school, move
+  house, or appear from elsewhere. A scenario that makes every school
+  worse produces the same `r fmt_n(round(sum(d_ai$flow)))` placements as
+  one that makes every school better. Where a scenario would plausibly change how many families opt
+  out, the model will not show it, and §2's state-sector share is the
+  only place that quantity lives.
+- **Substitution is proportional.** Close a school, and the children who
+  wanted it are redistributed among the others in proportion to those
+  schools' existing pull for that neighbourhood — the classic
+  independence-of-irrelevant-alternatives behaviour. The exclusivity
+  populations are a patch on exactly this, for the one case where it is
+  known to be wrong.
+- **It absorbs everything the model does not contain.** Any systematic
+  pull the equation misses is silently rescaled away by $A_i$ rather than
+  showing up as a residual. A model that fits well at the school level
+  can still be wrong about why.
+- **It is recomputed in every run.** Change a year, a slider, a boundary
+  or a school's existence and the denominator changes for every affected
+  neighbourhood. $A_i$ is never carried over between runs.
+
+## Questions this raises
+
+1. Should the state-sector share respond to the scenario rather than
+   being fixed in $O_i$ — a doubly-constrained or elastic form?
+2. Should the choice set be truncated — some neighbourhoods carry
+   fourteen destinations when families realistically consider three or
+   four?
+3. Are the exclusivity populations the right patch for proportional
+   substitution, or should the whole thing be nested?
