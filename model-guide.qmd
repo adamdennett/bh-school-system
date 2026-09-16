@@ -70,9 +70,8 @@ $$
 | $y$ | entry year, carried as a superscript | §2.7 |
 
 Two further stages are applied to the $T_{ij}$ this produces: the
-admission-number ceiling with the council's oversubscription priorities,
-and the re-offering of refused children. Each gets its own section after
-the terms above.
+admission-number ceiling with the council's oversubscription priorities
+(§9), and the re-offering of the children it refuses (§10).
 
 ::: {.callout-note}
 
@@ -579,7 +578,7 @@ not take any of those five as given. It **balances** $W_j$ so that the
 model reproduces the share of the city's first preferences each school
 actually receives, using the council's catchment-level preference table
 from its evidence to the Schools Adjudicator. The catchment terms
-$\gamma_h$ are fitted in the same loop (§4, to follow), because the two
+$\gamma_h$ are fitted in the same loop (§6), because the two
 trade off against each other.
 
 $$W_j \;\leftarrow\; W_j \left(\frac{\text{target share}_j}{\text{modelled share}_j}\right)^{0.8},
@@ -887,7 +886,7 @@ morning. It is not a straight-line distance, and it is not a car journey.
 It enters the model as $c_{ij}^{-\beta}$, so it is the term that makes a
 school ten minutes away far more likely to be chosen than one an hour
 away — and the exponent $\beta$ that governs how fast that falls away is
-its own section, to follow.
+its own section (§5).
 
 The city has `r fmt_n(nrow(inp$cost$now))` zone-school pairs in the
 simulator's cost table, spanning
@@ -1373,7 +1372,7 @@ than about schools.
 
 ## This is about what families name, not about who gets admitted
 
-Admission priority is a separate stage of the model (§8, to follow):
+Admission priority is a separate stage of the model (§9):
 when a school is oversubscribed the council's criteria decide who is
 offered a place, and living in the catchment is one of them. $\gamma_h$
 is doing something different and earlier. It says how much more likely a
@@ -1512,6 +1511,120 @@ and Longhill's at
 `r fmt_pct(100 * cal$own$M4[cal$own$home == "Longhill"], 0)` against
 `r fmt_pct(100 * cal$own$observed[cal$own$home == "Longhill"], 0)`. Fitting
 each catchment separately reproduces both.
+
+## The two schools with no catchment at all {#sec-gamma-faith}
+
+```{r gamma-faith}
+#| include: false
+catch_lab <- function(x) {
+  out <- unname(CATCH_LABELS[CATCH_FROM_MODEL[x]])
+  dplyr::coalesce(out, x)
+}
+faith_n <- inp$schools$name[inp$schools$city & inp$schools$faith]
+d_g <- r_now$flows
+faith_rows <- d_g %>% filter(name %in% faith_n)
+faith_mix <- d_g %>%
+  filter(name %in% c(faith_n, "Varndean School", "Longhill High School")) %>%
+  group_by(name, catchment) %>% summarise(n = sum(flow), .groups = "drop") %>%
+  group_by(name) %>% mutate(share = n / sum(n)) %>% ungroup()
+faith_min <- d_g %>% group_by(name) %>%
+  summarise(min = weighted.mean(cij, flow), n = sum(flow), .groups = "drop")
+city_min <- faith_min %>%
+  filter(name %in% inp$schools$name[inp$schools$city & !inp$schools$faith], n > 1)
+faith_kern <- sum(inp$params$overflow[grepl(paste(faith_n, collapse = "|"),
+                                            names(inp$params$overflow))])
+```
+
+Cardinal Newman and King's are in **no catchment**, on any of the maps
+the simulator carries. That is not a simplification: neither school has
+one. Admission to Cardinal Newman turns on Catholic baptism and practice,
+and King's is a Church of England free school with its own criteria and
+no geographic area attached.
+
+So $\gamma_h$ never applies to them. Every one of the
+`r fmt_n(nrow(faith_rows))` neighbourhood-to-faith-school pairs in the
+model has the indicator $\mathbb{1}[\,i \in \text{catchment}(j)\,]$ set to
+zero, and their pull is $W_j\, c_{ij}^{-\beta}\, C_j^{\delta}$ and nothing
+else. Four consequences follow, and they are worth being explicit about:
+between them these two schools take
+`r fmt_pct(100 * sum(faith_rows$flow) / sum(d_g$flow))` of the city's
+Year 7 children.
+
+**Their attractiveness carries the religion.** A family's faith is not in
+this model — no published dataset gives it by neighbourhood. What the
+fitting sees is that a great many families across the whole city name
+these schools first anyway, and the only term free to explain it is
+$W_j$. So Cardinal Newman ends up with the highest attractiveness in the
+city (`r sprintf("%.2f", W5[["Cardinal Newman Catholic School"]])` against
+a mean of 1) and King's the second
+(`r sprintf("%.2f", W5[["King's School"]])`). Read those two numbers as
+"wanted, city-wide, for reasons the model does not contain" rather than
+as a judgement of the school.
+
+**Distance is the only thing holding them in place.** With no catchment
+bonus, $c_{ij}^{-\beta}$ is the sole spatial control on where their
+children come from — which is why they draw from everywhere and why
+their intakes travel furthest:
+
+```{r fig-gamma-faith}
+#| fig-cap: "Where each school's intake comes from, by the family's home catchment. The two faith schools have no catchment of their own, so nothing anchors them to one part of the city."
+#| fig-height: 4.4
+faith_mix %>%
+  mutate(School = short_sch(name),
+         School = factor(School, c("Cardinal Newman", "King's", "Varndean", "Longhill")),
+         Catchment = catch_lab(catchment)) %>%
+  ggplot(aes(share, forcats::fct_rev(School), fill = Catchment)) +
+  geom_col(width = 0.7, colour = "white", linewidth = 0.4) +
+  scale_x_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "Set2", name = "Home catchment") +
+  labs(x = NULL, y = NULL,
+       title = "Two schools drawn from the whole city, two from one corner of it",
+       subtitle = "Modelled intake by the family's home catchment, 2026 entry") +
+  theme_bh() + theme(legend.position = "right")
+```
+
+The children the model sends to King's travel
+`r sprintf("%.0f", faith_min$min[faith_min$name == "King's School"])`
+minutes on average and to Cardinal Newman
+`r sprintf("%.0f", faith_min$min[faith_min$name == "Cardinal Newman Catholic School"])`,
+against
+`r sprintf("%.0f", min(city_min$min))` to
+`r sprintf("%.0f", max(city_min$min))`
+minutes at the eight community and academy schools. That is a real
+feature of faith admissions, and the model reproduces it without being
+told to.
+
+**They are outside the catchment machinery everywhere else too.** The
+priority-6 rule — a child from a single-school catchment applying outside
+it — is defined on the catchment design, so it neither sends children to
+these two nor gives them any standing there. When a boundary is redrawn
+in a scenario, nothing about Cardinal Newman or King's changes except
+through everyone else's movements. And because they are not community
+schools, they are rationed by the proportional ceiling rather than by the
+council's tiers (§9): the model has no representation of baptism
+certificates or church attendance, so it treats an oversubscribed faith
+school as a lottery over everyone who applied.
+
+**They still take part in everything that is not the catchment.** They
+compete in $C_j$ (§7) — Cardinal Newman is the second largest
+contribution to Dorothy Stringer's competition term — they sit in every
+neighbourhood's choice set and denominator (§8), and families do name
+them as second preferences, so refused children are re-offered places
+there: `r fmt_pct(100 * faith_kern / 6)` of a catchment's second
+preferences go to one of the two on average (§10).
+
+::: {.callout-warning}
+## What this means for a faith-school scenario
+
+Because the religion is inside $W_j$ rather than in a term of its own,
+the simulator cannot distinguish "Cardinal Newman becomes less
+attractive" from "fewer families in the city are practising Catholics".
+Both are the same slider. A scenario that changes either should be read
+as changing the *total* pull of the school, and the model will
+redistribute those children by distance and catchment like anyone
+else's — which is almost certainly too smooth a picture of what a
+change in faith admissions would actually do.
+:::
 
 ## What the slider does
 
@@ -2532,11 +2645,6 @@ route_n <- function(r) by_route$n[by_route$route == r]
 kern_tbl <- tibble(key = names(kern), share = unname(kern)) %>%
   tidyr::separate(key, c("catchment", "school"), sep = " ", extra = "merge")
 
-# Model catchment codes to the labels used everywhere else in this work.
-catch_lab <- function(x) {
-  out <- unname(CATCH_LABELS[CATCH_FROM_MODEL[x]])
-  dplyr::coalesce(out, x)
-}
 ```
 
 ## Why a proportional cut is not enough
@@ -2738,3 +2846,181 @@ tibble::tribble(
    second preferences in every round?
 3. Should a refused child be allowed out of the city, as they can be at
    the first stage?
+
+# The matrix, filled in {#sec-end}
+
+```{r end-setup}
+#| include: false
+end_z <- ex_zones$zone
+end_s <- sch4
+end_cells <- d_ai %>%
+  filter(zone %in% end_z, name %in% end_s) %>%
+  group_by(zone, name) %>%
+  summarise(wanted = sum(wanted), offered = sum(flow), .groups = "drop")
+end_A <- d_ai %>% filter(zone %in% end_z, pop == "either") %>%
+  distinct(zone, orig, A) %>% group_by(zone) %>% summarise(A = first(A), .groups = "drop")
+
+fp_end <- bh_data("factsheet_panel.rds")
+obs_end <- fp_end$factsheets %>%
+  filter(year == 2026, name != "Total") %>% select(name, observed = off_total)
+val <- obs_end %>%
+  inner_join(d_ai %>% group_by(name) %>%
+               summarise(model = sum(flow), .groups = "drop"), by = "name") %>%
+  mutate(short = short_sch(name), gap = model - observed)
+val_r2 <- cor(val$model, val$observed)^2
+val_rmse <- sqrt(mean(val$gap^2))
+val_mae <- mean(abs(val$gap))
+```
+
+## The example from §1, with numbers in it
+
+Section 1 set out the shape of the model for four neighbourhoods and four
+schools and left the interior empty. Every term since has filled in one
+part of it. Here it is complete, for 2026:
+
+```{r end-matrix}
+#| tbl-cap: "The four largest neighbourhoods and four of the schools, as the model leaves them. Each cell is children wanting that school, with what they are offered after the ceiling in brackets. The rows do not sum to $O_i$ here because six other destinations are off the right-hand side of the table."
+mk <- function(z, s) {
+  r <- end_cells %>% filter(zone == z, name == s)
+  if (!nrow(r)) return("—")
+  sprintf("%.1f (%.1f)", r$wanted, r$offered)
+}
+data.frame(
+  Neighbourhood = c(sub("[|].*$", "", end_z), "$W_j$"),
+  `Dorothy Stringer` = c(unname(vapply(end_z, mk, "", s = end_s[1])), sprintf("%.2f", W5[[end_s[1]]])),
+  Varndean = c(unname(vapply(end_z, mk, "", s = end_s[2])), sprintf("%.2f", W5[[end_s[2]]])),
+  Longhill = c(unname(vapply(end_z, mk, "", s = end_s[3])), sprintf("%.2f", W5[[end_s[3]]])),
+  `Cardinal Newman` = c(unname(vapply(end_z, mk, "", s = end_s[4])), sprintf("%.2f", W5[[end_s[4]]])),
+  `$A_i$` = c(sprintf("%.2f", end_A$A[match(end_z, end_A$zone)]), ""),
+  `$O_i$ (2026)` = c(sprintf("%.1f", ex_zones$Oi), ""),
+  check.names = FALSE) %>%
+  knitr::kable(align = "lccccrr")
+```
+
+Read one row and the whole model is in it. The neighbourhood's children
+($O_i$, §2) are divided between schools in proportion to each school's
+pull — its attractiveness ($W_j$, §3) discounted by the journey
+($c_{ij}$, §4; $\beta$, §5), multiplied up if the neighbourhood is in its
+catchment ($\gamma_h$, §6) and nudged by how crowded it is ($C_j$,
+$\delta$, §7) — with $A_i$ (§8) set so the row places every child. Then
+the admission numbers bind (§9) and the children who are refused are
+re-offered somewhere else (§10), which is why the two numbers in a cell
+differ.
+
+## Does it reproduce the year it was built for?
+
+```{r fig-end-valid}
+#| fig-cap: "Modelled intake against the offers the council actually made for September 2026, one point per school. The line is where the model would be exactly right."
+#| fig-height: 5
+ggplot(val, aes(observed, model)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey65", linewidth = 0.5) +
+  geom_point(size = 3, colour = "#1f3b57") +
+  ggrepel::geom_text_repel(aes(label = short), size = 3.2, seed = 4,
+                           colour = "#1f3b57", box.padding = 0.4) +
+  coord_equal(xlim = c(0, 380), ylim = c(0, 380)) +
+  labs(x = "Offers made by the council", y = "Modelled intake",
+       title = sprintf("R² = %.2f across the ten schools", val_r2),
+       subtitle = sprintf("2026 entry. Typical error %.0f children; largest %.0f, at %s",
+                          val_mae, max(abs(val$gap)),
+                          val$short[which.max(abs(val$gap))])) +
+  theme_bh()
+```
+
+The five schools that fill are exact by construction — they are at their
+admission numbers in both. The information is in the five that do not,
+and there the model has a pattern to its errors:
+
+```{r end-errors}
+#| tbl-cap: "The schools that do not fill, where all of the error lives."
+val %>% filter(abs(gap) > 0.5) %>% arrange(gap) %>%
+  transmute(School = short, `Council's offers` = observed,
+            `Model` = sprintf("%.0f", model),
+            `Difference` = sprintf("%+.0f", gap)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+The model sends too few children to the two Aldridge academies and too
+many to Hove Park and Patcham. That is one story, not four: the model has
+no term for a school's reputation changing, and these are the schools
+whose intakes have moved most in recent rounds. §3's note on time is the
+place that gap is discussed.
+
+## Every quantity in one table
+
+```{r end-params}
+#| tbl-cap: "The whole model: what is fitted, what is fixed by hand, and what is read from published data."
+p <- inp$params
+tibble::tribble(
+  ~Quantity, ~Value, ~`Where it comes from`, ~Section,
+  "$O_i$", sprintf("%s children in 2026", fmt_n(round(sum(inp$zones$Oi)))),
+  "ONS postcode directory, census age structure, council projection", "§2",
+  "$W_j$", sprintf("%.2f to %.2f", min(W5), max(W5)),
+  "fitted: balanced to each school's share of first preferences", "§3",
+  "$c_{ij}$", sprintf("%.0f to %.0f minutes", min(inp$cost$now$cij), max(inp$cost$now$cij)),
+  "routed with r5r over OpenStreetMap and the published timetables", "§4",
+  "$\\beta$", sprintf("%.1f", p$beta),
+  "fixed by hand from the literature, checked by sweep", "§5",
+  "$\\gamma_h$", sprintf("%.1f to %.1f", min(p$gamma), max(p$gamma)),
+  "fitted: Poisson deviance against the catchment preference table", "§6",
+  "$\\sigma$, $\\delta$", sprintf("%.0f, %+.1f", p$sigma, p$delta),
+  "$\\sigma$ fixed at 1; $\\delta$ fitted by grid search on the offers", "§7",
+  "$A_i$", sprintf("%s origin-populations", fmt_n(n_distinct(d_ai$orig))),
+  "derived: whatever makes each row sum to its children", "§8",
+  "Exclusivity shares", sprintf("%.0f%% to %.0f%%", 100 * min(p$exclusive$share),
+                                100 * max(p$exclusive$share)),
+  "fitted in the paired catchments, from the same preference table", "§8",
+  "Admission numbers", sprintf("%s places", fmt_n(sum(sch_city$pan, na.rm = TRUE))),
+  "published by the council for 2026 entry", "§9",
+  "FSM take-up", sprintf("%.2f × IDACI", rl$fsm_takeup),
+  "solved so the FSM offers match the published outturn", "§9",
+  "Priority caps", sprintf("%.0f%% FSM, %.0f%% priority 6",
+                           100 * rl$fsm_cap_share, 100 * rl$p6_share),
+  "the council's published admission arrangements", "§9",
+  "Overflow kernel", sprintf("%d shares", length(p$overflow)),
+  "second preferences by home catchment, from the same table", "§10",
+  "Out-of-city schools", sprintf("%d, decay %.1f on straight-line km",
+                                 length(p$outside$W), p$outside$decay),
+  "fitted to the children the city loses to East Sussex", "§8") %>%
+  knitr::kable(align = "llll")
+```
+
+Four things in that table are **fitted to observed behaviour** ($W_j$,
+$\gamma_h$, $\delta$, the exclusivity shares), one is **fixed by hand**
+($\beta$), one is **solved to match a published total** (FSM take-up),
+and everything else is either measured or published. That is the honest
+division, and it is worth carrying into any reading of a scenario: the
+further a scenario moves from the city as it is, the more weight falls on
+the four fitted quantities and the less on the published ones.
+
+## If a number looks wrong
+
+| The symptom | Where to look first |
+|:--|:--|
+| A neighbourhood has too many or too few children | §2: the zone's postcode count and its split across catchments |
+| A school is more or less wanted than expected | §3: its fitted $W_j$, and whether the slider is at 1 |
+| A journey looks implausible | §4: the walk cap and the distance fallback |
+| Everyone goes to their nearest school | §5: $\beta$, and §6: the catchment term |
+| A school fills that should not | §10: what is being re-offered to it, and from where |
+| The city total does not match the council's | §2.6: the projection and the state-sector share |
+| An out-of-city school takes too many | §8: the decay on straight-line kilometres |
+| The FSM tiers look too large | §9: siblings sit inside the catchment tier |
+
+## What this guide does not cover
+
+Three things in the strategic view are built **on top of** the model in
+this guide rather than being part of it, and each needs its own account:
+
+- **The disadvantage flows.** Which of a neighbourhood's children are
+  disadvantaged, and how they sort between schools, is a separate layer
+  calibrated to the Year 7 free-school-meal offers. The segregation
+  index, the deprived-journey gap and everything in the strategic view's
+  integration section rest on it.
+- **The finances.** Per-pupil funding against the cost of running a
+  school at a given size, which turns an intake into a deficit.
+- **The scenarios themselves.** Which combinations of closure,
+  relocation, boundary and admission rule are worth running, and how
+  their results should be read.
+
+Everything above is the machinery those three use. It should now be
+possible to check any number in the strategic view by following it back
+through these ten sections to a published source.
