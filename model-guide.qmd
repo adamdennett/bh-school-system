@@ -26,6 +26,7 @@ zc  <- z %>% filter(area != "Expansion area")
 dem <- inp$demand
 cal <- mt$calibrated
 rc  <- bh_data("reception_cohort.rds")
+acc <- bh_data("accessibility.rds")
 
 # The state-sector share is a single constant in the open bundle's build.
 # It is recovered here from the projection rather than retyped, so this
@@ -57,7 +58,7 @@ $$
 | $T_{ij}$ | children from neighbourhood $i$ modelled as attending school $j$ | the interior of the matrix |
 | $O_i$ | children in neighbourhood $i$ entering Year 7 | §2 |
 | $W_j$ | how attractive school $j$ is, net of where it stands | §3 |
-| $c_{ij}$ | routed walk-and-bus journey time from $i$ to $j$ | to follow |
+| $c_{ij}$ | routed walk-and-bus journey time from $i$ to $j$ | §4 |
 | $\beta$ | distance decay | to follow |
 | $\gamma_h$ | catchment term, fitted for each catchment $h$ | to follow |
 | $C_j$, $\delta$ | competing destinations | to follow |
@@ -724,3 +725,268 @@ tibble::tribble(
 3. Should a school's attractiveness respond to its own intake over time,
    which is the feedback loop the strategic view describes but the model
    does not contain?
+# $c_{ij}$: the journey from a neighbourhood to a school {#sec-cij}
+
+```{r cij-setup}
+#| include: false
+costs <- oi$costs_now
+cost_elm <- oi$costs_elm
+tm <- readRDS(here::here("data", "travel", "build_metadata.rds"))
+lsoa_sf <- bh_data("lsoa.geojson") %>% st_transform(4326)
+catch_sf <- bh_data("catchments_current.geojson") %>% st_transform(4326)
+sch_sf <- schools_sf(oi$schools) %>% filter(name != "Peacehaven Community School")
+zone_lsoa <- z %>% select(zone, lsoa, Oi)
+# Zone costs carried up to LSOA level for drawing, weighted by children.
+to_lsoa <- function(d, school) {
+  d %>% filter(name == school) %>%
+    inner_join(zone_lsoa, by = "zone") %>%
+    group_by(lsoa) %>%
+    summarise(cij = weighted.mean(cij, Oi), .groups = "drop")
+}
+LH <- "Longhill High School"
+```
+
+## What it is
+
+$c_{ij}$ is the **generalised cost** of getting from neighbourhood $i$ to
+school $j$: minutes of walking and bus, door to door, on a weekday
+morning. It is not a straight-line distance, and it is not a car journey.
+It enters the model as $c_{ij}^{-\beta}$, so it is the term that makes a
+school ten minutes away far more likely to be chosen than one an hour
+away — and the exponent $\beta$ that governs how fast that falls away is
+its own section, to follow.
+
+The city has `r fmt_n(nrow(inp$cost$now))` zone-school pairs in the
+simulator's cost table, spanning
+`r sprintf("%.0f", min(inp$cost$now$cij))` to
+`r sprintf("%.0f", max(inp$cost$now$cij))` minutes.
+
+## Where the numbers come from
+
+Every journey is routed with [`r5r`](https://ipeagit.github.io/r5r/) over
+two networks: the street network from
+[OpenStreetMap](https://www.openstreetmap.org/copyright), and the bus
+timetable as a [GTFS feed](https://data.bus-data.dft.gov.uk/) from the
+Department for Transport's Bus Open Data Service. The build is
+`public/R/00b_build_travel_matrix.R` in the open bundle.
+
+```{r cij-params}
+#| tbl-cap: "The routing parameters. Every journey in this work uses these; changing any of them changes every journey time."
+tibble::tribble(
+  ~Setting, ~Value,
+  "Modes", paste(tm$params$mode, collapse = " and "),
+  "Departure", format(tm$params$departure_datetime, "%A %d %B %Y, %H:%M"),
+  "Longest walk allowed, either end", sprintf("%d minutes", tm$params$max_walk_time),
+  "Longest journey allowed", sprintf("%d minutes", tm$params$max_trip_duration),
+  "Departure window", sprintf("%d minute", tm$params$time_window),
+  "Percentile of journeys in the window", sprintf("%dth", tm$params$percentiles),
+  "Origins", sprintf("%s postcodes", fmt_n(tm$n_origins)),
+  "Destinations", sprintf("%d, including the Elm Grove site", nrow(tm$destinations))) %>%
+  knitr::kable(align = "lr")
+```
+
+The departure date is chosen rather than assumed: the build counts the
+trips each candidate weekday actually carries in the feed and takes a
+Tuesday, Wednesday or Thursday in service, because a date the feed does
+not serve returns no journeys at all and a Monday or Friday timetable is
+lighter than a normal school day.
+
+## From postcodes to zones
+
+The matrix is routed **postcode to school**. A zone's cost is the mean
+over the live postcodes in it:
+
+$$c_{ij} \;=\; \frac{1}{|P_i|}\sum_{p \in P_i} c_{pj}$$
+
+where $P_i$ is the set of postcodes in zone $i$. Because a zone is an
+LSOA cut by catchment (§2.2), the two halves of a split LSOA get their
+own journey times — which is the point of cutting them.
+
+## Two corrections the raw routing needs
+
+**Walking is always available.** Where the bus network is awkward the
+router returns a poor itinerary: about a fifth of pairs came back slower
+than simply walking the distance, in one case 99 minutes for 4 km. That
+is a property of the router, not of the city, so every journey is capped
+at the time it would take to walk:
+
+$$c_{ij} \;=\; \min\!\left(c^{\text{routed}}_{ij},\;
+\frac{d_{ij} \times `r sprintf("%.1f", acc$walk_fallback$circuity)`}{`r sprintf("%.2f", acc$walk_fallback$kmh)` \text{ km/h}} \times 60\right)$$
+
+The walking pace comes from a systematic review of active school travel:
+children's mean walking trip is
+`r fmt_n(acc$walk_fallback$review$dist_m)` m in
+`r sprintf("%.1f", acc$walk_fallback$review$time_min)` minutes, or
+`r sprintf("%.2f", acc$walk_fallback$kmh)` km/h, and the circuity factor
+of `r sprintf("%.1f", acc$walk_fallback$circuity)` turns straight-line
+distance into street distance. The cap binds on
+`r fmt_pct(100 * mean(costs$walk_capped), 0)` of pairs. **It is a ceiling
+on modelled time, not a claim that children walk that far** — the same
+review finds they rarely walk beyond 1.8 km.
+
+**A distance model fills the gaps.** Where the matrix has no routed value
+at all, a fitted model of time on straight-line distance stands in. It
+reaches `r fmt_pct(100 - 100 * mean(costs$routed), 1)` of pairs in the
+city, so almost everything here is routed rather than predicted.
+
+```{r fig-cij-walk}
+#| fig-cap: "Every zone-school pair: routed journey time against straight-line distance. The line is the walking time the cap uses. Points above it are journeys the router made slower than walking, and they are pulled down onto the line."
+#| fig-height: 4.6
+wk <- costs %>% mutate(walk_min = km * acc$walk_fallback$circuity / acc$walk_fallback$kmh * 60)
+ggplot(wk, aes(km, cij)) +
+  geom_point(aes(colour = walk_capped), size = 1.1, alpha = 0.5) +
+  geom_line(aes(km, walk_min), colour = "#1f3b57", linewidth = 0.9) +
+  scale_colour_manual(values = c(`FALSE` = "grey65", `TRUE` = "#d95f02"),
+                      labels = c(`FALSE` = "routed time used",
+                                 `TRUE` = "capped at walking time"), name = NULL) +
+  labs(x = "Straight-line distance (km)", y = "Journey time used (minutes)",
+       title = "Where the cap binds",
+       subtitle = sprintf("%s of %s pairs are capped",
+                          fmt_n(sum(costs$walk_capped)), fmt_n(nrow(costs)))) +
+  theme_bh() + theme(legend.position = "top")
+```
+
+## What a journey-time surface looks like
+
+```{r fig-cij-longhill}
+#| fig-cap: "Journey time to Longhill from every neighbourhood, at its current site and at the Elm Grove site. Both panels use the same scale, so they can be read against each other. The white dot is the school."
+#| fig-height: 5
+lh_now <- to_lsoa(costs, LH) %>% mutate(site = "Ovingdean (today)")
+lh_elm <- to_lsoa(cost_elm, LH) %>% mutate(site = "Elm Grove")
+lh_map <- lsoa_sf %>%
+  inner_join(bind_rows(lh_now, lh_elm), by = c("lsoa21cd" = "lsoa")) %>%
+  mutate(site = factor(site, c("Ovingdean (today)", "Elm Grove")))
+pts <- bind_rows(
+  sch_sf %>% filter(name == LH) %>% mutate(site = "Ovingdean (today)"),
+  st_as_sf(data.frame(e = oi$elm_grove$easting, n = oi$elm_grove$northing),
+           coords = c("e", "n"), crs = 27700) %>% st_transform(4326) %>%
+    mutate(site = "Elm Grove")) %>%
+  mutate(site = factor(site, levels(lh_map$site)))
+ggplot() +
+  geom_sf(data = lh_map, aes(fill = cij), colour = NA) +
+  geom_sf(data = catch_sf, fill = NA, colour = "white", linewidth = 0.25) +
+  geom_sf(data = pts, shape = 21, fill = "white", colour = "black", size = 3, stroke = 1.1) +
+  facet_wrap(~ site) +
+  scale_fill_viridis_c(option = "magma", direction = -1, name = "Minutes") +
+  labs(title = "The same school, two sites",
+       subtitle = "Walk-and-bus journey time from each neighbourhood, weekday morning") +
+  theme_void(12) +
+  theme(plot.title = element_text(face = "bold", colour = "#1f3b57"),
+        plot.subtitle = element_text(colour = "grey35"),
+        strip.text = element_text(face = "bold"))
+```
+
+The median neighbourhood is
+`r sprintf("%.0f", median(lh_now$cij))` minutes from Ovingdean and
+`r sprintf("%.0f", median(lh_elm$cij))` from Elm Grove. That difference
+is the whole of what relocation does to $c_{ij}$ — and, because nothing
+else in the model moves with it except the competition term, most of what
+relocation does at all.
+
+```{r fig-cij-nearest}
+#| fig-cap: "Which school each neighbourhood can reach quickest, by routed walk-and-bus time. Boundaries are the catchments in force; where a colour crosses a boundary, the catchment school is not the nearest one."
+#| fig-height: 5.2
+nearest <- costs %>%
+  inner_join(zone_lsoa, by = "zone") %>%
+  group_by(lsoa, name) %>% summarise(cij = weighted.mean(cij, Oi), .groups = "drop_last") %>%
+  slice_min(cij, n = 1, with_ties = FALSE) %>% ungroup() %>%
+  mutate(School = short_sch(name))
+near_map <- lsoa_sf %>% inner_join(nearest, by = c("lsoa21cd" = "lsoa"))
+ggplot() +
+  geom_sf(data = near_map, aes(fill = School), colour = "white", linewidth = 0.1) +
+  geom_sf(data = catch_sf, fill = NA, colour = "grey15", linewidth = 0.6) +
+  geom_sf(data = sch_sf, shape = 21, fill = "white", colour = "black", size = 2.6) +
+  scale_fill_brewer(palette = "Set3", name = NULL) +
+  labs(title = "The quickest school from each neighbourhood",
+       subtitle = "Routed walk-and-bus time, not distance, and not who is admitted") +
+  theme_void(12) +
+  theme(plot.title = element_text(face = "bold", colour = "#1f3b57"),
+        plot.subtitle = element_text(colour = "grey35"))
+```
+
+## A worked example
+
+```{r cij-worked}
+#| tbl-cap: "One neighbourhood's journey to every city school, with the straight-line distance beside it. The two are not the same ordering, which is the reason for routing at all."
+ex_zone <- costs %>% filter(zone == ex_zones$zone[1])
+ex_zone %>%
+  arrange(cij) %>%
+  transmute(School = short_sch(name), `Journey time (minutes)` = sprintf("%.0f", cij),
+            `Straight line (km)` = sprintf("%.1f", km),
+            Basis = ifelse(walk_capped, "capped at walking time",
+                           ifelse(routed, "routed", "distance model"))) %>%
+  knitr::kable(align = "lrrl")
+```
+
+## The journeys the model does not route
+
+- **The four schools outside the city** — Priory, Peacehaven, Seahaven
+  and Seaford Head — are chosen on **straight-line kilometres**, not
+  routed minutes. The bus network has no direct eastern service to Lewes,
+  so the routed journey from Woodingdean goes through Brighton and takes
+  over an hour, which is not what the families who make that journey do.
+  Their decay is fitted on km against the published 2024 destinations.
+- **CoMArt**, when opened, is routed from its old site on the same
+  network and with the same parameters as every other school.
+- **Longhill at Elm Grove** has a routed column of its own. An earlier
+  version had no routed times for the site and gave it the average
+  accessibility of a Brighton secondary, which was wrong by about sixty
+  children; the build now stops rather than let that happen silently.
+
+## Checks you can run
+
+```{r cij-checks}
+#| tbl-cap: "What the cost table should satisfy, and what it gives."
+st <- acc$statutory
+tibble::tribble(
+  ~Check, ~Result,
+  "Every zone can reach every city school",
+  sprintf("%s pairs, none missing", fmt_n(nrow(inp$cost$now))),
+  "Journeys are routed rather than predicted",
+  sprintf("%.1f%% routed", 100 * mean(costs$routed)),
+  "No journey is slower than walking",
+  sprintf("%.0f%% capped, none above the walk line", 100 * mean(costs$walk_capped)),
+  "Mean journey to the catchment school",
+  sprintf("%.1f minutes", st$mean_min),
+  "Against the statutory limit for secondary (75 minutes)",
+  sprintf("%.0f children over it", st$over_75_children),
+  "Against the national average school journey (19 minutes)",
+  sprintf("city mean %.1f minutes", st$mean_min)) %>%
+  knitr::kable(align = "lr")
+```
+
+The strongest check is not in the table: a handful of journeys can be
+compared against local knowledge. Woodingdean to Longhill comes out at
+about 17 minutes and Woodingdean to Dorothy Stringer at about 68;
+Whitehawk to Longhill about 28 and to Stringer about 62. Those are the
+journeys that decide the eastern half of this work, and they are worth
+checking against what a family there would say.
+
+## What to be careful about
+
+- **One departure, one day.** Every journey is a single weekday morning
+  in the timetable as it stood when the matrix was built. Term-time
+  variation, a missed connection and a cancelled bus are all outside it.
+- **A mean over postcodes.** A zone's cost is the average of the
+  postcodes in it, so a neighbourhood with one badly connected corner
+  shows as slightly worse rather than showing both.
+- **No cars, no lifts, no walking buses.** The model prices the journey a
+  child could make on foot and by bus. A family with a car makes a
+  different journey, and that is one reason the east's figures should be
+  read as a ceiling on difficulty rather than a description of it.
+- **Time is symmetric here.** One morning journey stands for the return
+  as well, and no allowance is made for after-school travel.
+- **The cap is generous at distance.** A 6 km walk is not a real school
+  journey, but capping at walking time is deliberately crude: it removes
+  router artefacts without inventing a bus that does not run.
+
+## Questions this raises
+
+1. Should the zone cost be the mean over its postcodes, or the
+   child-weighted mean, or the best available journey rather than the
+   average one?
+2. Should journeys be routed at more than one departure time, so that a
+   thin early timetable is visible?
+3. Should the out-of-city schools be routed rather than measured on
+   straight-line distance, if a feed covering East Sussex services were
+   used?
