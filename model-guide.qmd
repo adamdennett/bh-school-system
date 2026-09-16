@@ -25,6 +25,7 @@ z   <- oi$zones
 zc  <- z %>% filter(area != "Expansion area")
 dem <- inp$demand
 cal <- mt$calibrated
+rc  <- bh_data("reception_cohort.rds")
 
 # The state-sector share is a single constant in the open bundle's build.
 # It is recovered here from the projection rather than retyped, so this
@@ -45,10 +46,10 @@ it apart in the order the model is written, so that each piece can be
 checked on its own.
 
 $$
-T_{ij}(y) \;=\; A_i(y)\, O_i(y)\, W_j\, c_{ij}^{-\beta}\,
+T_{ij}^{\,y} \;=\; A_i^{\,y}\, O_i^{\,y}\, W_j\, c_{ij}^{-\beta}\,
 e^{\gamma_{h(i)} \cdot \mathbb{1}[\,i \in \text{catchment}(j)\,]}\, C_j^{\delta},
 \qquad
-A_i(y) = \frac{1}{\sum_k W_k\, c_{ik}^{-\beta}\, e^{\gamma_{h(i)} \mathbb{1}[\cdot]}\, C_k^{\delta}}
+A_i^{\,y} = \frac{1}{\sum_k W_k\, c_{ik}^{-\beta}\, e^{\gamma_{h(i)} \mathbb{1}[\cdot]}\, C_k^{\delta}}
 $$
 
 | Symbol | Meaning | Section |
@@ -61,7 +62,7 @@ $$
 | $\gamma_h$ | catchment term, fitted for each catchment $h$ | to follow |
 | $C_j$, $\delta$ | competing destinations | to follow |
 | $A_i$ | balancing factor: every neighbourhood places all of its children | to follow |
-| $y$ | entry year | §2.7 |
+| $y$ | entry year, carried as a superscript | §2.7 |
 
 Two further stages are applied to the $T_{ij}$ this produces: the
 admission-number ceiling with the council's oversubscription priorities,
@@ -185,7 +186,7 @@ divided between the zones that LSOA is cut into by their postcode counts:
 $$u_i \;=\; \underbrace{p_{\ell(i)}}_{\text{LSOA age-11 share}} \times
 \underbrace{\frac{n_i}{\sum_{k \in \ell(i)} n_k}}_{\text{postcodes in this zone}},
 \qquad
-O_i(2026) \;=\; \text{ward children}_{w(i)} \times \frac{u_i}{\sum_{k \in w(i)} u_k} \times \text{state share}$$
+O_i^{\,2026} \;=\; \text{ward children}_{w(i)} \times \frac{u_i}{\sum_{k \in w(i)} u_k} \times \text{state share}$$
 
 where $\ell(i)$ is the zone's LSOA, $w(i)$ its ward and $n_i$ its
 postcode count. `r fmt_n(sum(!is.na(z$prop)))` of the `r fmt_n(nrow(z))`
@@ -243,6 +244,57 @@ chk %>%
 `r fmt_n(sum(z$Oi))` children in the model live in a split LSOA, so the
 correction moves children between zones inside those wards without
 changing any ward or city total.
+
+```{r fig-split-lsoa}
+#| fig-cap: "One LSOA cut by the catchment boundary in force from 2026. Each point is a live postcode, coloured by the catchment it falls in; the black line is the LSOA boundary and the heavier line the catchment boundary. The model splits the LSOA's children between the two sides in proportion to the postcodes on each."
+#| fig-height: 5
+pcd <- readr::read_csv(here::here("data", "zone_postcode_points.csv"),
+                       show_col_types = FALSE)
+# The clearest example to draw: the split LSOA with the most postcodes on
+# its smaller side, so neither half is a handful of points.
+pick <- pcd %>% count(lsoa, catch_optionZ) %>% group_by(lsoa) %>%
+  filter(n() == 2) %>% summarise(smaller = min(n), .groups = "drop") %>%
+  slice_max(smaller, n = 1) %>% pull(lsoa)
+pp <- pcd %>% filter(lsoa == pick) %>%
+  st_as_sf(coords = c("easting", "northing"), crs = 27700) %>% st_transform(4326) %>%
+  mutate(Catchment = unname(CATCH_LABELS[as_boundary_catchment(catch_optionZ)]))
+ls_one <- bh_data("lsoa.geojson") %>% filter(lsoa21cd == pick) %>% st_transform(4326)
+catch_sf <- bh_data("catchments_current.geojson") %>% st_transform(4326)
+bb <- st_bbox(st_buffer(st_transform(ls_one, 27700), 250)) %>%
+  st_as_sfc() %>% st_transform(4326) %>% st_bbox()
+ggplot() +
+  geom_sf(data = catch_sf, aes(fill = catchment), colour = "grey25", alpha = 0.10,
+          linewidth = 0.9, show.legend = FALSE) +
+  geom_sf(data = ls_one, fill = NA, colour = "black", linewidth = 0.9) +
+  geom_sf(data = pp, aes(colour = Catchment), size = 2.6, alpha = 0.9) +
+  scale_fill_manual(values = CATCH_COLOURS) +
+  scale_colour_manual(
+    values = setNames(unname(CATCH_COLOURS[as_boundary_catchment(unique(pp$catch_optionZ))]),
+                      unname(CATCH_LABELS[as_boundary_catchment(unique(pp$catch_optionZ))])),
+    name = "Catchment of the postcode") +
+  coord_sf(xlim = bb[c("xmin", "xmax")], ylim = bb[c("ymin", "ymax")]) +
+  labs(title = sprintf("%s, split between two catchments", pick),
+       subtitle = sprintf("%d postcodes on one side, %d on the other",
+                          max(table(pp$catch_optionZ)), min(table(pp$catch_optionZ)))) +
+  theme_void(12) +
+  theme(plot.title = element_text(face = "bold", colour = "#1f3b57"),
+        plot.subtitle = element_text(colour = "grey35"), legend.position = "top")
+```
+
+```{r split-worked}
+#| tbl-cap: "The same LSOA, as the model sees it. The age-11 share belongs to the whole LSOA; each zone takes the part of it its postcodes imply."
+z %>% filter(lsoa == pick) %>%
+  transmute(Zone = zone, Postcodes = n_pcd,
+            `Share of the LSOA` = sprintf("%.0f%%", 100 * n_pcd / sum(n_pcd)),
+            `Age-11 share of the LSOA` = sprintf("%.4f", prop),
+            `Weight used` = sprintf("%.4f", prop * n_pcd / sum(n_pcd)),
+            `$O_i^{\\,2026}$` = sprintf("%.1f", Oi)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+Before the correction both rows of that table carried the whole LSOA's
+age-11 share, so the neighbourhood counted twice in its ward's
+denominator and took roughly double the children it should.
 
 ## A worked example
 
@@ -336,8 +388,8 @@ making, and it is the first check listed in @sec-oi-checks.
 The year slider does exactly one thing to $O_i$. The city's projected
 cohort is turned into an index on 2026, and every zone is scaled by it:
 
-$$O_i(y) \;=\; O_i(2026) \times d(y), \qquad
-d(y) \;=\; \frac{\text{state demand}(y)}{\text{state demand}(2026)}$$
+$$O_i^{\,y} \;=\; O_i^{\,2026} \times d^{\,y}, \qquad
+d^{\,y} \;=\; \frac{\text{state demand}^{\,y}}{\text{state demand}^{\,2026}}$$
 
 ```{r oi-index}
 #| tbl-cap: "The demand index behind the slider. The last two years are the extrapolated cohorts."
@@ -365,6 +417,49 @@ dem %>%
        title = "The cohort behind the slider, 2026 to 2035") +
   theme_bh() + theme(legend.position = "top")
 ```
+
+### Which projection this is, and the one beside it {#sec-oi-projection}
+
+Two projections of the city's Year 7 cohort appear in this work. They are
+built from different data and they are used for different things, so it
+is worth being plain about which drives the model.
+
+**The one the slider uses** is the ONS estimate carried forward: the
+children counted in the mid-2022 small-area estimates, aged forward to
+their Year 7 entry year (§2.4, steps 1 and 2), and multiplied by the
+state-sector share. It is used because it is the only one that exists at
+**ward** level, and the model needs the geography as well as the total —
+$O_i$ is a ward figure divided between zones.
+
+**The one beside it** is built from children already in the city's
+primary schools: Reception offers made seven years earlier, multiplied by
+the share of a Reception cohort that reappears as a Year 7 offer. That
+ratio is measured rather than assumed, from the council's own published
+factsheets, and it has been strikingly steady —
+`r fmt_pct(100 * rc$survival_recent, 1)` across the five most recent
+cohorts, with a standard deviation of
+`r fmt_pct(100 * rc$survival_sd, 1)`. The method is set out in full in
+[how our projection method works](https://adamdennett.github.io/BH_Schools_2/brighton_and_hove_allocations.html#how-our-projection-method-works),
+and section 3 of the strategic view uses it as its headline projection
+because it rests on children already registered in a school rather than
+on a population estimate.
+
+```{r oi-two-projections}
+#| tbl-cap: "The two projections side by side. The first drives the model's zone-level demand; the second is the check on it, and the strategic view's headline series."
+rc$comparison %>%
+  transmute(`Entry year` = entry_year,
+            `From ONS estimates (drives the slider)` = fmt_n(ons_demand),
+            `From Reception offers` = fmt_n(reception_based),
+            Difference = sprintf("%+.0f", reception_based - ons_demand),
+            `%` = sprintf("%+.1f%%", 100 * (reception_based / ons_demand - 1))) %>%
+  knitr::kable(align = "rrrrr")
+```
+
+They agree within a few per cent for most years, which is reassuring for
+both, and they diverge most in the years where the ONS series is itself
+extrapolated. Neither is a forecast in the sense of predicting behaviour:
+one counts children who exist, the other counts children already in
+school and applies a measured survival rate.
 
 **What this does not do.** The projection is city-wide, so the slider
 cannot say that one neighbourhood shrinks faster than another: every zone
