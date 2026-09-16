@@ -2883,7 +2883,7 @@ flowchart TB
     s10["<b>11 · Ceiling</b><br/>council tiers at community schools,<br/>proportional elsewhere (§9)<br/>⚙ When a school is full<br/>↻ catchment map · places"]
     s11["<b>12 · Re-offer the refused</b><br/>partner school, then the catchment's<br/>second preferences (§10)<br/>↻ catchment map · site"]
     s12["<b>13 · Flows</b><br/>T_ij as offered"]
-    o1["<b>What comes out</b><br/>intakes, fill and displacement<br/>journeys and the deprived-journey gap<br/>disadvantaged mix and segregation (§12)<br/>funding and reserves"]
+    o1["<b>What comes out</b><br/>intakes, fill and displacement<br/>journeys and the deprived-journey gap<br/>disadvantaged mix and segregation (§12)<br/>funding and reserves (§13)"]
 
   s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> d1
   d1 -- "yes" --> s10 --> s11 --> d1
@@ -3248,6 +3248,283 @@ tibble::tribble(
 3. Is the Gorard index the right summary, given how much of the movement
    above came from re-measurement rather than from the system changing?
 
+
+# From intakes to money {#sec-money-guide}
+
+```{r money-setup}
+#| include: false
+fin <- inp$finance
+SHED <- formals(outcomes)$shed
+o26 <- outcomes(inp, r_ai)
+m26 <- o26$by_school
+
+# The same arithmetic with the council's actual 2026 offers in place of
+# the modelled intakes, so the model's own error can be seen in pounds.
+offers26 <- bh_data("factsheet_panel.rds")$factsheets %>%
+  filter(year == 2026, name != "Total") %>% select(name, offers = off_total)
+m_obs <- m26 %>%
+  left_join(offers26, by = "name") %>%
+  mutate(roll_obs = 5 * offers,
+         gap_obs = balance + (roll_obs - funded_roll) * marginal_pp * (1 - SHED))
+
+# Every year on the slider, under three assumptions about cost.
+yrs <- inp$demand$year
+runs <- lapply(yrs, function(y) run_sim(inp, year = y, rules = list(rule = "priorities")))
+money_path <- purrr::map_dfr(seq_along(yrs), function(k)
+  purrr::map_dfr(c(0.5, 0.75, 0.9), function(s) {
+    o <- outcomes(inp, runs[[k]], shed = s)
+    tibble(year = yrs[k], shed = s, city_gap = o$city_gap,
+           in_deficit = o$in_deficit, critical = o$critical)
+  }))
+by_school_path <- purrr::map_dfr(seq_along(yrs), function(k)
+  outcomes(inp, runs[[k]])$by_school %>%
+    transmute(year = yrs[k], short, intake, gap, gap_pct))
+gbp_k <- function(x) sprintf("%s£%sk", ifelse(x < 0, "−", ""), fmt_n(abs(x) / 1e3))
+```
+
+The strategic view's money section argues that the city's schools are
+already spending their reserves and that small schools are the most
+exposed. The simulator turns that into a number for every run: given the
+intakes a configuration produces, where does each school's budget land?
+This section is the arithmetic behind that number, and it is deliberately
+simple — simple enough to be done by hand for any one school.
+
+## What each school starts from
+
+```{r money-inputs}
+#| tbl-cap: "What the money calculation starts from. Rolls and funding rates are from the DfE's school-level funding statistics for 2025–26; income, reserve and in-year balance are each school's latest published return."
+fin %>%
+  arrange(short) %>%
+  transmute(School = short,
+            `Funded roll` = fmt_n(funded_roll),
+            `Pupil-led rate` = sprintf("£%s", fmt_n(marginal_pp)),
+            `Fixed funding` = gbp_k(fixed),
+            Income = sprintf("£%.1fm", income / 1e6),
+            `In-year balance` = gbp_k(balance),
+            Reserve = gbp_k(reserve),
+            `Accounts year` = year_label) %>%
+  knitr::kable(align = "lrrrrrrl")
+```
+
+- **The funded roll** is the pupil count the school's 2025–26 schools
+  block allocation was calculated on. The schools block funds Years 7 to
+  11 only, so a sixth form is not in it.
+- **The pupil-led rate** is what one more pupil in Years 7 to 11 brings
+  in. It is the school's whole allocation *less* the parts that do not
+  depend on pupil numbers — the lump sum, and where they apply, split
+  site, rates, PFI and exceptional factors — divided by the funded roll.
+  Those fixed parts are why a small school receives more per pupil and
+  loses less per pupil than the average suggests.
+- **Income, reserve and in-year balance** come from each school's own
+  accounts: the Consistent Financial Reporting return for maintained
+  schools (to 31 March) and the Academies Accounts Return for the three
+  academies (to 31 August). The academies' latest published year is
+  therefore a year behind the others, which the table shows rather than
+  hides.
+
+## The calculation
+
+For each school, in a run:
+
+$$\text{roll}_j = 5 \times \text{intake}_j$$
+
+$$\Delta\text{funding}_j = (\text{roll}_j - \text{funded roll}_j) \times \text{pupil-led rate}_j$$
+
+$$\text{annual balance}_j = \text{in-year balance}_j + \Delta\text{funding}_j \times (1 - s)$$
+
+$$\text{years of reserve}_j = \frac{\text{reserve}_j}{-\,\text{annual balance}_j}\quad\text{when the balance is negative}$$
+
+Three choices are built into those four lines.
+
+**The roll is a steady state.** Five year groups at this run's intake is
+the roll the school converges on if the configuration holds for five
+years — not the roll next September. A school whose intake falls today
+feels a fifth of the loss next year and all of it in year five.
+
+**Today's in-year balance is carried forward.** A school that ran a
+deficit in its latest accounts is assumed to keep running it, before any
+change in pupils. That is the least-assumption starting point, and it
+means a single unusual year in a school's accounts carries straight
+through.
+
+**$s$ is how much of the lost funding the school can take out of its
+costs.** A school that loses £100k of funding and cuts £75k of spending
+ends £25k worse off. The simulator uses $s = `r SHED`$, the middle of the
+three assumptions in the strategic view (90%, 75% and 50%). It is symmetric: a school that
+gains pupils is assumed to spend three quarters of the new money.
+
+## Worked example: Longhill
+
+```{r money-longhill}
+#| include: false
+lh_m <- m26 %>% filter(short == "Longhill")
+```
+
+Longhill's funded roll is `r fmt_n(lh_m$funded_roll)`. The model gives it
+an intake of `r sprintf("%.0f", lh_m$intake)` in 2026, so the steady-state
+roll is `r fmt_n(round(lh_m$roll_ss))` — `r fmt_n(round(-lh_m$d_roll))`
+fewer pupils. At its pupil-led rate of £`r fmt_n(lh_m$marginal_pp)` that is
+`r gbp_k(lh_m$funding_change)` of funding a year. Taking out three quarters
+of the cost leaves `r gbp_k(lh_m$funding_change * (1 - SHED))`, which
+added to its latest in-year balance of `r gbp_k(lh_m$balance)` gives an
+annual position of **`r gbp_k(lh_m$gap)`**, a deficit of
+`r fmt_pct(100 * -lh_m$gap_pct)` of its income. Its reserve of
+`r gbp_k(lh_m$reserve)` would last about
+`r sprintf("%.1f", lh_m$years_left)` years.
+
+## Where every school lands
+
+```{r fig-money-schools}
+#| fig-cap: "Each school's annual position at the steady-state roll, as a share of its income, for the 2026 intake and for the 2035 one. The difference between the two points is the falling cohort alone: nothing else in the run changes. Where only one point shows, the school fills in both years and its position does not move."
+#| fig-height: 5
+by_school_path %>%
+  filter(year %in% c(min(yrs), max(yrs))) %>%
+  mutate(year = factor(year),
+         short = forcats::fct_reorder(short, gap_pct, min)) %>%
+  ggplot(aes(gap_pct, short)) +
+  geom_vline(xintercept = 0, colour = "grey45") +
+  geom_line(aes(group = short), colour = "grey75", linewidth = 1) +
+  geom_point(aes(colour = year), size = 3.2) +
+  scale_x_continuous(labels = scales::percent) +
+  scale_colour_manual(values = setNames(c("#1f3b57", "#d95f02"),
+                                        c(min(yrs), max(yrs))),
+                      name = "Intake year") +
+  labs(x = "Annual surplus or deficit, share of income", y = NULL,
+       title = sprintf("%d schools in deficit on the 2026 intake, %d on the 2035 one",
+                       o26$in_deficit,
+                       money_path$in_deficit[money_path$year == max(yrs) & money_path$shed == SHED]),
+       subtitle = sprintf("Steady-state roll; %.0f%% of lost funding taken out of costs", 100 * SHED)) +
+  theme_bh() + theme(legend.position = "top")
+```
+
+The ordering is not the ordering of intakes. King's gains pupils against
+its funded roll and starts from a surplus; Cardinal Newman fills
+completely and is still the deepest in deficit, because its latest
+accounts already show a deficit of
+`r gbp_k(-fin$balance[fin$short == "Cardinal Newman"])` a year. **The
+model's intakes decide the change; the accounts decide the starting
+point**, and for several schools the starting point is most of the story.
+
+## Over time, and under the cost assumption
+
+```{r fig-money-path}
+#| fig-cap: "The city's combined annual position for each year on the simulator's slider, under the strategic view's three assumptions about how much lost funding schools can take out of their costs. The simulator uses the middle line."
+#| fig-height: 4.6
+money_path %>%
+  mutate(shed = factor(sprintf("%.0f%% of lost funding cut from costs", 100 * shed),
+                       levels = sprintf("%.0f%% of lost funding cut from costs",
+                                        100 * c(0.9, 0.75, 0.5)))) %>%
+  ggplot(aes(year, city_gap / 1e6, colour = shed)) +
+  geom_hline(yintercept = 0, colour = "grey45") +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 1.8) +
+  scale_colour_manual(values = c("#9aa5b1", "#1f3b57", "#d95f02"), name = NULL) +
+  scale_y_continuous(labels = function(x) ifelse(x < 0, sprintf("−£%.0fm", -x), sprintf("£%.0fm", x))) +
+  scale_x_continuous(breaks = yrs[yrs %% 2 == 0]) +
+  labs(x = "Intake year on the slider", y = "All ten schools, per year",
+       title = "The falling cohort turns into money only as fast as costs fail to follow it",
+       subtitle = "Steady-state roll at each year's modelled intake, council priorities, today's map") +
+  theme_bh() + theme(legend.position = "top", legend.direction = "vertical",
+                     legend.justification = "left")
+```
+
+If every pound lost were a pound of cost cut ($s = 1$), the cohort
+decline would cost nothing and the city's position would simply be the
+sum of today's balances, `r gbp_k(sum(fin$balance))`. Even at 90% the
+city's schools end `r max(yrs)` at
+`r gbp_k(money_path$city_gap[money_path$year == max(yrs) & money_path$shed == 0.9])`
+a year. At the simulator's setting it is
+`r gbp_k(money_path$city_gap[money_path$year == max(yrs) & money_path$shed == SHED])`,
+and
+`r gbp_k(money_path$city_gap[money_path$year == max(yrs) & money_path$shed == 0.5])`
+if schools can only cut half of what they lose. The assumption moves the
+answer more than most of the policy levers do, which is why the app states it
+on its money chart.
+
+## The model's error, in pounds
+
+The money table is only as good as the intakes behind it, and the
+closing section (§14) shows where the model's intakes are wrong. Replacing the modelled 2026 intakes
+with the offers the council actually made isolates that:
+
+```{r money-error}
+#| tbl-cap: "Each school's annual position on the modelled 2026 intake and on the council's actual 2026 offers, same arithmetic otherwise."
+m_obs %>%
+  mutate(diff = gap - gap_obs) %>%
+  arrange(desc(abs(diff))) %>%
+  transmute(School = short,
+            `Modelled intake` = sprintf("%.0f", intake),
+            `Actual offers` = offers,
+            `Position, modelled` = gbp_k(gap),
+            `Position, actual` = gbp_k(gap_obs),
+            `Difference` = gbp_k(diff)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+The two Aldridge academies look worse in the simulator than their real
+2026 intakes justify, and Hove Park better.
+`r n_flip <- sum(sign(m_obs$gap) != sign(m_obs$gap_obs)); if (n_flip == 0) "No school moves between deficit and surplus because of it" else sprintf("%d %s between deficit and surplus because of it (%s)", n_flip, ifelse(n_flip == 1, "school moves", "schools move"), paste(m_obs$short[sign(m_obs$gap) != sign(m_obs$gap_obs)], collapse = ", "))`,
+but anyone reading one school's row should read it with this table
+beside it. The open model's own finance table avoids the problem by
+rebasing to the published offers and using the model only for the
+*change* over time; the simulator cannot, because its whole purpose is to
+show intakes that have not happened.
+
+## Checks you can run
+
+```{r money-checks}
+#| tbl-cap: "What the money calculation should satisfy."
+tibble::tribble(
+  ~Check, ~Result,
+  "With every lost pound cut from costs, a school's position is its latest balance",
+  sprintf("%s at s = 1, for every school",
+          ifelse(isTRUE(all.equal(outcomes(inp, r_ai, shed = 1)$by_school$gap,
+                                  outcomes(inp, r_ai, shed = 1)$by_school$balance)),
+                 "yes:", "no:")),
+  "The steady-state roll is five year groups",
+  sprintf("%s pupils across the city against %s funded",
+          fmt_n(round(sum(m26$roll_ss))), fmt_n(sum(fin$funded_roll))),
+  "The pupil-led rate excludes fixed funding",
+  sprintf("£%s to £%s per pupil; fixed funding £%sk to £%sk",
+          fmt_n(min(fin$marginal_pp)), fmt_n(max(fin$marginal_pp)),
+          fmt_n(min(fin$fixed) / 1e3), fmt_n(max(fin$fixed) / 1e3)),
+  "Schools already overdrawn",
+  paste(fin$short[fin$reserve <= 0], collapse = ", "),
+  "Overdrawn and in deficit in this run — the ones a council acts on first",
+  sprintf("%d: %s", o26$critical,
+          paste(m26$short[m26$reserve <= 0 & m26$gap < 0], collapse = ", "))) %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+- **It is a steady state, not a budget.** No pay award, no inflation, no
+  energy prices, no capital receipts, no change in the funding formula.
+  All in today's money.
+- **One year of accounts is the baseline.** A school with one bad year
+  carries it forward indefinitely; so does a school with one good one.
+- **Sixth forms are outside it.** Four schools have one. Their income
+  includes post-16 funding, so a deficit as a *share of income* is
+  flattered for them, and nothing in the model moves their sixth-form
+  rolls.
+- **The same cost assumption for everyone.** A school with
+  `r fmt_pct(100 * max(fin$staff_pct))` of its income in staff costs
+  cannot shed cost as easily as one at
+  `r fmt_pct(100 * min(fin$staff_pct))`, and the model treats them alike.
+- **Patcham is overdrawn but in surplus.** Its reserve is negative and
+  its in-year balance positive, so it counts as having no years of
+  reserve left while recovering. The app says "overdrawn" rather than
+  printing a number that would mean the opposite.
+
+## Questions this raises
+
+1. Should the cost assumption vary by school, with staff share as the
+   obvious first candidate?
+2. Should the roll move year by year, as a cohort model, rather than
+   jumping to its steady state?
+3. Should the simulator rebase each school to its actual offers, as the
+   open model does, and show only the change a scenario makes?
+
 # The matrix, filled in {#sec-end}
 
 ```{r end-setup}
@@ -3381,6 +3658,10 @@ tibble::tribble(
   "second preferences by home catchment, from the same table", "§10",
   "Disadvantage pull $\\lambda_j$", sprintf("%.2f to %.2f", min(inp$params$dis$lambda), max(inp$params$dis$lambda)),
   "fitted so each school reproduces its published disadvantaged intake", "§12",
+  "Cost shed when funding falls", sprintf("%.0f%%", 100 * formals(outcomes)$shed),
+  "set: the middle of the strategic view's three assumptions", "§13",
+  "Pupil-led funding rate", sprintf("£%s to £%s", fmt_n(min(inp$finance$marginal_pp)), fmt_n(max(inp$finance$marginal_pp))),
+  "DfE school-level funding statistics, 2025–26", "§13",
   "Out-of-city schools", sprintf("%d, decay %.1f on straight-line km",
                                  length(p$outside$W), p$outside$decay),
   "fitted to the children the city loses to East Sussex", "§8") %>%
@@ -3410,15 +3691,13 @@ the four fitted quantities and the less on the published ones.
 
 ## What this guide does not cover
 
-Two things in the strategic view are built **on top of** the model in
-this guide rather than being part of it, and each needs its own account:
+One thing in the strategic view is built **on top of** the model in this
+guide rather than being part of it, and needs its own account:
 
-- **The finances.** Per-pupil funding against the cost of running a
-  school at a given size, which turns an intake into a deficit.
 - **The scenarios themselves.** Which combinations of closure,
   relocation, boundary and admission rule are worth running, and how
   their results should be read.
 
-Everything above is the machinery those two use. It should now be
+Everything above is the machinery they use. It should now be
 possible to check any number in the strategic view by following it back
 through these sections to a published source.
