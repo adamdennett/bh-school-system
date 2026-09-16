@@ -1243,7 +1243,7 @@
     "href": "model-guide.html#why-it-recomputes-rather-than-updates",
     "title": "The model, stage by stage",
     "section": "11.4 Why it recomputes rather than updates",
-    "text": "11.4 Why it recomputes rather than updates\nEverything above takes about 0.06 seconds for the model and another 0.04 for all of the outcome measures, on 5,824 zone-school rows. That is fast enough that the simulator does not attempt to update anything incrementally: every change to any control re-runs the whole sequence from step 1. Nothing is cached between runs, so nothing can be stale, and two runs with identical settings are identical to the last decimal place.\nIt also means the comparisons the simulator shows — this scenario against the baseline, or a school’s fill now against 2030 — are two complete runs compared afterwards, not one run adjusted."
+    "text": "11.4 Why it recomputes rather than updates\nEverything above takes about 0.05 seconds for the model and another 0.07 for all of the outcome measures, on 5,824 zone-school rows. That is fast enough that the simulator does not attempt to update anything incrementally: every change to any control re-runs the whole sequence from step 1. Nothing is cached between runs, so nothing can be stale, and two runs with identical settings are identical to the last decimal place.\nIt also means the comparisons the simulator shows — this scenario against the baseline, or a school’s fill now against 2030 — are two complete runs compared afterwards, not one run adjusted."
   },
   {
     "objectID": "model-guide.html#the-measure-that-was-not-good-enough",

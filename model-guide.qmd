@@ -2868,77 +2868,35 @@ its work by changing an input to one of these steps and making the whole
 sequence run again.
 
 ```{mermaid}
-%%| fig-cap: "One run of the model. Orange is a control in the simulator; the arrow from it points at the step it changes. Dotted arrows are the second and third things a control touches. Everything downstream of that step is then recomputed."
-flowchart LR
-  subgraph CTL["What you can change"]
-    direction TB
-    yr(["Entry year"])
-    map(["Catchment map"])
-    site(["Longhill's site"])
-    att(["Attractiveness,<br/>per school"])
-    open(["Close or open<br/>a school"])
-    exc(["Paired-catchment<br/>exclusivity"])
-    gam(["How much the<br/>catchment counts"])
-    pan(["Places, per school"])
-    rule(["When a school<br/>is full"])
-  end
-
-  subgraph RUN["One run"]
-    direction TB
-    s1["1 · Cohort<br/>O_i scaled to the year (§2)"]
-    s2["2 · Destinations<br/>the open schools, and the cost<br/>table for the site in force (§4)"]
-    s3["3 · Attractiveness<br/>fitted W_j × the slider (§3)"]
-    s4["4 · Competition<br/>C_j from where the schools stand (§7)"]
-    s5["5 · Catchment indicator<br/>from the map in force (§6)"]
-    s6["6 · Populations<br/>who would take only one of a pair (§8)"]
-    s7["7 · Pull<br/>W_j c_ij^-β e^γ C_j^δ (§5, §6, §7)"]
-    s8["8 · Balance<br/>A_i, so every row places its children (§8)"]
-    s9["9 · Wanted<br/>T_ij, before any ceiling"]
-    d1{"10 · Any school<br/>over its admission<br/>number?"}
-    s10["11 · Ceiling<br/>the council's tiers at the community<br/>schools, proportional elsewhere (§9)"]
-    s11["12 · Re-offer the refused<br/>partner school, then the catchment's<br/>second preferences (§10)"]
-    s12["13 · Flows<br/>T_ij as offered"]
-  end
-
-  subgraph OUT["What comes out"]
-    direction TB
-    o1["Intakes, fill,<br/>displacement"]
-    o2["Journeys, and the<br/>deprived-journey gap"]
-    o3["Disadvantaged mix<br/>and segregation (§12)"]
-    o4["Funding and<br/>reserves"]
-  end
+%%| fig-cap: "One run of the model, top to bottom. ⚙ marks a simulator control and the step it sets; those steps are outlined in solid orange. ↻ marks a step that has no control of its own but is recomputed when another control moves; those are outlined in dashed orange. Moving any control re-runs everything below the step it touches."
+flowchart TB
+    s1["<b>1 · Cohort</b><br/>O_i scaled to the entry year (§2)<br/>⚙ Entry year"]
+    s2["<b>2 · Destinations</b><br/>the open schools, and the cost table<br/>for Longhill's site (§4)<br/>⚙ Close or open a school · Longhill's site"]
+    s3["<b>3 · Attractiveness</b><br/>fitted W_j × the slider (§3)<br/>⚙ Attractiveness, per school"]
+    s4["<b>4 · Competition</b><br/>C_j from where the schools stand (§7)<br/>↻ attractiveness · site · open or close"]
+    s5["<b>5 · Catchment indicator</b><br/>from the map in force (§6)<br/>⚙ Catchment map"]
+    s6["<b>6 · Populations</b><br/>families who would take only one of a pair (§8)<br/>⚙ Paired-catchment exclusivity"]
+    s7["<b>7 · Pull</b><br/>W_j · c_ij^−β · e^γ · C_j^δ (§5–§7)<br/>⚙ How much the catchment counts"]
+    s8["<b>8 · Balance</b><br/>A_i, so every row places its children (§8)"]
+    s9["<b>9 · Wanted</b><br/>T_ij before any ceiling"]
+    d1{"<b>10 · Any school over<br/>its admission number?</b><br/>⚙ Places, per school"}
+    s10["<b>11 · Ceiling</b><br/>council tiers at community schools,<br/>proportional elsewhere (§9)<br/>⚙ When a school is full<br/>↻ catchment map · places"]
+    s11["<b>12 · Re-offer the refused</b><br/>partner school, then the catchment's<br/>second preferences (§10)<br/>↻ catchment map · site"]
+    s12["<b>13 · Flows</b><br/>T_ij as offered"]
+    o1["<b>What comes out</b><br/>intakes, fill and displacement<br/>journeys and the deprived-journey gap<br/>disadvantaged mix and segregation (§12)<br/>funding and reserves"]
 
   s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> d1
   d1 -- "yes" --> s10 --> s11 --> d1
-  d1 -- "no, or no school has room" --> s12
-  s12 --> o1 & o2 & o3 & o4
+  d1 -- "no, or no school has room" --> s12 --> o1
 
-  yr --> s1
-  site --> s2
-  open --> s2
-  att --> s3
-  map --> s5
-  exc --> s6
-  gam --> s7
-  pan --> d1
-  rule --> s10
-
-  site -.-> s4
-  site -.-> s11
-  open -.-> s4
-  att -.-> s4
-  map -.-> s10
-  map -.-> s11
-  pan -.-> s10
-
-  classDef ctl fill:#fdecd9,stroke:#d95f02,stroke-width:1px,color:#7a3600;
+  classDef ctl fill:#fdecd9,stroke:#d95f02,stroke-width:2px,color:#3d1c00;
+  classDef moved fill:#eef4fb,stroke:#d95f02,stroke-width:1.5px,stroke-dasharray:5 3,color:#102a43;
   classDef run fill:#eef4fb,stroke:#1f3b57,stroke-width:1px,color:#102a43;
-  classDef dec fill:#fff7e6,stroke:#1f3b57,stroke-width:1px,color:#102a43;
   classDef out fill:#edf6ef,stroke:#2b7a4b,stroke-width:1px,color:#102a43;
-  class yr,map,site,att,open,exc,gam,pan,rule ctl;
-  class s1,s2,s3,s4,s5,s6,s7,s8,s9,s10,s11,s12 run;
-  class d1 dec;
-  class o1,o2,o3,o4 out;
+  class s1,s2,s3,s5,s6,s7,d1,s10 ctl;
+  class s4,s11 moved;
+  class s8,s9,s12 run;
+  class o1 out;
 ```
 
 ## What each control changes, and what it makes the model redo

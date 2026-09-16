@@ -4762,6 +4762,19 @@ than a decision that can be deferred.
 
 # Brightopia: a model of the whole system {#sec-brightopia}
 
+::: {.callout-tip appearance="simple"}
+## Every stage of this model, opened up
+
+[The model, stage by stage](model-guide.html) is a companion to this
+section. It takes the equation apart one term at a time --- what each
+term is, where its numbers come from, how it is computed, a worked
+example, the checks that can be run against it, and what it assumes.
+The terms are $O_i$, $W_j$, $c_{ij}$, $\beta$, $\gamma_h$, $C_j$ and
+$A_i$, followed by the admission-number ceiling and the re-offering of
+refused children. Anyone wanting to check a number in this document
+rather than take it on trust should start there.
+:::
+
 ## Why model at all {#sec-why-model}
 
 ::: {.callout-note appearance="simple"}
