@@ -28,6 +28,10 @@ cal <- mt$calibrated
 rc  <- bh_data("reception_cohort.rds")
 acc <- bh_data("accessibility.rds")
 
+# The simulator's own engine, so the guide can run the model it describes.
+source(here::here("app", "R", "model.R"))
+source(here::here("app", "R", "outcomes.R"))
+
 # The state-sector share is a single constant in the open bundle's build.
 # It is recovered here from the projection rather than retyped, so this
 # document cannot drift from the number the model used.
@@ -59,7 +63,7 @@ $$
 | $O_i$ | children in neighbourhood $i$ entering Year 7 | §2 |
 | $W_j$ | how attractive school $j$ is, net of where it stands | §3 |
 | $c_{ij}$ | routed walk-and-bus journey time from $i$ to $j$ | §4 |
-| $\beta$ | distance decay | to follow |
+| $\beta$ | distance decay | §5 |
 | $\gamma_h$ | catchment term, fitted for each catchment $h$ | to follow |
 | $C_j$, $\delta$ | competing destinations | to follow |
 | $A_i$ | balancing factor: every neighbourhood places all of its children | to follow |
@@ -990,3 +994,224 @@ checking against what a family there would say.
 3. Should the out-of-city schools be routed rather than measured on
    straight-line distance, if a feed covering East Sussex services were
    used?
+
+# $\beta$: how sharply distance deters {#sec-beta}
+
+```{r beta-setup}
+#| include: false
+env <- bh_data("sensitivity_envelope.rds")
+BETA <- inp$params$beta
+ext <- cal$outside
+```
+
+## What it is
+
+$\beta$ is the exponent on journey time. It converts the minutes of §4
+into a pull:
+
+$$\text{pull of school } j \text{ on neighbourhood } i \;\propto\; c_{ij}^{-\beta}$$
+
+A larger $\beta$ means families discount distance more sharply. It is a
+single number for the whole city, fixed at **`r sprintf("%.1f", BETA)`**,
+and it is the same in every run of the simulator: no slider moves it.
+
+The form matters as much as the value. This is a **power** decay, not an
+exponential one: doubling the journey divides the pull by
+$2^{`r sprintf("%.1f", BETA)`} \approx `r sprintf("%.1f", 2^BETA)`$,
+whatever the starting point. That is the standard form in spatial
+interaction modelling, and it behaves sensibly over the range of journeys
+a city this size contains.
+
+```{r fig-beta-curve}
+#| fig-cap: "What the exponent does. Each curve is the pull of a school against journey time, scaled to 1 at ten minutes. The model uses 1.7; the sweep in the open model runs from 1.5 to 3.2."
+#| fig-height: 4.4
+bs <- c(1.5, BETA, 2.4, 3.2)
+tidyr::expand_grid(beta = bs, mins = seq(10, 70, by = 0.5)) %>%
+  mutate(pull = (mins^-beta) / (10^-beta),
+         lab = sprintf("β = %.1f", beta),
+         model = beta == BETA) %>%
+  ggplot(aes(mins, pull, colour = lab, linewidth = model)) +
+  geom_line() +
+  scale_linewidth_manual(values = c(`FALSE` = 0.7, `TRUE` = 1.6), guide = "none") +
+  scale_colour_manual(values = c("grey70", "#1f3b57", "grey55", "grey40"), name = NULL) +
+  scale_y_continuous(labels = label_percent()) +
+  labs(x = "Journey time (minutes)", y = "Pull, relative to a ten-minute journey",
+       title = "A school twice as far away is a fraction as likely to be chosen",
+       subtitle = sprintf("At β = %.1f, a 20-minute journey has %.0f%% of the pull of a 10-minute one, and 40 minutes has %.0f%%",
+                          BETA, 100 * 2^-BETA, 100 * 4^-BETA)) +
+  theme_bh() + theme(legend.position = "top")
+```
+
+## Where the value comes from, and what it is not
+
+**It is a judgement, not an estimate.** Fitting $\beta$ properly needs
+observed flows — how many children actually travel from each
+neighbourhood to each school — and the council has not released them. A
+catchment-level preference table identifies the catchment terms (§6, to
+follow) but not distance decay, because within a catchment every family
+is at a different distance and the table does not say who is where.
+
+So `r sprintf("%.1f", BETA)` is a central value chosen for a system of
+this kind: journeys are short, the alternatives sit close together, and
+it is squarely inside the range this literature reports for school
+choice. The open model does not rely on it being right. It runs
+everything across `r length(env$betas)` values from
+`r sprintf("%.1f", min(env$betas))` to `r sprintf("%.1f", max(env$betas))`
+and reports which conclusions survive the whole range.
+
+::: {.callout-note appearance="simple"}
+## What would pin it down
+
+A Poisson regression of flows on log journey time with an origin fixed
+effect returns $\beta$ with a standard error, from records the admissions
+process already produces. It is half a day's work on data the council
+holds. Every band in the open model that comes from sweeping $\beta$
+would become a number with an interval around it.
+:::
+
+## How much rests on it
+
+```{r beta-importance}
+#| tbl-cap: "What the open model's answer is actually sensitive to. Share of the variation in Longhill's modelled recruitment across the full sweep, by input."
+env$importance %>%
+  filter(term != "Residuals") %>%
+  mutate(Input = recode(term,
+    "w_spec" = "Which attractiveness specification",
+    "factor(entry_year)" = "Which entry year",
+    "site_label" = "Longhill's site",
+    "factor(beta)" = "Distance decay (β)",
+    "factor(gamma)" = "Strength of the catchment term (γ)")) %>%
+  arrange(desc(pct)) %>%
+  transmute(Input, `Share of the variation` = sprintf("%.1f%%", pct)) %>%
+  knitr::kable(align = "lr")
+```
+
+**Distance decay is not the big unknown.** It accounts for
+`r sprintf("%.0f%%", env$importance$pct[env$importance$term == "factor(beta)"])`
+of the variation in the answer, against
+`r sprintf("%.0f%%", env$importance$pct[env$importance$term == "w_spec"])`
+for how attractive each school is taken to be. That is worth knowing
+because it says what data would be worth having: school-level revealed
+preference, more than travel behaviour.
+
+```{r fig-beta-sweep}
+#| fig-cap: "Longhill's modelled recruitment across the swept range of distance decay, at each attractiveness specification, 2026. The vertical line is the value the model uses. The spread between the coloured lines is the attractiveness question; the slope along each line is the distance-decay question."
+#| fig-height: 4.8
+env$envelope %>%
+  filter(entry_year == 2026, gamma == 1.6) %>%
+  mutate(site = ifelse(site == "now", "Ovingdean (today)", "Elm Grove")) %>%
+  ggplot(aes(beta, natural_intake, colour = w_label, group = w_label)) +
+  geom_vline(xintercept = BETA, colour = "grey45", linetype = "31") +
+  geom_line(linewidth = 0.9) +
+  facet_wrap(~ site) +
+  scale_colour_brewer(palette = "Dark2", name = NULL) +
+  expand_limits(y = 0) +
+  labs(x = "Distance decay (β)", y = "Children recruited",
+       title = "The slope along each line is what β decides",
+       subtitle = "Longhill's recruitment with its own admission number unbinding, catchment term at 1.6") +
+  theme_bh() + theme(legend.position = "top")
+```
+
+## What it looks like from one neighbourhood
+
+```{r fig-beta-shares}
+#| fig-cap: "One neighbourhood's children, shared between schools by journey time alone, at three values of the exponent. Attractiveness, catchment and capacity are all switched off here, so the only thing acting is distance."
+#| fig-height: 4.6
+zex <- costs %>% filter(zone == ex_zones$zone[1])
+tidyr::expand_grid(beta = c(1.5, BETA, 3.2), zex) %>%
+  group_by(beta) %>%
+  mutate(share = cij^-beta / sum(cij^-beta),
+         School = short_sch(name)) %>%
+  ungroup() %>%
+  mutate(lab = sprintf("β = %.1f", beta),
+         School = forcats::fct_reorder(School, cij)) %>%
+  ggplot(aes(share, School, fill = lab)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+  scale_x_continuous(labels = label_percent()) +
+  scale_fill_manual(values = c("grey72", "#1f3b57", "grey45"), name = NULL) +
+  labs(x = "Share of the neighbourhood's children", y = NULL,
+       title = sprintf("Distance alone, from %s", sub("[|].*$", "", ex_zones$zone[1])),
+       subtitle = "Schools ordered by journey time. A steeper decay concentrates children on the nearest schools.") +
+  theme_bh() + theme(legend.position = "top")
+```
+
+That is the whole of what the exponent does: at
+`r sprintf("%.1f", 1.5)` the nearest school takes
+`r sprintf("%.0f%%", 100 * with(zex, (cij^-1.5 / sum(cij^-1.5))[which.min(cij)]))`
+of this neighbourhood's children on distance alone; at
+`r sprintf("%.1f", 3.2)`, `r sprintf("%.0f%%", 100 * with(zex, (cij^-3.2 / sum(cij^-3.2))[which.min(cij)]))`.
+
+## A second decay, on a different scale
+
+The four schools outside the city do not use $\beta$ at all. They are
+chosen on straight-line kilometres with a decay of their own, fitted to
+the published 2024 destinations:
+
+$$\text{pull of an out-of-city school} \;=\; W^{\text{ext}}_j \; d_{ij}^{-`r sprintf("%.1f", ext$decay)`}$$
+
+`r sprintf("%.1f", ext$decay)` is far steeper than
+`r sprintf("%.1f", BETA)`, and the two are not comparable: this one is on
+kilometres rather than minutes, and it is doing a different job. It is
+absorbing everything that stops a Brighton family choosing a school in
+another authority — the admissions arrangements of a different council,
+the absence of a school bus, the sheer unfamiliarity — and compressing it
+into the one dimension the fit has. It reproduces the published pattern,
+which is a low bar for four schools and one year of data, and it should
+not be read as a behavioural estimate at all.
+
+## Checks you can run
+
+```{r beta-checks}
+#| tbl-cap: "What the decay should produce, and what it gives at the value the model uses."
+r_now <- run_sim(inp, year = 2026, rules = list(rule = "priorities"))
+m_now <- outcomes(inp, r_now)
+tibble::tribble(
+  ~Check, ~Result,
+  "The exponent the model runs at",
+  sprintf("%.1f, unchanged in every scenario", BETA),
+  "Mean modelled journey to the school a child attends",
+  sprintf("%.1f minutes", m_now$mean_min),
+  "Against the national average school journey",
+  sprintf("%.0f minutes (National Travel Survey)", acc$benchmarks$nts_min),
+  "Share of children modelled at a school in their own catchment",
+  sprintf("%.0f%%", 100 * r_now$in_catch_share),
+  "Sensitivity of the answer to the exponent",
+  sprintf("%.0f%% of the variation in the sweep", env$importance$pct[env$importance$term == "factor(beta)"])) %>%
+  knitr::kable(align = "lr")
+```
+
+The mean modelled journey sits above the national average, which is what
+a city with a coastal edge and one school in the far east should produce.
+If it came out at or below the national figure, either the decay or the
+journey times would be wrong.
+
+## What to be careful about
+
+- **One exponent for the whole city.** Families differ in how far they
+  will travel, and the literature is consistent that the willingness
+  varies with income and with whether a car is available. A single
+  $\beta$ averages over that, and it is the assumption most likely to
+  matter for the equity questions in the strategic view.
+- **Everything else is fitted *given* this value.** The attractiveness
+  balancing (§3) and the catchment terms (§6) are estimated with $\beta$
+  held at `r sprintf("%.1f", BETA)`. A different decay would give
+  different fitted values for both, which is why the sweep re-runs the
+  whole model rather than swapping the exponent at the end.
+- **Time, not distance, and not cost.** A journey that is quick but
+  requires two buses and a fare is treated as a short journey.
+- **The floor at short journeys.** A power decay rises steeply as time
+  approaches zero, so the very shortest journeys carry a lot of weight.
+  The routed minimum in the table is
+  `r sprintf("%.0f", min(costs$cij))` minutes, which keeps it in bounds.
+
+## Questions this raises
+
+1. Should $\beta$ vary between groups of families — by deprivation, or by
+   whether a catchment has one school or two — rather than being one
+   number for the city?
+2. Is the power form right, or would an exponential decay fit the pattern
+   of Brighton's journeys better? Both are standard; they differ most at
+   the long-journey end, which is where the eastern questions sit.
+3. Should the out-of-city decay be re-fitted once more than one year of
+   destination data is available, or replaced by a proper choice model
+   for schools in another authority?
