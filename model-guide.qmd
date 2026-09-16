@@ -1050,6 +1050,138 @@ ex_zone %>%
   knitr::kable(align = "lrrl")
 ```
 
+
+### The same neighbourhood, routed {#sec-cij-routes}
+
+```{r cij-routes-data}
+#| include: false
+gr <- bh_data("guide_routes.rds")
+stopifnot(gr$origin$zone == ex_zones$zone[1])
+
+# The four schools the text walks through come first in the switcher.
+GR_FIRST <- c("Varndean School", "Brighton Aldridge Community Academy",
+              "Hove Park School", "King's School")
+gr_sum <- gr$summary %>%
+  mutate(label = short_sch(school),
+         first = match(school, GR_FIRST)) %>%
+  arrange(is.na(first), first, model_minutes)
+
+gr_legs <- gr$legs %>%
+  mutate(mode_lab = if_else(leg_mode == "WALK", "Walk", "Bus"),
+         label = short_sch(school))
+
+# A label at the middle of every bus leg, carrying the service number.
+mid_pt <- function(g) {
+  xy <- sf::st_coordinates(g)
+  xy[ceiling(nrow(xy) / 2), c("X", "Y")]
+}
+gr_bus <- gr_legs %>% filter(mode_lab == "Bus")
+gr_bus_xy <- t(vapply(sf::st_geometry(gr_bus), mid_pt, numeric(2)))
+gr_bus <- gr_bus %>% st_drop_geometry() %>%
+  mutate(lon = gr_bus_xy[, 1], lat = gr_bus_xy[, 2])
+
+GR_COL <- c(Walk = "#e08214", Bus = "#2166ac")
+gr_of <- function(s, col) gr_sum[[col]][gr_sum$label == s]
+```
+
+The table gives one number per school. Behind each number is a journey,
+and it is worth seeing what the journey involves. The map routes the same
+neighbourhood to every city school, leg by leg, on the same network and
+the same weekday-morning timetable the model uses.
+
+```{r fig-cij-routes}
+#| fig-cap: "Indicative routes from the worked neighbourhood to each city school. Choose a school on the right. Walking legs are orange and follow the street network; bus legs are blue, follow the service's own route and are labelled with the service number. Schools the model caps at walking time are routed on foot only. The route starts at the neighbourhood's centre, so its time differs a little from the model's, which averages over every postcode in the neighbourhood."
+gr_bb <- sf::st_bbox(gr_legs)
+sch_pts <- schools_sf(oi$schools) %>%
+  filter(name %in% gr_sum$school)
+
+mr <- leaflet(width = "100%", height = 620) %>%
+  add_basemap() %>%
+  addPolygons(data = catch_sf, fill = FALSE, color = "#555555",
+              weight = 1, opacity = 0.5, group = "Catchment boundaries")
+
+for (i in seq_len(nrow(gr_sum))) {
+  s <- gr_sum$school[i]; g <- gr_sum$label[i]
+  d <- gr_legs %>% filter(school == s)
+  b <- gr_bus %>% filter(school == s)
+  leg_label <- function(x) sprintf("Leg %d: %s%s, %.0f min", x$leg, x$mode_lab,
+                                   if_else(nzchar(x$route), paste0(" ", x$route), ""),
+                                   x$minutes + x$wait)
+  dw <- d %>% filter(mode_lab == "Walk")
+  db <- d %>% filter(mode_lab == "Bus")
+  if (nrow(dw))
+    mr <- mr %>% addPolylines(data = dw, group = g, color = GR_COL[["Walk"]],
+                              weight = 5, opacity = 0.9, dashArray = "6 6",
+                              label = leg_label(dw))
+  if (nrow(db))
+    mr <- mr %>% addPolylines(data = db, group = g, color = GR_COL[["Bus"]],
+                              weight = 5, opacity = 0.85, label = leg_label(db))
+  mr <- mr %>%
+    addCircleMarkers(data = sch_pts %>% filter(name == s), group = g,
+                     radius = 7, color = "#111111", weight = 2, fillColor = "#ffffff",
+                     fillOpacity = 1, label = ~ name) %>%
+    addCircleMarkers(data = sch_pts %>% filter(name != s), group = g,
+                     radius = 3, color = "#777777", weight = 1, fillColor = "#cccccc",
+                     fillOpacity = 0.9, label = ~ name) %>%
+    addCircleMarkers(lng = gr$origin$lon, lat = gr$origin$lat, group = g,
+                     radius = 7, color = "#111111", weight = 2, fillColor = "#b2182b",
+                     fillOpacity = 1, label = "The worked neighbourhood")
+  if (nrow(b))
+    mr <- mr %>%
+      addLabelOnlyMarkers(lng = b$lon, lat = b$lat, group = g,
+                          label = paste("Bus", b$route),
+                          labelOptions = labelOptions(noHide = TRUE, direction = "top",
+                                                      textOnly = FALSE,
+                                                      style = list("font-weight" = "bold",
+                                                                   "color" = "#2166ac")))
+}
+
+mr %>%
+  fitBounds(lng1 = unname(gr_bb["xmin"]) - 0.005, lat1 = unname(gr_bb["ymin"]) - 0.004,
+            lng2 = unname(gr_bb["xmax"]) + 0.005, lat2 = unname(gr_bb["ymax"]) + 0.004) %>%
+  addLayersControl(baseGroups = gr_sum$label,
+                   overlayGroups = "Catchment boundaries",
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  hideGroup("Catchment boundaries") %>%
+  addLegend("bottomright", colors = unname(GR_COL), labels = names(GR_COL),
+            title = "Leg", opacity = 0.9)
+```
+
+```{r cij-routes-table}
+#| tbl-cap: "The routes on the map, against the model's journey time for the neighbourhood."
+gr_sum %>%
+  transmute(School = label,
+            `Model (minutes)` = sprintf("%.0f", model_minutes),
+            `This route (minutes)` = route_minutes,
+            Legs = legs,
+            `Buses, in order` = if_else(nzchar(services), gsub(" then ", " → ", services), "walk only"),
+            Changes = changes,
+            Basis = if_else(walk_capped, "walking", "walk and bus")) %>%
+  knitr::kable(align = "lrrrlrl")
+```
+
+Four of them show the range:
+
+- **Varndean** is a walk of about `r gr_of("Varndean", "route_minutes")`
+  minutes. The model caps it at walking time, because no bus journey
+  beats walking there.
+- **Brighton Aldridge** is `r gr_of("Brighton Aldridge", "route_minutes")`
+  minutes by bus`r if (nzchar(gr_of("Brighton Aldridge", "services"))) paste0(" (", gsub(" then ", ", then ", gr_of("Brighton Aldridge", "services")), ")") else ""`,
+  with `r gr_of("Brighton Aldridge", "changes")` change.
+- **Hove Park** is `r gr_of("Hove Park", "route_minutes")` minutes, with
+  `r gr_of("Hove Park", "changes")` changes, for a school
+  `r sprintf("%.1f", gr_of("Hove Park", "km"))` km away in a straight line.
+- **King's** is `r gr_of("King's", "route_minutes")` minutes, with
+  `r gr_of("King's", "changes")` changes`r if (identical(gr_of("King's", "services"), gr_of("Hove Park", "services"))) ", on the same buses as Hove Park, carried further west" else ""`.
+
+The ordering by time is not the ordering by distance, which is the
+reason for routing at all. King's is
+`r sprintf("%.1f", gr_of("King's", "km"))` km away and takes
+`r gr_of("King's", "route_minutes")` minutes; Portslade Aldridge is
+`r sprintf("%.1f", gr_of("Portslade Aldridge", "km"))` km away and takes
+`r gr_of("Portslade Aldridge", "route_minutes")`, because
+`r if (gr_of("Portslade Aldridge", "changes") < gr_of("King's", "changes")) "it needs one change fewer" else "its services line up better"`.
+
 ## The journeys the model does not route
 
 - **The four schools outside the city** — Priory, Peacehaven, Seahaven

@@ -82,7 +82,8 @@ DATASETS <- tibble::tribble(
   "comart_scenarios.rds",         "CoMArt re-opened: the scenario runs",   c("osm", "bods", "bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "perf"), "this repository, R/05_app_inputs.R",
   "comart_costs.rds",             "Routed journeys to CoMArt's site",     c("osm", "bods", "onspd"),                            "open Brightopia bundle",
   "priority6_sweep.rds",          "Priority 6 and the social mix of intakes", c("bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "osm", "bods", "perf"), "this repository, R/05_app_inputs.R",
-  "route_geometries.rds",         "One journey, leg by leg",               c("osm", "bods"),                                         "open Brightopia bundle")
+  "route_geometries.rds",         "One journey, leg by leg",               c("osm", "bods"),                                         "open Brightopia bundle",
+  "guide_routes.rds",             "One neighbourhood routed to every school", c("osm", "bods", "onspd"),                            "open Brightopia bundle")
 
 stopifnot(!any(duplicated(DATASETS$file)),
           all(unlist(DATASETS$from) %in% SOURCES$key))

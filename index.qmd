@@ -222,6 +222,11 @@ ex_open <- sum(ex_rat$rate > 0.999)
 # The weighted measure, which is what section 5.4 shows by default.
 ex_r2_att8 <- ch_r2(CH_DEFAULT, "att8")
 ex_r2_va   <- ch_r2(CH_DEFAULT, "va")
+# How strongly demand follows the headline score, and where the two
+# schools serving the most disadvantaged intakes sit on each measure.
+ex_att8_pct <- 100 * (exp(ch_one(CH_DEFAULT, "att8")$slope) - 1)
+ex_cd <- cd %>% mutate(r_att8 = rank(-att8), r_va = rank(-va))
+ex_cd_of <- function(s, col) ex_cd[[col]][ex_cd$short == s]
 
 # Same specification as section 2.3, which follows the Lever report:
 # log outcome, logged rates, KS2 score entered linearly.
@@ -346,12 +351,37 @@ sibling rule and the free school meals quota do nothing at all. The city
 runs two admissions systems under one set of rules, and public argument
 about criteria concerns only one of them.
 
-**Families are choosing on the wrong number.** Headline Attainment 8
-explains `r fmt_pct(100 * ex_r2_att8, 0)` of the variation in how
-heavily each school is preferred. The value-added measure --- what the
-school actually contributes --- explains
-`r fmt_pct(100 * ex_r2_va, 0)`. Because the headline score is largely a
-description of the existing intake, choice becomes self-fulfilling.
+**Families are choosing on the wrong number, and the council's own
+advice points them to it.** Its secondary admissions guide tells parents
+to look in each school's prospectus for its "National Curriculum test
+results, public exam results" and to read its Ofsted reports
+([Secondary school admissions guide 2027 to 2028](https://www.brighton-hove.gov.uk/schools-and-learning/school-policies-reports-strategies-and-other-documents/secondary-school-admissions-guide-2027-2028)) ---
+raw figures that mostly describe who a school admits. Families do as
+they are advised. Headline Attainment 8 explains
+`r fmt_pct(100 * ex_r2_att8, 0)` of the variation in how heavily each
+school is preferred, and each point of it goes with about
+`r sprintf("%.0f", ex_att8_pct)`% more preferences per place. The
+value-added measure --- what the school actually contributes ---
+explains `r fmt_pct(100 * ex_r2_va, 0)`.
+
+**That advice works against the council's own position.** A school
+serving a more disadvantaged intake posts a lower headline score, so it
+is chosen less; its intake shrinks and becomes more disadvantaged still;
+and its headline score falls again. Brighton Aldridge is last of the ten
+on the headline measure and
+`r c("first","second","third","fourth","fifth","sixth","seventh","eighth","ninth","tenth")[ex_cd_of("Brighton Aldridge", "r_va")]`
+on value added. Longhill's headline score is
+`r sprintf("%.0f", max(ex_cd$att8) - ex_cd_of("Longhill", "att8"))` points
+below the city's highest, but on value added it is
+`r sprintf("%.1f", max(ex_cd$va) - ex_cd_of("Longhill", "va"))` points
+below the best --- most of what separates it from the most popular
+schools is intake, not teaching. By steering families towards the
+headline number, the council lowers the pull of the very school whose
+viability it is trying to secure, shrinks the roll its funding depends
+on, and concentrates disadvantage in the schools its own guidance makes
+least attractive --- the opposite of its stated aim. It is the one part
+of the Longhill problem the council could change at no cost
+(@sec-choice).
 
 **Physical access is unequal, and unequal in the worst direction.**
 `r nrow(ex_zero30)` of `r nrow(acc$lsoa)` neighbourhoods --- about
@@ -393,9 +423,9 @@ them the pupil projections put next in line.
    children first, the package should be led by a smaller Longhill at
    the top of Elm Grove with the catchments redrawn round it
    (@sec-weighing).
-3. **Publish a contextualised measure alongside Attainment 8.** It costs
-   nothing and begins to unwind a loop the authority currently sustains
-   through its own admissions guide.
+3. **Change the admissions guide's advice, and publish a contextualised
+   measure alongside Attainment 8.** It costs nothing and begins to unwind
+   a loop the authority currently sustains through its own guidance.
 4. **Treat the bus network as an admissions instrument.** It is the only
    lever here that widens choice without taking anything from anyone.
 5. **Release ten tables** (§9) that would convert most of the bands in
@@ -3559,7 +3589,11 @@ local schools against each other.
 ## What families are actually choosing on {#sec-choice}
 
 The council's admissions guide points families at published performance
-data. It is worth asking which published number they respond to.
+data: parents are told to look in each school's prospectus for its
+"National Curriculum test results, public exam results" and to read
+its Ofsted reports ([Secondary school admissions guide 2027 to
+2028](https://www.brighton-hove.gov.uk/schools-and-learning/school-policies-reports-strategies-and-other-documents/secondary-school-admissions-guide-2027-2028)). Nothing in that advice adjusts for who a school
+admits. It is worth asking which published number families respond to.
 
 ```{r fig-choice}
 #| fig-cap: "Preferences per place against headline attainment and against value added, for the ten Brighton & Hove secondary schools. Use the buttons to change which preference rank is counted, or switch to the full model's attractiveness (M5). Five-year means; the vertical scale is logarithmic and the dashed line is the fitted log-linear relationship."
@@ -8242,7 +8276,9 @@ admission number and waiting to see what happens will consume years the
 finances do not have.
 
 **Stop pointing families at Attainment 8.** The council publishes the
-admissions guide. Section 5 shows families track the headline score at
+admissions guide, and it tells parents to look at each school's
+"National Curriculum test results, public exam results"
+([2027 to 2028](https://www.brighton-hove.gov.uk/schools-and-learning/school-policies-reports-strategies-and-other-documents/secondary-school-admissions-guide-2027-2028)). Section 5 shows families track the headline score at
 `r fmt_pct(100 * ex_r2_att8, 0)`
 and the value-added measure at
 `r fmt_pct(100 * ex_r2_va, 0)`.
