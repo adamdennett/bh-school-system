@@ -4,6 +4,7 @@ project:
   render:
     - index.qmd
     - slides.qmd
+    - model-guide.qmd
 
 website:
   title: "Brighton Secondary Schools"
@@ -12,6 +13,8 @@ website:
     left:
       - href: index.qmd
         text: "The analysis"
+      - href: model-guide.qmd
+        text: "Model guide"
       - href: slides.qmd
         text: "Slides"
     right:

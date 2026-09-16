@@ -1,157 +1,80 @@
 [
   {
-    "objectID": "slides.html#before-anything-else",
-    "href": "slides.html#before-anything-else",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Before anything else",
-    "text": "Before anything else\n\n\n\n\n\n\nWarning\n\n\nBeta. Every number in these slides is modelled from published data, not a record of what happened or a forecast to plan on. The model has not been fully validated.\n\n\n\n\nBuilt from published data only — no pupil-level records.\nThe full working, every source and every caveat: The Brighton Secondary School System: a strategic view\nTry any option yourself: the policy simulator"
+    "objectID": "model-guide.html",
+    "href": "model-guide.html",
+    "title": "The model, stage by stage",
+    "section": "",
+    "text": "The simulator runs one model. Everything in the strategic view, and every scenario in it, is that model with different settings. This guide takes it apart in the order the model is written, so that each piece can be checked on its own.\n\\[\nT_{ij}(y) \\;=\\; A_i(y)\\, O_i(y)\\, W_j\\, c_{ij}^{-\\beta}\\,\ne^{\\gamma_{h(i)} \\cdot \\mathbb{1}[\\,i \\in \\text{catchment}(j)\\,]}\\, C_j^{\\delta},\n\\qquad\nA_i(y) = \\frac{1}{\\sum_k W_k\\, c_{ik}^{-\\beta}\\, e^{\\gamma_{h(i)} \\mathbb{1}[\\cdot]}\\, C_k^{\\delta}}\n\\]\n\n\n\n\n\n\n\n\nSymbol\nMeaning\nSection\n\n\n\n\n\\(T_{ij}\\)\nchildren from neighbourhood \\(i\\) modelled as attending school \\(j\\)\nthe interior of the matrix\n\n\n\\(O_i\\)\nchildren in neighbourhood \\(i\\) entering Year 7\n§2, this one\n\n\n\\(W_j\\)\nhow attractive school \\(j\\) is, net of where it stands\nto follow\n\n\n\\(c_{ij}\\)\nrouted walk-and-bus journey time from \\(i\\) to \\(j\\)\nto follow\n\n\n\\(\\beta\\)\ndistance decay\nto follow\n\n\n\\(\\gamma_h\\)\ncatchment term, fitted for each catchment \\(h\\)\nto follow\n\n\n\\(C_j\\), \\(\\delta\\)\ncompeting destinations\nto follow\n\n\n\\(A_i\\)\nbalancing factor: every neighbourhood places all of its children\nto follow\n\n\n\\(y\\)\nentry year\n§2.7\n\n\n\nTwo further stages are applied to the \\(T_{ij}\\) this produces: the admission-number ceiling with the council’s oversubscription priorities, and the re-offering of refused children. Each gets its own section after the terms above.\n\n\n\n\n\n\nNoteThe year is the only dynamic element, and it enters in one place\n\n\n\nNothing in the equation carries a time subscript except \\(O_i\\). Journey times, attractiveness, catchment terms and admission numbers are all held at a single point in time, and the year chosen on the simulator’s slider changes only the size of each neighbourhood’s cohort (§2.7). Whether that is the right treatment — and what an explicit time dimension would have to carry — is a question this guide returns to once the static terms are set out.\n\n\n\n\nShow code\nex_zones &lt;- zc %&gt;% arrange(desc(Oi)) %&gt;% slice(1:4)\ndata.frame(\n  Neighbourhood = c(sub(\"[|].*$\", \"\", ex_zones$zone), \"$W_j$\"),\n  `Dorothy Stringer` = c(rep(\"$T_{ij}$\", 4), \"?\"),\n  Varndean = c(rep(\"$T_{ij}$\", 4), \"?\"),\n  Longhill = c(rep(\"$T_{ij}$\", 4), \"?\"),\n  `Cardinal Newman` = c(rep(\"$T_{ij}$\", 4), \"?\"),\n  `$A_i$` = c(rep(\"?\", 4), \"\"),\n  `$O_i$ (2026)` = c(sprintf(\"%.1f\", ex_zones$Oi), \"\"),\n  check.names = FALSE) %&gt;%\n  knitr::kable(align = \"lccccrr\")\n\n\n\nThe shape of the model, for four neighbourhoods and four schools. This section fills in the last column; each section that follows fills in another margin, and the interior cells come last.\n\n\n\n\n\n\n\n\n\n\n\nNeighbourhood\nDorothy Stringer\nVarndean\nLonghill\nCardinal Newman\n\\(A_i\\)\n\\(O_i\\) (2026)\n\n\n\n\nE01016901\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n?\n25.0\n\n\nE01016979\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n?\n24.8\n\n\nE01016975\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n?\n23.3\n\n\nE01017012\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n\\(T_{ij}\\)\n?\n22.9\n\n\n\\(W_j\\)\n?\n?\n?\n?\n\n\n\n\n\n\n\nThe interior of that matrix is what the model produces. The margins are what it is given, or what it fits. \\(O_i\\) is the one margin that is a count of real people, and it is where this guide starts."
   },
   {
-    "objectID": "slides.html#a-system-built-for-more-children-than-it-has",
-    "href": "slides.html#a-system-built-for-more-children-than-it-has",
-    "title": "Brighton & Hove secondary schools",
-    "section": "A system built for more children than it has",
-    "text": "A system built for more children than it has\n\n\n\nThe city publishes 2,515 Year 7 places across its ten secondary schools.\nThe modelled cohort is 2,267 in 2026 and 1,835 by 2035 — those children are already in primary school.\nBy 2035 that is about 720 empty Year 7 places a year.\nNine of the ten schools have been spending their reserves. The money is a city problem, not only a Longhill problem.\n\n\nLonghill\n\nTakes about 91 children in 2026 and 75 in 2030, on 210 places.\nAbout £0.8m a year short of break-even in 2030.\nSits at the far edge of the city, at Ovingdean."
+    "objectID": "model-guide.html#what-it-is",
+    "href": "model-guide.html#what-it-is",
+    "title": "The model, stage by stage",
+    "section": "2.1 What it is",
+    "text": "2.1 What it is\n\\(O_i\\) is the number of children living in zone \\(i\\) who will enter Year 7 at a state secondary school in the year being modelled. The model is production-constrained on it, which means that whatever else happens,\n\\[\\sum_j T_{ij} = O_i \\quad \\text{for every } i.\\]\nEvery child is placed somewhere. Nothing is created and nothing is lost, which is why \\(O_i\\) has to be right before anything else can be."
   },
   {
-    "objectID": "slides.html#ten-schools-six-catchments-and-where-the-children-are",
-    "href": "slides.html#ten-schools-six-catchments-and-where-the-children-are",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Ten schools, six catchments, and where the children are",
-    "text": "Ten schools, six catchments, and where the children are\n\n\nFigure 1"
+    "objectID": "model-guide.html#what-a-zone-is",
+    "href": "model-guide.html#what-a-zone-is",
+    "title": "The model, stage by stage",
+    "section": "2.2 What a zone is",
+    "text": "2.2 What a zone is\nA zone is an LSOA cut by catchment, keyed as LSOA | pre-2024 catchment | current catchment. The city has 195 zones drawn from 165 LSOAs.\nThe cut exists because the 2024 boundary change runs through LSOAs. Assigning a whole LSOA to whichever catchment contains its centroid would register only a fraction of the children the redraw actually moves. So every postcode in the ONS Postcode Directory is assigned a catchment on each of the two maps by point-in-polygon, and the LSOA is split accordingly. Carrying both maps in the key means the two regimes sit on identical geography and can be compared without rebuilding anything.\n\n\nShow code\nz %&gt;%\n  filter(lsoa %in% c(\"E01016862\", \"E01016863\")) %&gt;%\n  transmute(Zone = zone, LSOA = lsoa, `Pre-2024` = catch_pre2024,\n            `Current map` = catch_optionZ, Postcodes = n_pcd,\n            `$O_i$ (2026)` = sprintf(\"%.1f\", Oi)) %&gt;%\n  knitr::kable(align = \"llllrr\")\n\n\n\nTwo LSOAs on the Longhill / Stringer-Varndean boundary, each split into two zones: the same neighbourhood, a different catchment on the current map.\n\n\n\n\n\n\n\n\n\n\nZone\nLSOA\nPre-2024\nCurrent map\nPostcodes\n\\(O_i\\) (2026)\n\n\n\n\nE01016862|DS_Varndean|DS_Varndean\nE01016862\nDS_Varndean\nDS_Varndean\n10\n4.6\n\n\nE01016862|DS_Varndean|Longhill\nE01016862\nDS_Varndean\nLonghill\n27\n3.6\n\n\nE01016863|DS_Varndean|DS_Varndean\nE01016863\nDS_Varndean\nDS_Varndean\n1\n5.2\n\n\nE01016863|DS_Varndean|Longhill\nE01016863\nDS_Varndean\nLonghill\n35\n5.1"
   },
   {
-    "objectID": "slides.html#the-cohort-is-already-falling",
-    "href": "slides.html#the-cohort-is-already-falling",
-    "title": "Brighton & Hove secondary schools",
-    "section": "The cohort is already falling",
-    "text": "The cohort is already falling\n\n\nFigure 2"
+    "objectID": "model-guide.html#where-the-numbers-come-from",
+    "href": "model-guide.html#where-the-numbers-come-from",
+    "title": "The model, stage by stage",
+    "section": "2.3 Where the numbers come from",
+    "text": "2.3 Where the numbers come from\n\n\n\n\n\n\n\n\nInput\nSource\nWhat it supplies\n\n\n\n\nWard population by single year of age, mid-2022\nONS small area population estimates\nhow many children of each age live in each ward\n\n\nLSOA age-11 share\nONS small-area population by single year of age\nhow a ward’s children divide between its LSOAs\n\n\nPostcode directory, February 2024\nONS Postcode Directory\nwhich ward and LSOA each postcode is in\n\n\nCatchment boundaries\nThe council’s option Z map and the map it replaced\nthe catchment half of the zone key\n\n\nYear 7 offers, 2024\nCouncil allocation factsheet\nthe state-sector share\n\n\n\nNone of it is pupil-level. The smallest thing any of these sources describes is a postcode count or an LSOA age band."
   },
   {
-    "objectID": "slides.html#who-can-reach-a-school-within-30-minutes",
-    "href": "slides.html#who-can-reach-a-school-within-30-minutes",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Who can reach a school within 30 minutes",
-    "text": "Who can reach a school within 30 minutes\n\n\nFigure 3"
+    "objectID": "model-guide.html#how-o_i-is-built-step-by-step",
+    "href": "model-guide.html#how-o_i-is-built-step-by-step",
+    "title": "The model, stage by stage",
+    "section": "2.4 How \\(O_i\\) is built, step by step",
+    "text": "2.4 How \\(O_i\\) is built, step by step\nThe code is public/R/01_open_inputs.R in the private bundle, sections 1b and 1c. Its result travels to the simulator as data/open_inputs.rds.\nStep 1 — ages become entry years. A child aged \\(a\\) in the mid-2022 estimates enters Year 7 in \\(2022 + (11 - a)\\). Ages 0 to 11 therefore give entry years 2022 to 2033, every one of them children ONS has already counted rather than births anyone has projected.\nStep 2 — two extrapolated years. Children entering in 2034 and 2035 were not born when the mid-2022 estimate was taken. They are a linear continuation of the five most recent observed cohorts, 2029 to 2033, and are flagged as extrapolated wherever they appear.\nStep 3 — resident children become state-sector demand. Not every resident child takes a state Year 7 place: some go to independent schools, some leave the city. A single constant carries that:\n\\[\\text{state share} \\;=\\; \\frac{\\text{Year 7 offers made, 2024}}{\\text{resident children, 2024 entry}} \\;=\\; 0.850\\]\ntaken from the council’s published offer total against the ONS cohort of the same year.\nStep 4 — a ward is divided between its zones. ONS publishes the age detail at ward level, so each ward’s children are shared out between the zones that sit in it, weighted by the age-11 population share of each zone’s LSOA:\n\\[O_i(2026) \\;=\\; \\text{ward children}_{w(i)} \\times \\frac{u_i}{\\sum_{k \\in w(i)} u_k} \\times \\text{state share}\\]\nwhere \\(u_i\\) is the age-11 share of zone \\(i\\)’s LSOA and \\(w(i)\\) is the ward the zone sits in. 195 of the 209 zones use that ONS share; the 14 in the expansion area outside the city fall back to postcode counts.\n\n\n\n\n\n\nNoteWhy not divide by postcode count\n\n\n\nSplitting a ward’s children by how many postcodes each LSOA holds assumes every postcode contains the same number of eleven-year-olds. Family housing, student housing and retirement housing differ enormously on that, and the difference runs along exactly the lines catchment boundaries follow. An earlier version of this work used postcode counts, and the deprivation contrast between the two halves of a paired catchment was almost entirely smoothed away."
   },
   {
-    "objectID": "slides.html#poor-access-and-child-poverty-in-the-same-places",
-    "href": "slides.html#poor-access-and-child-poverty-in-the-same-places",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Poor access and child poverty in the same places",
-    "text": "Poor access and child poverty in the same places\n\n\nFigure 4"
+    "objectID": "model-guide.html#a-worked-example",
+    "href": "model-guide.html#a-worked-example",
+    "title": "The model, stage by stage",
+    "section": "2.5 A worked example",
+    "text": "2.5 A worked example\n\n\nShow code\nwd &lt;- z %&gt;% filter(ward == (z %&gt;% arrange(desc(Oi)) %&gt;% slice(1) %&gt;% pull(ward)))\nwd %&gt;%\n  arrange(desc(Oi)) %&gt;%\n  transmute(Zone = sub(\"[|]\", \" | \", zone), LSOA = lsoa,\n            `Age-11 share of LSOA` = sprintf(\"%.4f\", prop),\n            `Share of the ward` = sprintf(\"%.3f\", share_in_ward),\n            `Ward children` = fmt_n(ward_children),\n            `$O_i$ (2026)` = sprintf(\"%.1f\", Oi)) %&gt;%\n  knitr::kable(align = \"llrrrr\")\n\n\n\nOne ward, divided between its zones. Ward children is the ONS estimate for this cohort; the share is the zone’s weight within the ward; O is the two multiplied together with the state-sector share.\n\n\n\n\n\n\n\n\n\n\nZone\nLSOA\nAge-11 share of LSOA\nShare of the ward\nWard children\n\\(O_i\\) (2026)\n\n\n\n\nE01016901 | DS_Varndean|DS_Varndean\nE01016901\n0.0133\n0.143\n206\n25.0\n\n\nE01016902 | DS_Varndean|DS_Varndean\nE01016902\n0.0089\n0.095\n206\n16.6\n\n\nE01016903 | DS_Varndean|DS_Varndean\nE01016903\n0.0085\n0.091\n206\n15.9\n\n\nE01016939 | DS_Varndean|DS_Varndean\nE01016939\n0.0084\n0.089\n206\n15.7\n\n\nE01016900 | DS_Varndean|DS_Varndean\nE01016900\n0.0078\n0.084\n206\n14.6\n\n\nE01016900 | Patcham|Patcham\nE01016900\n0.0078\n0.084\n206\n14.6\n\n\nE01016905 | DS_Varndean|DS_Varndean\nE01016905\n0.0077\n0.082\n206\n14.4\n\n\nE01016940 | DS_Varndean|DS_Varndean\nE01016940\n0.0072\n0.077\n206\n13.5\n\n\nE01016934 | DS_Varndean|DS_Varndean\nE01016934\n0.0071\n0.076\n206\n13.3\n\n\nE01016932 | DS_Varndean|DS_Varndean\nE01016932\n0.0061\n0.065\n206\n11.4\n\n\nE01016904 | DS_Varndean|DS_Varndean\nE01016904\n0.0057\n0.061\n206\n10.8\n\n\nE01016933 | DS_Varndean|DS_Varndean\nE01016933\n0.0049\n0.053\n206\n9.2\n\n\n\n\n\nReading the first row: the ward holds 206 children of this cohort; that zone’s LSOA carries 14.3% of the ward’s age-11 weight; multiplied by the state-sector share of 0.850, the zone holds 25.0 Year 7 children in 2026."
   },
   {
-    "objectID": "slides.html#nine-of-the-ten-schools-are-spending-their-reserves",
-    "href": "slides.html#nine-of-the-ten-schools-are-spending-their-reserves",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Nine of the ten schools are spending their reserves",
-    "text": "Nine of the ten schools are spending their reserves\n\n\nFigure 5"
+    "objectID": "model-guide.html#the-city-total",
+    "href": "model-guide.html#the-city-total",
+    "title": "The model, stage by stage",
+    "section": "2.6 The city total",
+    "text": "2.6 The city total\n\n\nShow code\nzc %&gt;% group_by(Catchment = catchment) %&gt;%\n  summarise(children = sum(Oi), Zones = n(), .groups = \"drop\") %&gt;%\n  arrange(desc(children)) %&gt;%\n  transmute(Catchment, `Children, 2026` = fmt_n(children), Zones) %&gt;%\n  knitr::kable(align = \"lrr\")\n\n\n\nThe modelled 2026 cohort by catchment. These are children living in the catchment, not children attending its school.\n\n\nCatchment\nChildren, 2026\nZones\n\n\n\n\nHove_Blatch\n734\n61\n\n\nDS_Varndean\n615\n58\n\n\nLonghill\n289\n29\n\n\nPACA\n260\n15\n\n\nPatcham\n218\n17\n\n\nBACA\n151\n15\n\n\n\n\n\nThe city’s zones hold 2,267 children for 2026 entry. That is the model’s entire demand before any child chooses anything, and every intake the simulator reports is drawn from it."
   },
   {
-    "objectID": "slides.html#small-schools-get-more-per-pupil-and-still-run-deficits",
-    "href": "slides.html#small-schools-get-more-per-pupil-and-still-run-deficits",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Small schools get more per pupil and still run deficits",
-    "text": "Small schools get more per pupil and still run deficits\n\n\nFigure 6"
+    "objectID": "model-guide.html#sec-oi-year",
+    "href": "model-guide.html#sec-oi-year",
+    "title": "The model, stage by stage",
+    "section": "2.7 The slider: how \\(O_i\\) changes with the entry year",
+    "text": "2.7 The slider: how \\(O_i\\) changes with the entry year\nThe year slider does exactly one thing to \\(O_i\\). The city’s projected cohort is turned into an index on 2026, and every zone is scaled by it:\n\\[O_i(y) \\;=\\; O_i(2026) \\times d(y), \\qquad\nd(y) \\;=\\; \\frac{\\text{state demand}(y)}{\\text{state demand}(2026)}\\]\n\n\nShow code\ndem %&gt;%\n  transmute(`Entry year` = year, `City cohort` = fmt_n(cohort),\n            `Index on 2026` = sprintf(\"%.3f\", index),\n            Basis = ifelse(extrapolated, \"extrapolated\",\n                           \"children already counted\")) %&gt;%\n  knitr::kable(align = \"rrrl\")\n\n\n\nThe demand index behind the slider. The last two years are the extrapolated cohorts.\n\n\nEntry year\nCity cohort\nIndex on 2026\nBasis\n\n\n\n\n2026\n2,267\n1.000\nchildren already counted\n\n\n2027\n2,164\n0.955\nchildren already counted\n\n\n2028\n2,070\n0.913\nchildren already counted\n\n\n2029\n2,041\n0.901\nchildren already counted\n\n\n2030\n1,975\n0.871\nchildren already counted\n\n\n2031\n1,982\n0.874\nchildren already counted\n\n\n2032\n1,823\n0.804\nchildren already counted\n\n\n2033\n1,916\n0.845\nchildren already counted\n\n\n2034\n1,875\n0.827\nextrapolated\n\n\n2035\n1,835\n0.809\nextrapolated\n\n\n\n\n\n\n\nShow code\ndem %&gt;%\n  ggplot(aes(year, cohort)) +\n  geom_col(aes(fill = extrapolated), width = 0.66) +\n  geom_text(aes(label = fmt_n(cohort)), vjust = -0.5, size = 3.2, colour = \"grey25\") +\n  scale_fill_manual(values = c(`FALSE` = \"#1f3b57\", `TRUE` = \"#9aa7b4\"),\n                    labels = c(`FALSE` = \"children already counted\",\n                               `TRUE` = \"extrapolated\"), name = NULL) +\n  scale_x_continuous(breaks = dem$year) +\n  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0, 0.12))) +\n  labs(x = NULL, y = \"State-sector Year 7 demand\",\n       title = \"The cohort behind the slider, 2026 to 2035\") +\n  theme_bh() + theme(legend.position = \"top\")\n\n\n\n\n\n\n\n\nFigure 1: The cohort the model scales to. Every zone is multiplied by the same factor, so the map of where children live is held still and only the size of the cohort moves.\n\n\n\n\n\nWhat this does not do. The projection is city-wide, so the slider cannot say that one neighbourhood shrinks faster than another: every zone keeps its 2026 share of the city’s children in every year. The council’s own forecasts differ from this mostly in exactly that respect — its Longhill catchment line falls faster than the city’s does — so comparing catchment totals year by year compares two different claims rather than two estimates of one thing."
   },
   {
-    "objectID": "slides.html#what-the-evidence-says",
-    "href": "slides.html#what-the-evidence-says",
-    "title": "Brighton & Hove secondary schools",
-    "section": "What the evidence says",
-    "text": "What the evidence says\n\nThis is not mainly a school quality problem. Most of what separates schools’ headline results arrives with the children; the part a school can reach runs mostly through attendance.\nFamilies choose on the headline score, which largely describes the intake — so choice is self-fulfilling.\nAdmissions criteria only bind at some schools. Several schools offer a place to every first-preference applicant.\nPhysical access is unequal, in the worst direction. 29 neighbourhoods can reach no school place within 30 minutes by walking and bus, and access and child poverty go together.\nChildren from the most deprived neighbourhoods travel 3.7 minutes further each way than everyone else, under the map in force."
+    "objectID": "model-guide.html#checks-you-can-run",
+    "href": "model-guide.html#checks-you-can-run",
+    "title": "The model, stage by stage",
+    "section": "2.8 Checks you can run",
+    "text": "2.8 Checks you can run\n\n\nShow code\nward_tot &lt;- z %&gt;% group_by(ward) %&gt;%\n  summarise(oi = sum(Oi), implied = first(ward_children) * STATE_SHARE,\n            .groups = \"drop\") %&gt;%\n  mutate(d = abs(oi - implied))\ntibble::tribble(\n  ~Check, ~Result,\n  \"Every zone has a positive cohort\",\n  sprintf(\"smallest is %.2f children\", min(z$Oi)),\n  \"Zone cohorts sum to each ward's estimate times the state share\",\n  sprintf(\"largest difference %.3f children\", max(ward_tot$d)),\n  \"The city's zones sum to the 2026 projection\",\n  sprintf(\"%s against %s\", fmt_n(sum(zc$Oi)), fmt_n(dem$cohort[dem$year == 2026])),\n  \"The index is exactly 1 in the base year\",\n  sprintf(\"%.6f\", dem$index[dem$year == 2026]),\n  \"Every zone keeps its share of the city in every year\",\n  sprintf(\"%d zones, one index per year\", nrow(zc))) %&gt;%\n  knitr::kable(align = \"lr\")\n\n\n\nIdentities that should hold, and what they give as this document is built.\n\n\n\n\n\n\nCheck\nResult\n\n\n\n\nEvery zone has a positive cohort\nsmallest is 1.32 children\n\n\nZone cohorts sum to each ward’s estimate times the state share\nlargest difference 0.000 children\n\n\nThe city’s zones sum to the 2026 projection\n2,267 against 2,267\n\n\nThe index is exactly 1 in the base year\n1.000000\n\n\nEvery zone keeps its share of the city in every year\n195 zones, one index per year\n\n\n\n\n\nTwo further comparisons are worth doing by hand, because they test \\(O_i\\) against something the model never saw: the city total against the council’s published Year 7 offers for the same round, and each catchment’s total against the catchment forecasts in the council’s place planning appendix."
   },
   {
-    "objectID": "slides.html#from-published-data-to-options",
-    "href": "slides.html#from-published-data-to-options",
-    "title": "Brighton & Hove secondary schools",
-    "section": "From published data to options",
-    "text": "From published data to options\n\n\n\n\n\nflowchart LR\n  A[\"Where children live&lt;br/&gt;census, ONS small areas\"] --&gt; M\n  B[\"Journey times&lt;br/&gt;routed walk and bus\"] --&gt; M\n  C[\"What families ask for&lt;br/&gt;16 years of factsheets,&lt;br/&gt;catchment preferences\"] --&gt; M\n  D[\"Catchment maps\"] --&gt; M\n  M[\"Spatial interaction model&lt;br/&gt;M0 to M5\"] --&gt; R[\"Admission numbers and&lt;br/&gt;the council's priorities\"]\n  R --&gt; S[\"Refused children&lt;br/&gt;re-offered by 2nd preference\"]\n  S --&gt; O[\"Intakes, journeys,&lt;br/&gt;money, social mix\"]\n  O --&gt; P[\"The simulator,&lt;br/&gt;and the options scored\"]"
+    "objectID": "model-guide.html#what-to-be-careful-about",
+    "href": "model-guide.html#what-to-be-careful-about",
+    "title": "The model, stage by stage",
+    "section": "2.9 What to be careful about",
+    "text": "2.9 What to be careful about\n\n\n\n\n\n\nImportantA split LSOA is counted twice in its ward’s weights\n\n\n\nWhen a catchment boundary cuts an LSOA into two zones, each zone inherits the whole LSOA’s age-11 share as its weight. The ward total is unaffected, because the denominator grows too — but within that ward a split LSOA takes a larger share of the children than its population implies, and the unsplit LSOAs around it take less.\n\n\nShow code\nchk &lt;- z %&gt;% filter(!is.na(prop)) %&gt;%\n  group_by(ward) %&gt;% mutate(zone_share = Oi / sum(Oi)) %&gt;% ungroup() %&gt;%\n  group_by(ward, lsoa) %&gt;%\n  summarise(prop = first(prop), zone_share = sum(zone_share),\n            n_zones = n(), .groups = \"drop\") %&gt;%\n  group_by(ward) %&gt;% mutate(prop_share = prop / sum(prop)) %&gt;% ungroup() %&gt;%\n  mutate(ratio = zone_share / prop_share)\nchk %&gt;%\n  group_by(`Zones the LSOA is split into` = n_zones) %&gt;%\n  summarise(LSOAs = n(), `Median ratio` = sprintf(\"%.2f\", median(ratio)),\n            Lowest = sprintf(\"%.2f\", min(ratio)),\n            Highest = sprintf(\"%.2f\", max(ratio)), .groups = \"drop\") %&gt;%\n  knitr::kable(align = \"rrrrr\")\n\n\n\nEach LSOA’s modelled share of its ward against the share its age-11 population implies, grouped by how many zones the LSOA is split into. A ratio of 1 is agreement.\n\n\nZones the LSOA is split into\nLSOAs\nMedian ratio\nLowest\nHighest\n\n\n\n\n1\n160\n1.00\n0.62\n1.00\n\n\n2\n16\n1.68\n1.24\n1.92\n\n\n3\n1\n1.86\n1.86\n1.86\n\n\n\n\n\n362 of the 2,482 children in the model live in a split LSOA, and the splits sit exactly where catchment boundaries cut through neighbourhoods — the Whitehawk and Kemptown zones among them. The fix is one line: divide an LSOA’s weight between its zones, by postcode count or by any better within-LSOA measure, instead of giving each zone the whole share. Nothing has been changed yet. It is recorded here so that the decision is explicit, and so that the size of it is known before anything downstream is re-run.\n\n\nThe rest of what this term assumes is in the code rather than hidden by it, but is worth stating in one place:\n\nThe base is mid-2022. Migration into or out of the city since then is not in the counts, and a child who has moved between wards is still counted where they were.\nOne state-sector share, for every year and every neighbourhood. It is 0.850, from a single round. If independent-school take-up varies across the city — and it plainly does — then \\(O_i\\) is too high in some places and too low in others.\nWard-level age detail. Within a ward, the LSOA age-11 distribution does the work; how children are distributed inside an LSOA is not observed at all.\nPeacehaven and the expansion area are carried in the open bundle but excluded from the simulator’s zones. Peacehaven Community School is a destination in the model, not a source of demand.\nNo composition. \\(O_i\\) is a headcount. Which of those children are disadvantaged is a separate layer applied later, not part of this term."
   },
   {
-    "objectID": "slides.html#a-spatial-interaction-model",
-    "href": "slides.html#a-spatial-interaction-model",
-    "title": "Brighton & Hove secondary schools",
-    "section": "A spatial interaction model",
-    "text": "A spatial interaction model\n\n\n\\[T_{ij} = A_i\\, O_i\\, W_j\\, c_{ij}^{-\\beta}\\, e^{\\gamma\\, \\text{in catchment}}\\, C_j^{\\delta}\\]\n\n\\(T_{ij}\\) — children from neighbourhood \\(i\\) choosing school \\(j\\)\n\\(O_i\\) — children living in \\(i\\)\n\\(W_j\\) — how attractive school \\(j\\) is\n\\(c_{ij}\\) — walk-and-bus minutes; \\(\\beta\\) how fast demand falls with them\n\\(\\gamma\\) — how strongly families follow their catchment\n\\(C_j\\) — rival schools nearby\n\\(A_i\\) — makes every neighbourhood place all its children\n\n\n\n\n\n\n\nflowchart TB\n  N[\"Each neighbourhood's children\"] --&gt; Sh[\"Shared across schools by&lt;br/&gt;distance, attractiveness,&lt;br/&gt;catchment, competition\"]\n  Sh --&gt; Cap{\"School full?\"}\n  Cap -- \"no\" --&gt; In[\"Admitted\"]\n  Cap -- \"yes\" --&gt; Pr[\"Council priorities decide&lt;br/&gt;who is admitted\"]\n  Pr --&gt; Re[\"The rest re-offered at their&lt;br/&gt;next choice with room\"]\n  Re --&gt; Cap"
-  },
-  {
-    "objectID": "slides.html#the-map-alone-every-school-equally-attractive",
-    "href": "slides.html#the-map-alone-every-school-equally-attractive",
-    "title": "Brighton & Hove secondary schools",
-    "section": "The map alone: every school equally attractive",
-    "text": "The map alone: every school equally attractive\n\n\nFigure 7"
-  },
-  {
-    "objectID": "slides.html#adding-one-thing-at-a-time",
-    "href": "slides.html#adding-one-thing-at-a-time",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Adding one thing at a time",
-    "text": "Adding one thing at a time\n\n\nFigure 8"
-  },
-  {
-    "objectID": "slides.html#longhills-modelled-catchment-as-the-model-gets-more-realistic",
-    "href": "slides.html#longhills-modelled-catchment-as-the-model-gets-more-realistic",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Longhill’s modelled catchment, as the model gets more realistic",
-    "text": "Longhill’s modelled catchment, as the model gets more realistic\n\n\nFigure 9"
-  },
-  {
-    "objectID": "slides.html#checked-and-corrected-along-the-way",
-    "href": "slides.html#checked-and-corrected-along-the-way",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Checked, and corrected, along the way",
-    "text": "Checked, and corrected, along the way\nThe segregation results changed as the measure was tested against published figures.\n\n\n\n\nTable 1\n\n\n\n\n\n\n\n\n\n\n\nHow disadvantaged pupils were counted\nIndex today\nWhitehawk back to Longhill\n\n\n\n\nBy neighbourhood\n0.154\n0.137\n\n\nWhole-school shares, fitted on today’s map\n0.118\n0.140\n\n\nWhole-school shares, fitted before the policy change\n0.124\n0.125\n\n\nYear 7 offers, 2026 (the model’s measure)\n0.117\n0.122\n\n\n\n\n\n\n\n\n\nScored by neighbourhood, the schools came out in the wrong order against DfE’s published shares.\nThe published shares lag the policy by up to five years, so the model is now fitted to the first Year 7 offers under today’s map and rules (council factsheet, 2026).\nThe Whitehawk redraw’s effect on segregation turned out too small to call. Its case rests on journeys and Longhill, not on segregation."
-  },
-  {
-    "objectID": "slides.html#three-priorities-scored-at-once",
-    "href": "slides.html#three-priorities-scored-at-once",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Three priorities, scored at once",
-    "text": "Three priorities, scored at once\n\n\n\n\nTable 2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nOption\nLonghill intake\nDeprived children’s extra journey\nSegregation index\nDisplaced\nCommunity schools’ balance\n\n\n\n\nToday\n75\n3.5 min\n0.117\n2\n−£3.5m\n\n\nWhitehawk back to Longhill\n86\n3.2 min\n0.121\n0\n−£3.5m\n\n\nLonghill 150, central schools trimmed\n75\n3.5 min\n0.118\n4\n−£3.5m\n\n\nLonghill at Elm Grove (150), map redrawn\n103\n0.0 min\n0.153\n2\n−£3.7m\n\n\nCoMArt re-opened (not available)\n49\n2.2 min\n0.119\n1\n−£4.5m\n\n\nPackage without a move\n92\n3.3 min\n0.122\n1\n−£3.1m\n\n\nElm Grove package\n108\n0.1 min\n0.150\n2\n−£3.1m\n\n\nLonghill closed\n—\n4.2 min\n0.103\n2\n−£2.3m\n\n\n\n\n\n\n\n\n2030, council priorities. “Package without a move”: Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. “Elm Grove package”: Longhill at Elm Grove at 150 with the map redrawn, Cardinal Newman 300, King’s 150, Brighton Aldridge 150."
-  },
-  {
-    "objectID": "slides.html#only-a-nearer-school-closes-the-access-gap",
-    "href": "slides.html#only-a-nearer-school-closes-the-access-gap",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Only a nearer school closes the access gap",
-    "text": "Only a nearer school closes the access gap\n\n\nFigure 10"
-  },
-  {
-    "objectID": "slides.html#a-smaller-longhill-at-the-top-of-elm-grove",
-    "href": "slides.html#a-smaller-longhill-at-the-top-of-elm-grove",
-    "title": "Brighton & Hove secondary schools",
-    "section": "A smaller Longhill at the top of Elm Grove",
-    "text": "A smaller Longhill at the top of Elm Grove\n\n\nWhat it does (150 places, catchments redrawn)\n\nLonghill takes 123 in 2026 and 103 in 2030 — against 91 and 75 today.\nDeprived children’s extra journey falls from 3.5 to 0.0 minutes.\nWhitehawk’s disadvantaged children travel 24 minutes instead of 53.\nThe map drawn round it puts 5 of the 6 Whitehawk neighbourhoods back in Longhill’s catchment — as part of a redesign, not a reversal of the 2024 change.\nWith Cardinal Newman, King’s and Brighton Aldridge taking fewer: 134 in 2026 and 108 in 2030.\n\n\nWhat it costs\n\nA site — not costed in this work.\nIntakes more concentrated: segregation index 0.153 against 0.117.\nAbout 434 children a year in neighbourhoods that change catchment.\nLonger journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.\nLonghill still does not break even — about £0.5m a year short in 2030.\nIt needs families to follow a new map as closely as the one they have — the assumption every redraw result rests on."
-  },
-  {
-    "objectID": "slides.html#access-or-mixing-the-review-has-to-choose",
-    "href": "slides.html#access-or-mixing-the-review-has-to-choose",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Access or mixing? The review has to choose",
-    "text": "Access or mixing? The review has to choose\n\nA school near Whitehawk shortens disadvantaged children’s journeys and concentrates them in one school. No option does both.\nThe evidence here leans towards access: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day.\nWhat this work cannot show is whether shorter journeys raise attendance — the lever that matters most. The council’s own records can.\nRe-opening CoMArt would have given much of the access gain; it is off the table. Closing Longhill is the cheapest system and has the longest journeys in the east."
-  },
-  {
-    "objectID": "slides.html#what-to-do",
-    "href": "slides.html#what-to-do",
-    "title": "Brighton & Hove secondary schools",
-    "section": "What to do",
-    "text": "What to do\n\nLead with a smaller Longhill at the top of Elm Grove, with catchments redrawn round it — and test it properly, costs stated.\nIf the site cannot be had, return Whitehawk to Longhill’s catchment on its own.\nSet Longhill at 150 on either site, and budget for the children it will get, not for 150.\nAsk Cardinal Newman (300), King’s (150) and Brighton Aldridge (150) to take fewer, and every school to share the fall in proportion by 2030.\nTrim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean and only with a catchment redraw.\nPublish where priority 6’s places went.\nAsk the inequalities review to settle the measure — journeys or mixing — and whether journey length affects attendance."
-  },
-  {
-    "objectID": "slides.html#next-steps",
-    "href": "slides.html#next-steps",
-    "title": "Brighton & Hove secondary schools",
-    "section": "Next steps",
-    "text": "Next steps\n\nCost the Elm Grove site, and re-run the move on the council’s own records before deciding.\nDraw the Elm Grove catchment with Rottingdean, Saltdean and Woodingdean in the room, before rather than after.\nCheck the disadvantaged-intake calibration against a second year of Year 7 offers.\nRelease six small tables the council already holds — applicants’ home areas, full preferences, allocations and the criterion each place was given under — which would turn most of the ranges here into estimates.\nLink journeys to attendance in the council’s records, for the inequalities review."
-  },
-  {
-    "objectID": "slides.html#what-this-rests-on",
-    "href": "slides.html#what-this-rests-on",
-    "title": "Brighton & Hove secondary schools",
-    "section": "What this rests on",
-    "text": "What this rests on\n\nA model calibrated to published catchment totals, not individual applications.\nCatchment attachment carried to redrawn maps at the strength families follow the maps they have — the assumption every redraw result depends on.\nFinances as a five-year steady state; site and capital costs not included.\nThe academies and faith schools modelled as responding to demand, not setting their own numbers.\nThe direction of each finding is more reliable than its size.\n\nFull document · Simulator · Code and data"
+    "objectID": "model-guide.html#questions-this-raises",
+    "href": "model-guide.html#questions-this-raises",
+    "title": "The model, stage by stage",
+    "section": "2.10 Questions this raises",
+    "text": "2.10 Questions this raises\n\nShould the split-LSOA weighting be corrected, and if so, on what within-LSOA measure — postcode counts, or something better?\nShould the state-sector share vary by neighbourhood, given that independent-school take-up does?\nShould the year slider move the geography of demand as well as its size — that is, should each catchment carry its own projection, as the council’s forecasts do?"
   },
   {
     "objectID": "index.html",
@@ -586,5 +509,201 @@
     "title": "The Brighton Secondary School System",
     "section": "12.4 Licences, attribution and reuse",
     "text": "12.4 Licences, attribution and reuse\nMost of this is Open Government Licence v3. The DfE, DfT, ONS, MHCLG and council datasets above are all published under OGL v3, which permits reuse with attribution. The attribution is in the table above.\nOpenStreetMap is ODbL. The walking and road network under every routed journey time is © OpenStreetMap contributors, available under the Open Database Licence.\nThe basemaps are Esri’s World Light Gray Canvas, used because it needs no API key. Every map carries the Esri and OpenStreetMap attribution in its corner, which the terms require, and R/99_verify_render.R fails the build if a map loses it. These tiles replaced CARTO’s, which are keyed: a render from a shell without the key produced watermarked maps and no other symptom, repeatedly.\nThe analysis is reproducible from these sources. R/01_assemble.R pulls every input into data/; R/02_accessibility.R and R/03_flow_regions.R build the accessibility surfaces and the redrawn catchments; the model outputs come from the open Brightopia bundle, which publishes its own code. What cannot be reproduced from this repository alone is the routed travel matrix, which needs an OSM extract and a GTFS feed and about an hour of compute — the matrix itself is carried in data/travel/, so nothing downstream of it requires the rebuild.\n\n\n\n\n\n\nNoteWhat is deliberately not here\n\n\n\nThe council’s admissions records. Section 10.3 lists the six fields that would replace a modelled flow with an observed one throughout sections 7 and 8. They are not public and this document does not use them.\nAnything at individual level. The finest geography used anywhere is the postcode, and only for counts of households from the census. Every model input is at LSOA or catchment level.\nUnpublished council material. Where a council figure is quoted it comes from a published report, a published factsheet or a determination of the Schools Adjudicator, and the section says which."
+  },
+  {
+    "objectID": "slides.html#before-anything-else",
+    "href": "slides.html#before-anything-else",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Before anything else",
+    "text": "Before anything else\n\n\n\n\n\n\nWarning\n\n\nBeta. Every number in these slides is modelled from published data, not a record of what happened or a forecast to plan on. The model has not been fully validated.\n\n\n\n\nBuilt from published data only — no pupil-level records.\nThe full working, every source and every caveat: The Brighton Secondary School System: a strategic view\nTry any option yourself: the policy simulator"
+  },
+  {
+    "objectID": "slides.html#a-system-built-for-more-children-than-it-has",
+    "href": "slides.html#a-system-built-for-more-children-than-it-has",
+    "title": "Brighton & Hove secondary schools",
+    "section": "A system built for more children than it has",
+    "text": "A system built for more children than it has\n\n\n\nThe city publishes 2,515 Year 7 places across its ten secondary schools.\nThe modelled cohort is 2,267 in 2026 and 1,835 by 2035 — those children are already in primary school.\nBy 2035 that is about 720 empty Year 7 places a year.\nNine of the ten schools have been spending their reserves. The money is a city problem, not only a Longhill problem.\n\n\nLonghill\n\nTakes about 91 children in 2026 and 75 in 2030, on 210 places.\nAbout £0.8m a year short of break-even in 2030.\nSits at the far edge of the city, at Ovingdean."
+  },
+  {
+    "objectID": "slides.html#ten-schools-six-catchments-and-where-the-children-are",
+    "href": "slides.html#ten-schools-six-catchments-and-where-the-children-are",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Ten schools, six catchments, and where the children are",
+    "text": "Ten schools, six catchments, and where the children are\n\n\nFigure 1"
+  },
+  {
+    "objectID": "slides.html#the-cohort-is-already-falling",
+    "href": "slides.html#the-cohort-is-already-falling",
+    "title": "Brighton & Hove secondary schools",
+    "section": "The cohort is already falling",
+    "text": "The cohort is already falling\n\n\nFigure 2"
+  },
+  {
+    "objectID": "slides.html#who-can-reach-a-school-within-30-minutes",
+    "href": "slides.html#who-can-reach-a-school-within-30-minutes",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Who can reach a school within 30 minutes",
+    "text": "Who can reach a school within 30 minutes\n\n\nFigure 3"
+  },
+  {
+    "objectID": "slides.html#poor-access-and-child-poverty-in-the-same-places",
+    "href": "slides.html#poor-access-and-child-poverty-in-the-same-places",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Poor access and child poverty in the same places",
+    "text": "Poor access and child poverty in the same places\n\n\nFigure 4"
+  },
+  {
+    "objectID": "slides.html#nine-of-the-ten-schools-are-spending-their-reserves",
+    "href": "slides.html#nine-of-the-ten-schools-are-spending-their-reserves",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Nine of the ten schools are spending their reserves",
+    "text": "Nine of the ten schools are spending their reserves\n\n\nFigure 5"
+  },
+  {
+    "objectID": "slides.html#small-schools-get-more-per-pupil-and-still-run-deficits",
+    "href": "slides.html#small-schools-get-more-per-pupil-and-still-run-deficits",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Small schools get more per pupil and still run deficits",
+    "text": "Small schools get more per pupil and still run deficits\n\n\nFigure 6"
+  },
+  {
+    "objectID": "slides.html#what-the-evidence-says",
+    "href": "slides.html#what-the-evidence-says",
+    "title": "Brighton & Hove secondary schools",
+    "section": "What the evidence says",
+    "text": "What the evidence says\n\nThis is not mainly a school quality problem. Most of what separates schools’ headline results arrives with the children; the part a school can reach runs mostly through attendance.\nFamilies choose on the headline score, which largely describes the intake — so choice is self-fulfilling.\nAdmissions criteria only bind at some schools. Several schools offer a place to every first-preference applicant.\nPhysical access is unequal, in the worst direction. 29 neighbourhoods can reach no school place within 30 minutes by walking and bus, and access and child poverty go together.\nChildren from the most deprived neighbourhoods travel 3.7 minutes further each way than everyone else, under the map in force."
+  },
+  {
+    "objectID": "slides.html#from-published-data-to-options",
+    "href": "slides.html#from-published-data-to-options",
+    "title": "Brighton & Hove secondary schools",
+    "section": "From published data to options",
+    "text": "From published data to options\n\n\n\n\n\nflowchart LR\n  A[\"Where children live&lt;br/&gt;census, ONS small areas\"] --&gt; M\n  B[\"Journey times&lt;br/&gt;routed walk and bus\"] --&gt; M\n  C[\"What families ask for&lt;br/&gt;16 years of factsheets,&lt;br/&gt;catchment preferences\"] --&gt; M\n  D[\"Catchment maps\"] --&gt; M\n  M[\"Spatial interaction model&lt;br/&gt;M0 to M5\"] --&gt; R[\"Admission numbers and&lt;br/&gt;the council's priorities\"]\n  R --&gt; S[\"Refused children&lt;br/&gt;re-offered by 2nd preference\"]\n  S --&gt; O[\"Intakes, journeys,&lt;br/&gt;money, social mix\"]\n  O --&gt; P[\"The simulator,&lt;br/&gt;and the options scored\"]"
+  },
+  {
+    "objectID": "slides.html#a-spatial-interaction-model",
+    "href": "slides.html#a-spatial-interaction-model",
+    "title": "Brighton & Hove secondary schools",
+    "section": "A spatial interaction model",
+    "text": "A spatial interaction model\n\n\n\\[T_{ij} = A_i\\, O_i\\, W_j\\, c_{ij}^{-\\beta}\\, e^{\\gamma\\, \\text{in catchment}}\\, C_j^{\\delta}\\]\n\n\\(T_{ij}\\) — children from neighbourhood \\(i\\) choosing school \\(j\\)\n\\(O_i\\) — children living in \\(i\\)\n\\(W_j\\) — how attractive school \\(j\\) is\n\\(c_{ij}\\) — walk-and-bus minutes; \\(\\beta\\) how fast demand falls with them\n\\(\\gamma\\) — how strongly families follow their catchment\n\\(C_j\\) — rival schools nearby\n\\(A_i\\) — makes every neighbourhood place all its children\n\n\n\n\n\n\n\nflowchart TB\n  N[\"Each neighbourhood's children\"] --&gt; Sh[\"Shared across schools by&lt;br/&gt;distance, attractiveness,&lt;br/&gt;catchment, competition\"]\n  Sh --&gt; Cap{\"School full?\"}\n  Cap -- \"no\" --&gt; In[\"Admitted\"]\n  Cap -- \"yes\" --&gt; Pr[\"Council priorities decide&lt;br/&gt;who is admitted\"]\n  Pr --&gt; Re[\"The rest re-offered at their&lt;br/&gt;next choice with room\"]\n  Re --&gt; Cap"
+  },
+  {
+    "objectID": "slides.html#the-map-alone-every-school-equally-attractive",
+    "href": "slides.html#the-map-alone-every-school-equally-attractive",
+    "title": "Brighton & Hove secondary schools",
+    "section": "The map alone: every school equally attractive",
+    "text": "The map alone: every school equally attractive\n\n\nFigure 7"
+  },
+  {
+    "objectID": "slides.html#adding-one-thing-at-a-time",
+    "href": "slides.html#adding-one-thing-at-a-time",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Adding one thing at a time",
+    "text": "Adding one thing at a time\n\n\nFigure 8"
+  },
+  {
+    "objectID": "slides.html#longhills-modelled-catchment-as-the-model-gets-more-realistic",
+    "href": "slides.html#longhills-modelled-catchment-as-the-model-gets-more-realistic",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Longhill’s modelled catchment, as the model gets more realistic",
+    "text": "Longhill’s modelled catchment, as the model gets more realistic\n\n\nFigure 9"
+  },
+  {
+    "objectID": "slides.html#it-reproduces-the-2026-offers-which-it-was-not-fitted-to",
+    "href": "slides.html#it-reproduces-the-2026-offers-which-it-was-not-fitted-to",
+    "title": "Brighton & Hove secondary schools",
+    "section": "It reproduces the 2026 offers, which it was not fitted to",
+    "text": "It reproduces the 2026 offers, which it was not fitted to\n\n\nFigure 10"
+  },
+  {
+    "objectID": "slides.html#it-reproduces-where-each-catchments-families-want-to-go",
+    "href": "slides.html#it-reproduces-where-each-catchments-families-want-to-go",
+    "title": "Brighton & Hove secondary schools",
+    "section": "It reproduces where each catchment’s families want to go",
+    "text": "It reproduces where each catchment’s families want to go\n\n\nFigure 11"
+  },
+  {
+    "objectID": "slides.html#the-same-system-year-by-year",
+    "href": "slides.html#the-same-system-year-by-year",
+    "title": "Brighton & Hove secondary schools",
+    "section": "The same system, year by year",
+    "text": "The same system, year by year\n\n\nFigure 12"
+  },
+  {
+    "objectID": "slides.html#the-same-lever-works-in-one-year-and-not-the-next",
+    "href": "slides.html#the-same-lever-works-in-one-year-and-not-the-next",
+    "title": "Brighton & Hove secondary schools",
+    "section": "The same lever works in one year and not the next",
+    "text": "The same lever works in one year and not the next\n\n\nFigure 13"
+  },
+  {
+    "objectID": "slides.html#things-the-model-shows-that-intuition-would-not",
+    "href": "slides.html#things-the-model-shows-that-intuition-would-not",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Things the model shows that intuition would not",
+    "text": "Things the model shows that intuition would not\n\n\nFigure 14"
+  },
+  {
+    "objectID": "slides.html#open-admissions-and-integration-a-finding-that-did-not-survive",
+    "href": "slides.html#open-admissions-and-integration-a-finding-that-did-not-survive",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Open admissions and integration: a finding that did not survive",
+    "text": "Open admissions and integration: a finding that did not survive\n\n\nFigure 15"
+  },
+  {
+    "objectID": "slides.html#checked-and-corrected-along-the-way",
+    "href": "slides.html#checked-and-corrected-along-the-way",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Checked, and corrected, along the way",
+    "text": "Checked, and corrected, along the way\nThe segregation results changed as the measure was tested against published figures.\n\n\n\n\nTable 1\n\n\n\n\n\n\n\n\n\n\n\nHow disadvantaged pupils were counted\nIndex today\nWhitehawk back to Longhill\n\n\n\n\nBy neighbourhood\n0.154\n0.137\n\n\nWhole-school shares, fitted on today’s map\n0.118\n0.140\n\n\nWhole-school shares, fitted before the policy change\n0.124\n0.125\n\n\nYear 7 offers, 2026 (the model’s measure)\n0.117\n0.122\n\n\n\n\n\n\n\n\n\nScored by neighbourhood, the schools came out in the wrong order against DfE’s published shares.\nThe published shares lag the policy by up to five years, so the model is now fitted to the first Year 7 offers under today’s map and rules (council factsheet, 2026).\nThe Whitehawk redraw’s effect on segregation turned out too small to call. Its case rests on journeys and Longhill, not on segregation."
+  },
+  {
+    "objectID": "slides.html#three-priorities-scored-at-once",
+    "href": "slides.html#three-priorities-scored-at-once",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Three priorities, scored at once",
+    "text": "Three priorities, scored at once\n\n\n\n\nTable 2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nOption\nLonghill intake\nDeprived children’s extra journey\nSegregation index\nDisplaced\nCommunity schools’ balance\n\n\n\n\nToday\n75\n3.5 min\n0.117\n2\n−£3.5m\n\n\nWhitehawk back to Longhill\n86\n3.2 min\n0.121\n0\n−£3.5m\n\n\nLonghill 150, central schools trimmed\n75\n3.5 min\n0.118\n4\n−£3.5m\n\n\nLonghill at Elm Grove (150), map redrawn\n103\n0.0 min\n0.153\n2\n−£3.7m\n\n\nCoMArt re-opened (not available)\n49\n2.2 min\n0.119\n1\n−£4.5m\n\n\nPackage without a move\n92\n3.3 min\n0.122\n1\n−£3.1m\n\n\nElm Grove package\n108\n0.1 min\n0.150\n2\n−£3.1m\n\n\nLonghill closed\n—\n4.2 min\n0.103\n2\n−£2.3m\n\n\n\n\n\n\n\n\n2030, council priorities. “Package without a move”: Whitehawk back, Longhill 150, central trims, no priority 6, Cardinal Newman 300, Brighton Aldridge 150. “Elm Grove package”: Longhill at Elm Grove at 150 with the map redrawn, Cardinal Newman 300, King’s 150, Brighton Aldridge 150."
+  },
+  {
+    "objectID": "slides.html#only-a-nearer-school-closes-the-access-gap",
+    "href": "slides.html#only-a-nearer-school-closes-the-access-gap",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Only a nearer school closes the access gap",
+    "text": "Only a nearer school closes the access gap\n\n\nFigure 16"
+  },
+  {
+    "objectID": "slides.html#a-smaller-longhill-at-the-top-of-elm-grove",
+    "href": "slides.html#a-smaller-longhill-at-the-top-of-elm-grove",
+    "title": "Brighton & Hove secondary schools",
+    "section": "A smaller Longhill at the top of Elm Grove",
+    "text": "A smaller Longhill at the top of Elm Grove\n\n\nWhat it does (150 places, catchments redrawn)\n\nLonghill takes 123 in 2026 and 103 in 2030 — against 91 and 75 today.\nDeprived children’s extra journey falls from 3.5 to 0.0 minutes.\nWhitehawk’s disadvantaged children travel 24 minutes instead of 53.\nThe map drawn round it puts 5 of the 6 Whitehawk neighbourhoods back in Longhill’s catchment — as part of a redesign, not a reversal of the 2024 change.\nWith Cardinal Newman, King’s and Brighton Aldridge taking fewer: 134 in 2026 and 108 in 2030.\n\n\nWhat it costs\n\nA site — not costed in this work.\nIntakes more concentrated: segregation index 0.153 against 0.117.\nAbout 434 children a year in neighbourhoods that change catchment.\nLonger journeys for Rottingdean, Saltdean and Woodingdean, and more children leaving the city.\nLonghill still does not break even — about £0.5m a year short in 2030.\nIt needs families to follow a new map as closely as the one they have — the assumption every redraw result rests on."
+  },
+  {
+    "objectID": "slides.html#access-or-mixing-the-review-has-to-choose",
+    "href": "slides.html#access-or-mixing-the-review-has-to-choose",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Access or mixing? The review has to choose",
+    "text": "Access or mixing? The review has to choose\n\nA school near Whitehawk shortens disadvantaged children’s journeys and concentrates them in one school. No option does both.\nThe evidence here leans towards access: a more mixed intake is a weak lever on results, and the journey is made by every child, twice a day.\nWhat this work cannot show is whether shorter journeys raise attendance — the lever that matters most. The council’s own records can.\nRe-opening CoMArt would have given much of the access gain; it is off the table. Closing Longhill is the cheapest system and has the longest journeys in the east."
+  },
+  {
+    "objectID": "slides.html#what-to-do",
+    "href": "slides.html#what-to-do",
+    "title": "Brighton & Hove secondary schools",
+    "section": "What to do",
+    "text": "What to do\n\nLead with a smaller Longhill at the top of Elm Grove, with catchments redrawn round it — and test it properly, costs stated.\nIf the site cannot be had, return Whitehawk to Longhill’s catchment on its own.\nSet Longhill at 150 on either site, and budget for the children it will get, not for 150.\nAsk Cardinal Newman (300), King’s (150) and Brighton Aldridge (150) to take fewer, and every school to share the fall in proportion by 2030.\nTrim Stringer, Varndean and Blatchington Mill only if Longhill stays at Ovingdean and only with a catchment redraw.\nPublish where priority 6’s places went.\nAsk the inequalities review to settle the measure — journeys or mixing — and whether journey length affects attendance."
+  },
+  {
+    "objectID": "slides.html#next-steps",
+    "href": "slides.html#next-steps",
+    "title": "Brighton & Hove secondary schools",
+    "section": "Next steps",
+    "text": "Next steps\n\nCost the Elm Grove site, and re-run the move on the council’s own records before deciding.\nDraw the Elm Grove catchment with Rottingdean, Saltdean and Woodingdean in the room, before rather than after.\nCheck the disadvantaged-intake calibration against a second year of Year 7 offers.\nRelease six small tables the council already holds — applicants’ home areas, full preferences, allocations and the criterion each place was given under — which would turn most of the ranges here into estimates.\nLink journeys to attendance in the council’s records, for the inequalities review."
+  },
+  {
+    "objectID": "slides.html#what-this-rests-on",
+    "href": "slides.html#what-this-rests-on",
+    "title": "Brighton & Hove secondary schools",
+    "section": "What this rests on",
+    "text": "What this rests on\n\nA model calibrated to published catchment totals, not individual applications.\nCatchment attachment carried to redrawn maps at the strength families follow the maps they have — the assumption every redraw result depends on.\nFinances as a five-year steady state; site and capital costs not included.\nThe academies and faith schools modelled as responding to demand, not setting their own numbers.\nThe direction of each finding is more reliable than its size.\n\nFull document · Simulator · Code and data"
   }
 ]
