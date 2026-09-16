@@ -3444,7 +3444,7 @@ on its money chart.
 ## The model's error, in pounds
 
 The money table is only as good as the intakes behind it, and the
-closing section (§14) shows where the model's intakes are wrong. Replacing the modelled 2026 intakes
+closing section (§15) shows where the model's intakes are wrong. Replacing the modelled 2026 intakes
 with the offers the council actually made isolates that:
 
 ```{r money-error}
@@ -3524,6 +3524,319 @@ tibble::tribble(
    jumping to its steady state?
 3. Should the simulator rebase each school to its actual offers, as the
    open model does, and show only the change a scenario makes?
+
+
+# Scenarios: which runs, and how to read them {#sec-scenarios}
+
+```{r scen-setup}
+#| include: false
+co <- bh_data("council_options.rds")
+co_runs <- co$runs
+SHORT_OPT <- c(
+  today = "Today", lh150 = "Longhill 150", lh120 = "Longhill 120",
+  lh_wanted = "Longhill 150, 1.5× as wanted",
+  central = "Central schools trimmed", central_hard = "Central schools trimmed hard",
+  whitehawk = "Whitehawk back to Longhill", whitehawk_lh150 = "Whitehawk back, Longhill 150",
+  whitehawk_central = "Whitehawk back, central trims", pre2024 = "Pre-2024 catchments",
+  elm = "Longhill to Elm Grove, map redrawn", shrink = "Community schools shrunk",
+  power = "Power-diagram catchments", power_lh150 = "Power diagram, Longhill 150",
+  p6_off = "No priority 6", p6_20 = "Priority 6 at 20%", equal = "An equal chance for all",
+  comart = "CoMArt reopened", package_a = "Package A", package_b = "Package B",
+  shrink_all = "Every school shrunk", cn300 = "Cardinal Newman 300",
+  cn270_kings = "Cardinal Newman 270, King's 150", academies = "Two academies cut",
+  package_c = "Package C", package_d = "Package D", package_e = "Package E",
+  package_f = "Package F", close_lh = "Longhill closed")
+stopifnot(all(unique(co_runs$id) %in% names(SHORT_OPT)))
+GROUP_ORDER <- c("Baseline", "Keep Longhill open", "Access and segregation",
+                 "Fit the system", "Asks of schools the council does not run",
+                 "Packages", "Counterfactual")
+co_runs <- co_runs %>%
+  mutate(short = unname(SHORT_OPT[id]),
+         group = factor(group, GROUP_ORDER))
+base_of <- function(y, col) co_runs[[col]][co_runs$id == "today" & co_runs$year == y]
+opt <- function(id, y, col) co_runs[[col]][co_runs$id == id & co_runs$year == y]
+
+# The baseline in the stored table must be the app's own Today.
+chk_today <- outcomes(inp, run_sim(inp, year = 2030, rules = list(rule = "priorities")))
+```
+
+Everything so far has been one run of the model. The strategic view's
+conclusions come from comparing many. This section says which runs those
+are, how they were chosen, what each is scored on, and — most
+importantly — how to read the difference between two of them.
+
+## What a scenario is
+
+A scenario is **a set of control settings** and nothing more: a catchment
+map, a site for Longhill, some admission numbers, perhaps an
+attractiveness multiplier or a change to the admission rules, and a year.
+It is applied on top of the baseline, the model is run from step 1
+(§11), and the outcomes are read off. No scenario changes a fitted
+parameter, and no scenario is a separate model.
+
+Scenarios live in two places.
+
+- **The simulator's presets** — `r length(inp$presets)` starting points,
+  each a question rather than an answer, which a user then moves the
+  controls away from.
+- **The strategic view's option set** — `r n_distinct(co_runs$id)`
+  options in `r n_distinct(co_runs$group)` groups, each run in
+  `r paste(sort(unique(co_runs$year)), collapse = ", ")`, which is
+  `r nrow(co_runs)` runs in all. Every recommendation in the strategic
+  view rests on this table.
+
+## How the option set was chosen
+
+The rule was **levers the council actually holds**: the admission numbers
+of the six community schools, the catchment map, Longhill's site, and the
+oversubscription priorities. Options that need a decision from a school
+the council does not run are kept in a group of their own, so a reader
+can see at once which results the council could deliver by itself.
+
+```{r scen-groups}
+#| tbl-cap: "The strategic view's option set, by group."
+co_runs %>%
+  filter(year == min(year)) %>%
+  group_by(group) %>%
+  summarise(n = n(), options = paste(short, collapse = "; "), .groups = "drop") %>%
+  arrange(group) %>%
+  transmute(Group = as.character(group), Options = n, `What they are` = options) %>%
+  knitr::kable(align = "lrl")
+```
+
+Three of those groups need a word.
+
+- **Packages** combine single levers, because the questions the council
+  faces are not one lever at a time. Each package is named for what it
+  adds to an earlier one, so their differences can be traced.
+- **"Longhill closed"** is a counterfactual, not a recommendation. It is
+  there so every other option can be read against the alternative the
+  council is actually weighing.
+- **"Fit the system"** cuts places to the 2035 cohort plus a margin
+  (`r fmt_n(co$shrink_total)` places in all). It answers how much of the
+  empty-place problem is simply too many places, whatever else is done.
+
+## What every run is scored on
+
+Each run is scored on every priority at once, so no option can look good
+by being measured on only the thing it was designed to fix.
+
+```{r scen-measures}
+#| tbl-cap: "The measures recorded for every run, by the priority they speak to."
+tibble::tribble(
+  ~Priority, ~Measures, ~`Where they come from`,
+  "Keeping Longhill open",
+  "Longhill's intake and fill; its annual position and years of reserve",
+  "§9, §10, §13",
+  "A viable system",
+  "empty places in the city; schools below their admission number; community schools in deficit and their combined position; the whole city's position",
+  "§9, §13",
+  "Access and segregation",
+  "Gorard index; the deprived-journey gap; mean and 90th-percentile journeys; share of journeys over 40 minutes",
+  "§4, §12",
+  "Children near home",
+  "children displaced from their first choice; share at a school in their own catchment; children leaving the city; the same share for Longhill's catchment alone",
+  "§8, §10") %>%
+  knitr::kable(align = "lll")
+```
+
+```{r fig-scen-board}
+#| fig-cap: "The whole option set in 2030, on six of the measures. The grey line in each panel is today's configuration in the same year, so a dot to one side of it is what the option changes. Colour is the option's group."
+#| fig-height: 10.5
+board_measures <- c(
+  lh_intake = "Longhill's intake",
+  empty = "Empty places, city",
+  gorard = "Gorard segregation index",
+  dep_gap = "Deprived-journey gap (min)",
+  displaced = "Children displaced",
+  in_catchment = "In own catchment (%)")
+board <- co_runs %>%
+  filter(year == 2030) %>%
+  mutate(in_catchment = 100 * in_catchment) %>%
+  select(id, short, group, all_of(names(board_measures))) %>%
+  tidyr::pivot_longer(all_of(names(board_measures)), names_to = "m", values_to = "v") %>%
+  mutate(m = factor(unname(board_measures[m]), board_measures),
+         short = factor(short, rev(unique(short[order(group)]))))
+ref <- board %>% filter(id == "today") %>% select(m, ref = v)
+ggplot(board, aes(v, short, colour = group)) +
+  geom_vline(data = ref, aes(xintercept = ref), colour = "grey60") +
+  geom_point(size = 2.4, na.rm = TRUE) +
+  facet_wrap(~ m, ncol = 3, scales = "free_x") +
+  scale_colour_brewer(palette = "Dark2", name = NULL) +
+  labs(x = NULL, y = NULL,
+       title = "Most options move most measures very little",
+       subtitle = "2030 entry, council priorities, each option against today's configuration") +
+  theme_bh(11) +
+  theme(legend.position = "bottom",
+        strip.text = element_text(face = "bold", hjust = 0),
+        panel.spacing.x = unit(2.2, "lines")) +
+  guides(colour = guide_legend(nrow = 3))
+```
+
+## How to read a scenario
+
+Seven rules, each learned the hard way during this work.
+
+**1. Compare in the same year.** The cohort falls by about a fifth
+between 2026 and 2035, and that alone changes every measure. An option
+in 2035 is read against today's configuration in 2035 — the do-nothing
+case — never against today's numbers in 2026. The grey line in the chart
+above is always the same-year baseline.
+
+**2. A ceiling that does not bind does nothing.** Cutting Longhill to 150
+or to 120 leaves every measure except empty places exactly where it was
+in 2030, because the model gives Longhill
+`r sprintf("%.0f", base_of(2030, "lh_intake"))` children and neither
+number is reached: empty places fall from
+`r fmt_n(round(base_of(2030, "empty")))` to
+`r fmt_n(round(opt("lh150", 2030, "empty")))` and
+`r fmt_n(round(opt("lh120", 2030, "empty")))`, and nothing else moves.
+An admission number only matters to the schools that fill.
+
+**3. Read the measure the option was designed to change, then all the
+others.** Trimming the central schools (Stringer to 300, Varndean to 270,
+Blatchington Mill to 300, Longhill to 150) was meant to send children to
+Longhill. In 2030 Longhill's intake under the option is
+`r sprintf("%.1f", opt("central", 2030, "lh_intake"))` against
+`r sprintf("%.1f", base_of(2030, "lh_intake"))` today — it barely moves.
+What the option does instead is cut
+`r fmt_n(round(base_of(2030, "empty") - opt("central", 2030, "empty")))`
+empty places and roughly double the children displaced, from
+`r sprintf("%.0f", base_of(2030, "displaced"))` to
+`r sprintf("%.0f", opt("central", 2030, "displaced"))`. Refused children
+go to the schools with room that their catchment names second (§10), and
+Longhill is rarely that school.
+
+**4. Small differences in the segregation index are not findings.** The
+Gorard index runs from
+`r sprintf("%.3f", min(co_runs$gorard[co_runs$year == 2030]))` to
+`r sprintf("%.3f", max(co_runs$gorard[co_runs$year == 2030]))` across
+the whole option set in 2030. §12 showed that re-measuring the same
+scenario moved it by about 0.01 and changed its sign. A difference
+smaller than that between two options should be read as "no clear
+difference".
+
+**5. Know which results rest on held-fixed parameters.** Every option
+keeps the fitted attractiveness, catchment terms and disadvantage pulls
+(§11). That is safe for an admission-number change and much less safe
+for a relocation or a reopening, where a school's relationship with its
+families plainly changes. Moving Longhill to Elm Grove takes the
+deprived-journey gap from
+`r sprintf("%.1f", base_of(2030, "dep_gap"))` to
+`r sprintf("%.1f", opt("elm", 2030, "dep_gap"))` minutes — a result about
+journeys, which the model measures directly — and the Gorard index from
+`r sprintf("%.3f", base_of(2030, "gorard"))` to
+`r sprintf("%.3f", opt("elm", 2030, "gorard"))`, a result that depends on
+Longhill's fitted pull on disadvantaged children travelling with it to a
+new site.
+
+**6. A slider away from 1 is a question, not a forecast.** "Longhill 1.5
+times as wanted" does not say anything will make it so; it says what
+would follow if something did. Package B is Package A with that
+assumption added, and should be read as "Package A, if it also works".
+
+**7. 2035 is an extrapolation, and the money is a steady state.** The
+cohort projection runs out before 2035 and is extended (§2.7), and every
+money figure is the position a school converges on if the configuration
+is held (§13). The 2035 column is the direction of travel, not a plan.
+
+## A worked comparison
+
+```{r scen-worked}
+#| tbl-cap: "Four options against today's configuration in 2030, on the measures the strategic view's recommendation turns on."
+ids <- c("today", "whitehawk", "elm", "package_f", "close_lh")
+co_runs %>%
+  filter(year == 2030, id %in% ids) %>%
+  mutate(id = factor(id, ids)) %>% arrange(id) %>%
+  transmute(Option = short,
+            `Longhill intake` = ifelse(is.na(lh_intake), "—", sprintf("%.0f", lh_intake)),
+            `Empty places` = fmt_n(round(empty)),
+            `Community schools in deficit` = comm_in_deficit,
+            `City position` = sprintf("−£%.1fm", -city_gap / 1e6),
+            Gorard = sprintf("%.3f", gorard),
+            `Deprived-journey gap` = sprintf("%.1f min", dep_gap),
+            Displaced = sprintf("%.0f", displaced)) %>%
+  knitr::kable(align = "lrrrrrrr")
+```
+
+Read with the rules above:
+
+- **Whitehawk back to Longhill** raises Longhill's intake by
+  `r sprintf("%.0f", opt("whitehawk", 2030, "lh_intake") - base_of(2030, "lh_intake"))`
+  children and cuts displacement to
+  `r sprintf("%.0f", opt("whitehawk", 2030, "displaced"))`, and raises the Gorard index by
+  `r sprintf("%.3f", opt("whitehawk", 2030, "gorard") - base_of(2030, "gorard"))`
+  — about the size of the re-measurement effect in §12, so the
+  segregation direction is the least secure part of the result.
+- **Elm Grove** — alone, or inside Package F — is the only change that
+  nearly closes the deprived-journey gap. That is a journey result and it is the most robust thing in the
+  table. Its segregation figure is the least robust (rule 5).
+- **Package F** adds the asks of the academies and faith schools to the
+  move. Its gains over Elm Grove alone are in empty places, and they
+  depend on decisions the council cannot make (the group rule).
+- **Longhill closed** has the fewest community schools in deficit and the
+  lowest Gorard index — and the longest journeys of the five. It is on the table so
+  the others can be judged against it, not because the model recommends
+  it.
+
+## The simulator's presets
+
+```{r scen-presets}
+#| tbl-cap: "The starting points offered in the simulator. Each is a set of overrides on Today; the user moves the controls from there."
+tibble(Preset = names(inp$presets),
+       `What it sets` = vapply(inp$presets, function(p) p$note, "")) %>%
+  knitr::kable(align = "ll")
+```
+
+## Checks you can run
+
+```{r scen-checks}
+#| tbl-cap: "What the option set should satisfy."
+nb <- co_runs %>% filter(year == 2030, id %in% c("today", "lh150", "lh120")) %>%
+  select(-id, -group, -label, -short, -year, -empty, -lh_pan, -lh_fill, -below_pan,
+         -comm_empty)
+tibble::tribble(
+  ~Check, ~Result,
+  "Every option is run in every year",
+  sprintf("%d options × %d years = %d runs", n_distinct(co_runs$id),
+          n_distinct(co_runs$year), nrow(co_runs)),
+  "The stored baseline is the simulator's own Today",
+  sprintf("Gorard %.4f stored, %.4f from a fresh run", base_of(2030, "gorard"), chk_today$gorard),
+  "A non-binding admission number changes nothing but capacity",
+  ifelse(all(vapply(nb, function(x) diff(range(x, na.rm = TRUE)) < 1e-6, TRUE)),
+         "yes: Longhill 150 and 120 match today on every other measure in 2030",
+         "no: they differ"),
+  "The counterfactual is flagged as one",
+  sprintf("\"%s\" is in the %s group", SHORT_OPT[["close_lh"]],
+          as.character(co_runs$group[co_runs$id == "close_lh"][1]))) %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+- **The option set is a choice.** It covers the levers the council holds
+  and some it does not, but it is not every configuration of them.
+  Something good may lie between two rows.
+- **Every run is a mean.** The lottery is averaged (§9), so no option
+  shows how much a real round could differ from its row.
+- **The measures are not weighted.** The chart and the tables show every
+  measure side by side on purpose. The strategic view weighs them, and
+  says how; this guide does not.
+- **Options are run on today's fitted behaviour.** A scenario that
+  changes how families see a school — a new building, a new head, a
+  relocation — changes the thing the model holds fixed.
+
+## Questions this raises
+
+1. Should the option set be searched rather than listed — every
+   combination of admission numbers the council could set, scored and
+   filtered?
+2. Should each option carry an uncertainty band from the lottery and from
+   the fitted parameters, so rule 4 can be applied by the reader rather
+   than by judgement?
+3. Should the relocation and reopening options be re-run with the
+   disadvantage pull and attractiveness allowed to vary over a plausible
+   range, since those are the results that lean on them most?
 
 # The matrix, filled in {#sec-end}
 
@@ -3689,15 +4002,9 @@ the four fitted quantities and the less on the published ones.
 | An out-of-city school takes too many | §8: the decay on straight-line kilometres |
 | The FSM tiers look too large | §9: siblings sit inside the catchment tier |
 
-## What this guide does not cover
+## Following a number back
 
-One thing in the strategic view is built **on top of** the model in this
-guide rather than being part of it, and needs its own account:
-
-- **The scenarios themselves.** Which combinations of closure,
-  relocation, boundary and admission rule are worth running, and how
-  their results should be read.
-
-Everything above is the machinery they use. It should now be
-possible to check any number in the strategic view by following it back
-through these sections to a published source.
+Every figure in the strategic view comes from one of the runs described
+in §14, which is the model of §2 to §10 with the disadvantage layer of
+§12 and the money of §13 read off the result. It should now be possible
+to follow any number back through these sections to a published source.
