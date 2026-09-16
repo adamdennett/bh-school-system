@@ -2351,37 +2351,78 @@ tier_pan <- tier_pan %>% select(name, p45_in, p45_out, p6, p7, p8, intake,
 ## What happens after the matrix
 
 Sections 2 to 8 produce $T_{ij}$: how many children in each neighbourhood
-**want** each school. Nothing in that calculation knows how many places a
-school has. The city's demand, laid against the admission numbers, does
-not fit:
+**want** each school as their first choice. Nothing in that calculation
+knows how many places a school has. The city's demand, laid against the
+admission numbers and against what families actually named, does not
+fit:
 
 ```{r fig-cap-demand}
-#| fig-cap: "What the model's families want, against what each school can take, and what they are offered once the ceiling is applied. Five schools are asked for more than they have."
-#| fig-height: 5
-cap_long <- by_sch %>%
-  select(short, wanted, pan, offered) %>%
-  tidyr::pivot_longer(c(wanted, offered), names_to = "what", values_to = "n") %>%
-  mutate(what = factor(what, c("wanted", "offered"),
-                       c("Wanted", "Offered after the ceiling")),
-         short = forcats::fct_reorder(short, pan))
-ggplot(cap_long, aes(n, short)) +
-  geom_segment(data = by_sch %>% mutate(short = forcats::fct_reorder(short, pan)),
-               aes(x = 0, xend = pan, y = short, yend = short),
-               colour = "grey85", linewidth = 6) +
+#| fig-cap: "Each school's places against how many families ask for it. The model's demand is a first choice. The published counts show how many families named the school first, and first or second, in the 2026 round. Under the council's equal-preference system every one of those preferences can win a place."
+#| fig-height: 5.6
+pair_either <- d_ai %>%
+  filter(pop == "either", catchment == "DS_Varndean", name == "Varndean School") %>%
+  summarise(Varndean = sum(wanted))
+prefs26 <- bh_data("factsheet_panel.rds")$factsheets %>%
+  filter(year == 2026, name != "Total") %>%
+  transmute(name, pref1, pref12 = pref1 + pref2, off1)
+dem <- by_sch %>%
+  left_join(prefs26, by = "name") %>%
+  mutate(short = forcats::fct_reorder(short, pan))
+dem_long <- dem %>%
+  select(short, `Model: first choice` = wanted,
+         `Named first (published)` = pref1,
+         `Named first or second (published)` = pref12,
+         `Offered, model` = offered) %>%
+  tidyr::pivot_longer(-short, names_to = "what", values_to = "n") %>%
+  mutate(what = factor(what, c("Model: first choice", "Named first (published)",
+                               "Named first or second (published)", "Offered, model")))
+ggplot(dem_long, aes(n, short)) +
+  geom_segment(data = dem, aes(x = 0, xend = pan, y = short, yend = short),
+               colour = "grey86", linewidth = 7) +
+  geom_segment(data = dem, aes(x = pref1, xend = pref12, y = short, yend = short),
+               colour = "#d95f02", alpha = 0.35, linewidth = 1.2) +
   geom_point(aes(colour = what, shape = what), size = 3.2) +
-  geom_text(data = by_sch %>% mutate(short = forcats::fct_reorder(short, pan)),
-            aes(x = pmax(pan, wanted), label = sprintf("   %d places", pan)), hjust = 0,
-            size = 3.1, colour = "grey40") +
-  scale_colour_manual(values = c(Wanted = "#d95f02",
-                                 `Offered after the ceiling` = "#1f3b57"), name = NULL) +
-  scale_shape_manual(values = c(Wanted = 17, `Offered after the ceiling` = 16), name = NULL) +
-  scale_x_continuous(expand = expansion(mult = c(0.02, 0.18))) +
-  labs(x = "Children", y = NULL,
-       title = sprintf("%s children want a place that is not there",
-                       fmt_n(round(excess))),
-       subtitle = "Grey bar: the admission number. 2026 entry, current catchment map") +
-  theme_bh() + theme(legend.position = "top")
+  geom_text(data = dem, aes(x = 0, label = sprintf("%d places ", pan)),
+            hjust = 1, size = 2.9, colour = "grey40") +
+  scale_colour_manual(values = c("#d95f02", "#9e6a3b", "#d95f02", "#1f3b57"), name = NULL) +
+  scale_shape_manual(values = c(17, 1, 16, 15), name = NULL) +
+  scale_x_continuous(expand = expansion(mult = c(0.14, 0.03))) +
+  labs(x = "Children or families, 2026", y = NULL,
+       title = sprintf("Counting second choices, %d of the ten schools are over-asked",
+                       sum(dem$pref12 > dem$pan)),
+       subtitle = "Grey bar: the admission number. Named counts: council factsheet, 2026.") +
+  theme_bh() +
+  theme(legend.position = "top", legend.direction = "horizontal",
+        plot.title.position = "plot") +
+  guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2))
 ```
+
+**The model's demand is a first choice, and a first choice is not the
+whole story.** The council runs an equal-preference system: every school
+a family names is considered on the same footing, and a family is offered
+the highest-ranked of its schools where it qualifies. So a school can be
+named first by fewer families than it holds and still refuse some of
+them. Dorothy Stringer is the clearest case. In 2026
+`r fmt_n(dem$pref1[dem$short == "Dorothy Stringer"])` families put it
+first, against `r dem$pan[dem$short == "Dorothy Stringer"]` places, and
+`r fmt_n(dem$pref12[dem$short == "Dorothy Stringer"] - dem$pref1[dem$short == "Dorothy Stringer"])`
+more put it second. Only `r dem$off1[dem$short == "Dorothy Stringer"]`
+of those who put it first were offered it: the rest of its places went to
+families with a higher priority who had ranked it second or third.
+
+The model represents that in two places rather than in the demand
+itself. Families in the two paired catchments are treated as content with
+either school unless they are among the few who would take only one
+(`r fmt_pct(100 * inp$params$exclusive$share[inp$params$exclusive$school == "Dorothy Stringer School"])`
+would take only Stringer and
+`r fmt_pct(100 * inp$params$exclusive$share[inp$params$exclusive$school == "Varndean School"])`
+only Varndean, §8), and a family refused at one school of a pair is
+offered the other before anywhere else (§10). Counting those families,
+the model's demand for Stringer as a first choice *or* as the partner of
+a first choice at Varndean is
+`r fmt_n(round(dem$wanted[dem$short == "Dorothy Stringer"] + pair_either$Varndean))`,
+against the `r fmt_n(dem$pref12[dem$short == "Dorothy Stringer"])`
+families who named it first or second.
 
 The ceiling is where the model stops being about preferences and starts
 being about administration. It is also where most of the fit comes from:
@@ -2520,10 +2561,13 @@ bottom of the table are the mirror image: Longhill is offered
 against `r by_sch$pan[by_sch$short == "Longhill"]` places, and no ceiling
 anywhere in the city changes that.
 
-Notice Dorothy Stringer and Blatchington Mill. Both are wanted by *fewer*
-children than they have places for, and both finish full. Those places
-are taken by children refused at Varndean and Hove Park — which is the
-subject of §10.
+Notice Dorothy Stringer and Blatchington Mill. Both are the *first*
+choice of fewer children than they have places for, and both finish
+full. The places are taken by children whose first choice was full ---
+at Varndean, Cardinal Newman and King's --- and for whom these schools
+were the partner or the second preference. That is the subject of §10,
+and it is why the published counts above, which include second
+preferences, show both schools heavily asked for.
 
 ## Checks you can run
 

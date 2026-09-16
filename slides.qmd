@@ -465,31 +465,41 @@ ggplot() +
 ## When a school is full
 
 ```{r fig-ceiling}
-#| fig-width: 11.5
-#| fig-height: 5.6
+#| fig-width: 12
+#| fig-height: 5.8
+prefs26 <- bh_data("factsheet_panel.rds")$factsheets |>
+  dplyr::filter(year == 2026, name != "Total") |>
+  dplyr::transmute(name, pref1, pref12 = pref1 + pref2)
 by_sch <- d26 |>
   dplyr::group_by(name) |>
   dplyr::summarise(wanted = sum(wanted), offered = sum(flow), .groups = "drop") |>
   dplyr::inner_join(sch_city |> dplyr::select(name, pan), by = "name") |>
+  dplyr::left_join(prefs26, by = "name") |>
   dplyr::mutate(short = forcats::fct_reorder(short_sch(name), pan))
-excess <- sum(pmax(by_sch$wanted - by_sch$pan, 0))
 cl <- by_sch |>
-  tidyr::pivot_longer(c(wanted, offered), names_to = "what", values_to = "n") |>
-  dplyr::mutate(what = factor(what, c("wanted", "offered"),
-                              c("Wanted", "Offered once the ceiling applies")))
+  dplyr::select(short, `Model: first choice` = wanted, `Named first` = pref1,
+                `Named first or second` = pref12, `Offered, model` = offered) |>
+  tidyr::pivot_longer(-short, names_to = "what", values_to = "n") |>
+  dplyr::mutate(what = factor(what, c("Model: first choice", "Named first",
+                                      "Named first or second", "Offered, model")))
 ggplot(cl, aes(n, short)) +
   geom_segment(data = by_sch, aes(x = 0, xend = pan, y = short, yend = short),
-               colour = "grey86", linewidth = 9) +
+               colour = "grey86", linewidth = 10) +
+  geom_segment(data = by_sch, aes(x = pref1, xend = pref12, y = short, yend = short),
+               colour = WARM, alpha = 0.35, linewidth = 1.6) +
   geom_point(aes(colour = what, shape = what), size = 4.2) +
-  geom_text(data = by_sch, aes(x = pmax(pan, wanted), label = sprintf("   %d places", pan)),
-            hjust = 0, size = 4, colour = MUTED) +
-  scale_colour_manual(values = c(WARM, INK), name = NULL) +
-  scale_shape_manual(values = c(17, 16), name = NULL) +
-  scale_x_continuous(expand = expansion(mult = c(0.01, 0.2))) +
-  labs(x = "Children, 2026", y = NULL,
-       title = sprintf("%s children want a place that is not there", fmt_n(excess)),
-       subtitle = "Stringer and Blatchington Mill are wanted by fewer than they hold, and fill with children refused elsewhere") +
-  theme_slide(15) + theme(legend.position = "top")
+  geom_text(data = by_sch, aes(x = 0, label = sprintf("%d places ", pan)),
+            hjust = 1, size = 3.8, colour = MUTED) +
+  scale_colour_manual(values = c(WARM, "#9e6a3b", WARM, INK), name = NULL) +
+  scale_shape_manual(values = c(17, 1, 16, 15), name = NULL) +
+  scale_x_continuous(expand = expansion(mult = c(0.12, 0.03))) +
+  labs(x = "Children or families, 2026 (named: council factsheet)", y = NULL,
+       title = sprintf("Counting second choices, %d of the ten schools are asked for by more families than they hold",
+                       sum(by_sch$pref12 > by_sch$pan)),
+       subtitle = with(by_sch[by_sch$short == "Dorothy Stringer", ],
+                       sprintf("Stringer: %d named it first, %d more second. Families in its catchment are happy with either school, and the model treats them so.",
+                               pref1, pref12 - pref1))) +
+  theme_slide(14) + theme(legend.position = "top")
 ```
 
 ## Where the refused children go

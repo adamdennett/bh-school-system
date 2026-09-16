@@ -4710,7 +4710,8 @@ the top of it under every assumption.
 **It is a measure of pressure, not a forecast of any school's accounts.**
 Nothing here is allowed to happen. A maintained school whose reserve
 goes negative enters a licensed deficit and agrees a recovery plan with
-the council; an academy trust in that position answers to the ESFA. The
+the council; an academy trust in that position answers to the Department for
+Education (@sec-deficit-consequences). The
 figures say how large a hole has to be closed and roughly when, not what
 the balance sheet will read.
 
@@ -4732,6 +4733,211 @@ school reported.
 looks permanently worse here than one with a steady small deficit, and
 @fig-school-reserves is the better guide to which is which.
 :::
+
+
+## What being in deficit means, and what the council can do {#sec-deficit-consequences}
+
+@sec-finance-risk says how large each school's gap becomes and roughly
+when. This section is about what follows once a school is in it: the
+rules that apply, who ends up holding the debt if the school changes
+status or closes, what schools do in practice to get out, and what that
+implies for a council whose problem is a cohort that is not coming back.
+
+```{r deficit-prep}
+#| include: false
+who <- fex %>%
+  select(urn, name, type, reserve, faith) %>%
+  left_join(risk_end %>% filter(scenario == SHED_MID) %>%
+              select(urn, gap, gap_pct, years_left), by = "urn") %>%
+  mutate(maintained = type != "Academy",
+         answers_to = if_else(maintained, "The council (licensed deficit, recovery plan)",
+                              "The Department for Education, through the trust"))
+n_maint <- sum(who$maintained)
+overdrawn <- who %>% filter(reserve <= 0)
+cop_d <- bh_data("council_options.rds")
+co_d <- function(id, col, y = 2030)
+  cop_d$runs[[col]][cop_d$runs$id == id & cop_d$runs$year == y]
+lump_now <- unique(fund$lump)
+```
+
+### Who answers for which school
+
+```{r tbl-deficit-who}
+#| tbl-cap: "The ten schools by who oversees a deficit, with today's reserve and the projected annual gap in 2035 on the middle assumption. Ranked by the 2035 gap."
+who %>%
+  arrange(gap) %>%
+  transmute(School = paste0(name, if_else(faith, " †", "")),
+            Status = if_else(maintained, "Maintained", "Academy"),
+            `A deficit is overseen by` = answers_to,
+            `Reserve now` = gbp(reserve),
+            `Gap in 2035` = gbp(gap),
+            `Years of reserve` = case_when(
+              reserve <= 0 ~ "already overdrawn",
+              is.na(years_left) ~ "still in surplus",
+              TRUE ~ sprintf("%.1f", years_left))) %>%
+  knitr::kable(align = "llllrr")
+```
+
+**`r n_maint` of the ten are maintained by the council**, including
+Cardinal Newman as a voluntary aided school, and **all
+`r nrow(overdrawn)` of the schools already overdrawn are among them**:
+`r knitr::combine_words(sort(short_sch(overdrawn$name)))`. Whatever the
+academies do, most of the city's secondary deficit is the council's to
+manage.
+
+### The rules for a maintained school in deficit
+
+The Department for Education's statutory guidance on local schemes for
+financing schools sets the framework, and each council writes its own
+scheme within it
+([DfE, *Schemes for financing local authority maintained schools 2026 to 2027*](https://www.gov.uk/government/publications/schemes-for-financing-schools/schemes-for-financing-local-authority-maintained-schools)).
+Three provisions matter here.
+
+- **A recovery plan is compulsory once the deficit passes 5%.** A school
+  must submit one when its revenue deficit is above 5% at 31 March.
+- **A deficit can be licensed, not forgiven.** The council can agree a
+  licensed deficit backed by the collective balances it holds for all
+  its schools, repaid over a set period, but the guidance is explicit
+  that the council "cannot write off the deficit balance of any school".
+- **The council can take control.** It can issue a notice of concern
+  that restricts a school's financial freedom and, in the last resort,
+  suspend the school's right to a delegated budget.
+
+In Brighton & Hove this is not hypothetical. Local reporting in
+[December 2024](https://www.brightonandhovenews.org/2024/12/10/school-leaders-speak-out-as-some-rack-up-six-figure-deficits/)
+put 31 schools on course to overspend that year, with 13 not on track to
+balance within five years, and in
+[October 2025](https://www.brightonandhovenews.org/2025/10/21/schools-funding-cut-by-500k-as-pupil-numbers-keep-falling/)
+reported licensed deficits of more than £8 million across 29 schools,
+with Cardinal Newman and Hove Park each forecast to end the year more
+than £1.7 million in deficit. The council has already cut primary
+admission numbers and closed three primary schools. The secondary
+sector is where that process has not yet started.
+
+### Where a deficit ends up if the school changes
+
+A deficit does not disappear when a school stops being maintained. The
+Department's guidance on academy conversion is specific
+([DfE, *Treatment of surplus and deficit balances when maintained schools become academies*, January 2024](https://www.gov.uk/government/publications/academy-conversion-surplus-and-deficit-balance-transfer-process)):
+
+- **A school that chooses to convert takes its deficit with it.** The
+  Department reimburses the council and recovers the money from the new
+  academy's grant. The council may agree to absorb some or all of it if
+  the deficit would otherwise stop the conversion.
+- **A school that becomes a sponsored academy leaves its deficit
+  behind.** Where a school is eligible for intervention, or is judged
+  not strong enough to convert without a sponsor, "the deficit remains
+  with the LA, to be funded from its core budget". It cannot be charged
+  to the schools budget funded by the Dedicated Schools Grant, except
+  from a contingency the schools forum has agreed to hold back for the
+  purpose.
+
+A school that closes is governed by the council's own scheme, and
+schemes commonly provide that the closing school's balance, surplus or
+deficit, reverts to the council. The practical point is the same either
+way: **the two schools with accumulated deficits over a million pounds
+are both maintained**, and the routes by which either might stop being
+maintained leave much or all of that debt with the council rather than
+with anyone else.
+
+### What schools actually do to get out
+
+The best evidence on what schools cut is Ofsted's survey of headteachers
+([*Making the cut*, February 2020](https://www.gov.uk/government/publications/making-the-cut-how-schools-respond-when-they-are-under-financial-pressure/making-the-cut-how-schools-respond-when-they-are-under-financial-pressure)).
+It predates the current funding round and rests on what heads reported,
+but it is consistent and specific, and secondary schools reported the
+deeper cuts.
+
+```{r tbl-deficit-cuts}
+#| tbl-cap: "What secondary headteachers reported doing under financial pressure, and what they reported it did. Ofsted, Making the cut (2020), survey of 103 secondary heads."
+tibble::tribble(
+  ~`What they did`, ~Share, ~`What they reported it did`, ~`Share `,
+  "Reduced teaching assistants", "82%", "Less individual support for pupils", "91%",
+  "Reduced teachers", "81%", "Less enrichment", "83%",
+  "Reduced non-classroom staff", "77%", "Worse pupil well-being", "80%",
+  "Raised class sizes", "91%", "Narrower curriculum", "67%",
+  "Cut learning resources", "82%", "Worse behaviour", "57%",
+  "Cut professional development", "68%", "Lower quality of teaching", "55%") %>%
+  knitr::kable(align = "lrlr")
+```
+
+The curriculum losses fell on design and technology, languages and
+music, and heads singled out pupils receiving SEN support without an
+education, health and care plan as the group losing most. Two further
+points from the same report are worth carrying. Nationally, results did
+not fall over the decade of real-terms cuts it covered, so the damage is
+real but does not show up where it is usually looked for. And the cuts
+are mostly to people, which fits what the Brighton & Hove accounts show:
+staff costs take between
+`r sprintf("%.0f%%", 100 * min(fex$staff_pct))` and
+`r sprintf("%.0f%%", 100 * max(fex$staff_pct))`
+of the ten schools' income. When @sec-finance-risk assumes a school sheds
+three quarters of the funding it loses, it is assuming cuts of this kind.
+
+### What that implies for the city
+
+Advice written for individual schools
+([Access Group, 2026](https://www.theaccessgroup.com/en-gb/blog/edu-schools-to-go-into-financial-deficit-how-to-get-out/);
+[The Headteacher, 2025](https://www.theheadteacher.com/school-procurement/revenue-generation/why-do-budget-deficits-happen-and-how-do-you-tackle-them))
+runs from quick savings --- benchmarking, procurement, energy, supply
+cover --- through aligning staffing to the curriculum, to what one of
+them calls strategic shifts: federation, rationalising buildings, and
+changing admission numbers. For Brighton & Hove the order of those
+matters more than any one of them.
+
+1. **A recovery plan cannot close a gap caused by a cohort that is not
+   coming back.** Recovery plans assume the pressure is temporary. The
+   fall in the Year 7 cohort is already in the primary schools
+   (@sec-demography). A school that balances its books by cutting to its
+   smaller roll will do so by the cuts in the table above, and will do it
+   again the following year.
+2. **Taking places out has to be done across the system.** The saving
+   from removing places comes from schools whose rolls hold up. Cutting
+   places only at the community schools does the opposite: children move
+   to the academies and faith schools, and in the model the community
+   schools' combined position in 2035 goes from
+   `r gbp(co_d("today", "comm_gap", 2035))` to
+   `r gbp(co_d("shrink", "comm_gap", 2035))`. Shared across every school
+   it improves to `r gbp(co_d("shrink_all", "comm_gap", 2035))`
+   (@sec-weighing). That is the case for asking the academies and the
+   faith schools to take fewer places too: the council cannot solve this
+   with the schools it runs alone.
+3. **Federation and amalgamation are different savings.** Two federated
+   schools keep their own budgets and their own lump sums and share a
+   head, a senior team and back-office costs. Two schools amalgamated
+   into one receive one lump sum rather than two --- currently
+   `r gbp(lump_now)` a school --- so an amalgamation has to save more
+   than that to come out ahead.
+4. **Closure moves the problem as well as ending it.** In the model,
+   closing Longhill leaves `r co_d("close_lh", "comm_in_deficit")`
+   community schools in deficit in 2030 against
+   `r co_d("today", "comm_in_deficit")` with it open, because its
+   children fill places elsewhere. But its balance comes back to the
+   council, its former pupils' journeys lengthen, and the segregation
+   and access costs are set out in @sec-weighing.
+5. **The timing is set by the reserves.** Hove Park and Cardinal Newman
+   are already past the point a recovery plan is required. Longhill's
+   reserve covers its projected gap for about
+   `r sprintf("%.1f", rk("Longhill")$years_left)` years and Blatchington
+   Mill's for about `r sprintf("%.1f", rk("Blatchington")$years_left)`.
+   Few of the options in this document could take effect that quickly,
+   so the council will be managing licensed deficits while it decides, and should plan the decision
+   around when each school's reserve runs out rather than around the
+   admissions calendar alone.
+
+::: {.callout-note appearance="simple"}
+## What this section adds, and what it does not
+
+**It is a reading of the rules and the evidence, not a legal opinion.**
+The council's own scheme for financing schools governs the detail ---
+repayment periods, the size of deficit it will license, what happens on
+closure --- and should be checked for each of these points.
+
+**Nothing here changes the model.** The projected gaps are the ones in
+@sec-finance-risk. What the rules add is who holds them, and what the
+evidence adds is what closing them costs pupils.
+:::
+
 ## Longhill's position {#sec-longhill-money}
 
 ```{r tbl-longhill-finance}
