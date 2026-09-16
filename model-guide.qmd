@@ -1614,6 +1614,7 @@ there: `r fmt_pct(100 * faith_kern / 6)` of a catchment's second
 preferences go to one of the two on average (§10).
 
 ::: {.callout-warning}
+
 ## What this means for a faith-school scenario
 
 Because the religion is inside $W_j$ rather than in a term of its own,
@@ -2216,6 +2217,7 @@ and the second destination is Priory School in Lewes, outside the city
 altogether.
 
 ::: {.callout-note}
+
 ## The balancing factor is not the accessibility index, but it is close
 
 The strategic view reports an accessibility index for each
@@ -2422,6 +2424,7 @@ qualify and 8 if not, a priority-6 child to 8. Nobody is removed from the
 queue by missing a tier.
 
 ::: {.callout-note}
+
 ## What the model cannot see: priorities 1 to 3
 
 Looked-after children, children with SEN or exceptional need, and
@@ -2712,6 +2715,7 @@ therefore sends more of its overflow to Patcham than one at the other
 end, without anyone having to write that rule down.
 
 ::: {.callout-note}
+
 ## When a school has moved
 
 The second preferences in the table were given with the schools where
@@ -2847,6 +2851,445 @@ tibble::tribble(
 3. Should a refused child be allowed out of the city, as they can be at
    the first stage?
 
+
+# The algorithm, end to end {#sec-algorithm}
+
+```{r algo-setup}
+#| include: false
+t_run <- median(replicate(5, system.time(
+  run_sim(inp, year = 2026, rules = list(rule = "priorities")))[["elapsed"]]))
+t_out <- median(replicate(5, system.time(outcomes(inp, r_ai))[["elapsed"]]))
+```
+
+Sections 2 to 10 take the model apart a term at a time. This one puts it
+back together in the order the code actually executes it, and shows where
+each of the simulator's controls attaches — because every control does
+its work by changing an input to one of these steps and making the whole
+sequence run again.
+
+```{mermaid}
+%%| fig-cap: "One run of the model. Orange is a control in the simulator; the arrow from it points at the step it changes. Dotted arrows are the second and third things a control touches. Everything downstream of that step is then recomputed."
+flowchart LR
+  subgraph CTL["What you can change"]
+    direction TB
+    yr(["Entry year"])
+    map(["Catchment map"])
+    site(["Longhill's site"])
+    att(["Attractiveness,<br/>per school"])
+    open(["Close or open<br/>a school"])
+    exc(["Paired-catchment<br/>exclusivity"])
+    gam(["How much the<br/>catchment counts"])
+    pan(["Places, per school"])
+    rule(["When a school<br/>is full"])
+  end
+
+  subgraph RUN["One run"]
+    direction TB
+    s1["1 · Cohort<br/>O_i scaled to the year (§2)"]
+    s2["2 · Destinations<br/>the open schools, and the cost<br/>table for the site in force (§4)"]
+    s3["3 · Attractiveness<br/>fitted W_j × the slider (§3)"]
+    s4["4 · Competition<br/>C_j from where the schools stand (§7)"]
+    s5["5 · Catchment indicator<br/>from the map in force (§6)"]
+    s6["6 · Populations<br/>who would take only one of a pair (§8)"]
+    s7["7 · Pull<br/>W_j c_ij^-β e^γ C_j^δ (§5, §6, §7)"]
+    s8["8 · Balance<br/>A_i, so every row places its children (§8)"]
+    s9["9 · Wanted<br/>T_ij, before any ceiling"]
+    d1{"10 · Any school<br/>over its admission<br/>number?"}
+    s10["11 · Ceiling<br/>the council's tiers at the community<br/>schools, proportional elsewhere (§9)"]
+    s11["12 · Re-offer the refused<br/>partner school, then the catchment's<br/>second preferences (§10)"]
+    s12["13 · Flows<br/>T_ij as offered"]
+  end
+
+  subgraph OUT["What comes out"]
+    direction TB
+    o1["Intakes, fill,<br/>displacement"]
+    o2["Journeys, and the<br/>deprived-journey gap"]
+    o3["Disadvantaged mix<br/>and segregation (§12)"]
+    o4["Funding and<br/>reserves"]
+  end
+
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> d1
+  d1 -- "yes" --> s10 --> s11 --> d1
+  d1 -- "no, or no school has room" --> s12
+  s12 --> o1 & o2 & o3 & o4
+
+  yr --> s1
+  site --> s2
+  open --> s2
+  att --> s3
+  map --> s5
+  exc --> s6
+  gam --> s7
+  pan --> d1
+  rule --> s10
+
+  site -.-> s4
+  site -.-> s11
+  open -.-> s4
+  att -.-> s4
+  map -.-> s10
+  map -.-> s11
+  pan -.-> s10
+
+  classDef ctl fill:#fdecd9,stroke:#d95f02,stroke-width:1px,color:#7a3600;
+  classDef run fill:#eef4fb,stroke:#1f3b57,stroke-width:1px,color:#102a43;
+  classDef dec fill:#fff7e6,stroke:#1f3b57,stroke-width:1px,color:#102a43;
+  classDef out fill:#edf6ef,stroke:#2b7a4b,stroke-width:1px,color:#102a43;
+  class yr,map,site,att,open,exc,gam,pan,rule ctl;
+  class s1,s2,s3,s4,s5,s6,s7,s8,s9,s10,s11,s12 run;
+  class d1 dec;
+  class o1,o2,o3,o4 out;
+```
+
+## What each control changes, and what it makes the model redo
+
+```{r algo-controls}
+#| tbl-cap: "Every control in the simulator, the step it attaches to, and what has to be recomputed when it moves."
+tibble::tribble(
+  ~Control, ~`What it sets`, ~`Recomputed`,
+  "Entry year",
+  "the cohort index that scales every zone's $O_i$ (§2.7)",
+  "everything: the rows change size, so the ceiling binds differently",
+  "Catchment map",
+  "which catchment each zone and each school belongs to (§6)",
+  "the catchment indicator, the priority-6 rule, and which school is a family's partner in the cascade",
+  "Longhill's site",
+  "which of the two routed cost tables is used, and where Longhill stands (§4, §7)",
+  "every journey to Longhill, its competition term, and the reference flows the overflow kernel is read against",
+  "Attractiveness, per school",
+  "a multiplier on the fitted $W_j$ (§3.6)",
+  "that school's pull everywhere, and every *other* school's competition term",
+  "Close or open a school",
+  "the set of destinations, including CoMArt (§8)",
+  "every neighbourhood's choice set and balancing factor, and the competition term city-wide",
+  "Paired-catchment exclusivity",
+  "a multiplier on the share of families who would take only one of a pair (§8)",
+  "how many origin-populations there are and what each can be offered",
+  "How much the catchment counts",
+  "a multiplier on every fitted $\\gamma_h$ together (§6.6)",
+  "the pull of a catchment school for the families in it",
+  "Places, per school",
+  "the admission number used as the ceiling (§9)",
+  "who is refused and therefore everything the cascade does",
+  "When a school is full",
+  "proportional ceiling or the council's tiers, the priority-6 share, and whether the FSM priority applies (§9)",
+  "the ceiling and the cascade, not the demand that goes into them") %>%
+  knitr::kable(align = "lll")
+```
+
+## What a control never changes
+
+This is the important half of the picture. **No control in the simulator
+moves a fitted parameter.** The things estimated in §3 and §5 to §7 —
+the balanced attractiveness, $\beta$, each catchment's $\gamma_h$,
+$\delta$ and $\sigma$ — are fixed when the input bundle is built, and a
+run reads them. So does the second-preference kernel (§10), the
+disadvantage pull $\lambda_j$ (§12), and the two routed cost tables,
+which are far too slow to build inside a run.
+
+That division is what the sliders mean. The catchment slider does not
+re-estimate how much families follow their catchment; it multiplies the
+estimate by a number you choose, and the honest reading of any slider
+position other than 1 is "what if this were different", never "this is
+what it would be".
+
+## Where the loops are
+
+Both are in the rationing: one loop, and a fixed sequence inside it.
+
+**The outer loop** is the one drawn above: cut every over-subscribed
+school back to its admission number, re-offer the children refused,
+which may overfill a school that had a little room, so cut again. In
+2026 it takes `r length(ov_rounds)` passes
+(`r paste(sprintf("%.0f", head(ov_rounds, length(ov_rounds) - 1)), collapse = ", then ")`
+children refused, then none). It stops when nothing is refused or no
+school has room left; children who cannot be placed anywhere stay
+unplaced rather than being forced over an admission number.
+
+**The sequence inside it** is the tier cascade within a single pass: a child who
+misses a capped tier at a community school drops into the next tier down
+(§9), in a fixed order rather than by iterating, and the two
+groups — FSM-eligible and everyone else — are carried through it
+separately so each places its own children.
+
+A third loop, outside the model, sits in the disadvantage layer (§12):
+it shares each neighbourhood's disadvantaged children over the flows it
+has already produced, spilling any excess where a school would otherwise
+be sent more disadvantaged children than children.
+
+## Why it recomputes rather than updates
+
+Everything above takes about
+`r sprintf("%.2f", t_run)` seconds for the model and another
+`r sprintf("%.2f", t_out)` for all of the outcome measures, on
+`r fmt_n(nrow(d_ai))` zone-school rows. That is fast enough that the
+simulator does not attempt to update anything incrementally: every change
+to any control re-runs the whole sequence from step 1. Nothing is cached
+between runs, so nothing can be stale, and two runs with identical
+settings are identical to the last decimal place.
+
+It also means the comparisons the simulator shows — this scenario against
+the baseline, or a school's fill now against 2030 — are two complete runs
+compared afterwards, not one run adjusted.
+
+# Who is disadvantaged, and where they go {#sec-dis}
+
+```{r dis-setup}
+#| include: false
+dp <- inp$params$dis
+o_now <- outcomes(inp, r_ai)
+dis_fit <- dp$fit %>% mutate(short = short_sch(name))
+dis_zone <- pmin(dp$k * inp$zones$idaci_score, 0.95)
+dis_city <- weighted.mean(dis_zone, inp$zones$Oi)
+```
+
+Everything up to here places **children**. The strategic view's
+integration measures need to know *which* children: how the city's
+disadvantaged Year 7 cohort is spread across the ten schools, how far
+those children travel, and what a scenario does to both. That is a layer
+on top of the model, and this section sets it out because every
+segregation number in this work depends on it.
+
+## The measure that was not good enough
+
+The first version of this work measured a school's intake by the
+**neighbourhoods** its children came from: sum the flows, weight by each
+neighbourhood's deprivation, done. It is the natural thing to do with a
+spatial interaction model, and it is wrong.
+
+```{r fig-dis-neigh}
+#| fig-cap: "Each school's disadvantaged intake share: what the neighbourhood measure gives, and what the school actually has. The neighbourhood measure is not a little noisy — it puts the schools in the wrong order."
+#| fig-height: 4.6
+dis_fit %>%
+  select(short, Neighbourhood = neighbourhood, Published = target) %>%
+  tidyr::pivot_longer(-short, names_to = "what", values_to = "share") %>%
+  mutate(what = factor(what, c("Neighbourhood", "Published")),
+         short = forcats::fct_reorder(short, share, max)) %>%
+  ggplot(aes(share, short, group = short)) +
+  geom_line(colour = "grey70", linewidth = 0.8) +
+  geom_point(aes(colour = what), size = 3) +
+  scale_x_continuous(labels = scales::percent) +
+  scale_colour_manual(values = c(Neighbourhood = "#d95f02", Published = "#1f3b57"),
+                      name = NULL,
+                      labels = c("Measured by the neighbourhoods children come from",
+                                 "What the school actually has")) +
+  labs(x = NULL, y = NULL,
+       title = "Within a mixed neighbourhood, families do not choose alike",
+       subtitle = "Disadvantaged share of the intake, ten city schools") +
+  theme_bh() + theme(legend.position = "top", legend.direction = "vertical",
+                     legend.justification = "left")
+```
+
+Longhill is the clearest case: the neighbourhoods its children come from
+are `r fmt_pct(100 * dis_fit$neighbourhood[dis_fit$short == "Longhill"])`
+disadvantaged, and the school is
+`r fmt_pct(100 * dis_fit$target[dis_fit$short == "Longhill"])`. Its
+catchment contains Rottingdean and Ovingdean as well as Whitehawk, and
+the two do not send their children to the same school. A measure that
+cannot see inside a neighbourhood cannot see that, and a segregation
+index built on it is measuring residential segregation with a school
+label attached.
+
+## So the children are placed explicitly
+
+Two ingredients, and one rule.
+
+**Each neighbourhood has a disadvantaged share.** As in §9, it is the
+IDACI score scaled by a single constant, capped at 95%:
+
+$$\text{disadvantaged share of zone } i \;=\;
+\min\!\left(`r sprintf("%.2f", dp$k)` \times \text{IDACI}_i,\; 0.95\right)$$
+
+**Each school has a pull.** $\lambda_j$ is how much more, or less,
+likely a disadvantaged child is to end up at school $j$ than the rest of
+the children in the same flow. It is one number per school, and it is
+fitted.
+
+**The rule.** Within each origin-population, the neighbourhood's
+disadvantaged children are shared over the schools that neighbourhood's
+children attend, in proportion to $T_{ij}\lambda_j$, and never more than
+$T_{ij}$ itself — a school cannot be sent more disadvantaged children
+than it is sent children. Where that cap binds, the excess spills to the
+other schools in the row and the sharing repeats.
+
+::: {.callout-important}
+
+## The flows themselves are never touched
+
+This layer *labels* children inside flows the model has already
+produced; it does not move anybody. Disadvantage plays no part in where
+the model sends children, in the ceiling, or in the re-offering. That
+is a deliberate separation — the places are decided by preference,
+distance and admission rules, and the disadvantage measure then reads
+off who is in them — but it does mean the model cannot represent a
+family's circumstances changing what they ask for.
+:::
+
+## What $\lambda$ is fitted to
+
+```{r dis-fit}
+#| tbl-cap: "The target for each school, and the pull that reproduces it. Community schools are fitted to their September 2026 Year 7 free-school-meal offers; the academies and the faith schools have no published Year 7 figure, so they are fitted to their whole-school disadvantaged share."
+dis_fit %>%
+  arrange(desc(target)) %>%
+  transmute(School = short,
+            `Whole school, published` = fmt_pct(100 * published),
+            `Year 7, 2026` = ifelse(is.na(year7_fsm), "—", fmt_pct(100 * year7_fsm)),
+            `Fitted to` = fmt_pct(100 * target),
+            `Modelled` = fmt_pct(100 * modelled),
+            `$\\lambda_j$` = sprintf("%.2f", lambda)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+Three things in that table need saying.
+
+**The Year 7 figures are higher than the whole-school ones at the
+community schools.** That is the free-school-meal admission priority
+working: it began with the September 2025 round, so a school's current
+Year 7 is more disadvantaged than its Years 8 to 11. Fitting to the
+whole-school figure would have calibrated the model to the policy's
+*absence*. This is the lag correction, and it is the reason the targets
+are mixed.
+
+**The academies and faith schools are fitted to the wrong vintage, for
+want of a right one.** No Year 7 breakdown is published for them. Their
+targets are the Department for Education's three-year mean, so if their
+Year 7 intakes have moved as the community schools' have, the model will
+not know.
+
+**Longhill's $\lambda$ is extreme.**
+`r sprintf("%.1f", dis_fit$lambda[dis_fit$short == "Longhill"])` against
+about 1 for a school taking its fair share. It has to be: the school is
+`r fmt_pct(100 * dis_fit$target[dis_fit$short == "Longhill"])`
+disadvantaged on an intake of only
+`r sprintf("%.0f", dis_fit$intake[dis_fit$short == "Longhill"])` children
+drawn from neighbourhoods that are, on the model's own numbers, much less
+disadvantaged than that. A large $\lambda$ on a small intake is a fragile
+thing, and it is the single number the segregation results are most
+sensitive to.
+
+```{r fig-dis-lambda}
+#| fig-cap: "The fitted pull on disadvantaged children, by school. Above 1 means a disadvantaged child in a given flow is likelier than their neighbours to end up there; below 1, less likely."
+#| fig-height: 4.2
+dis_fit %>%
+  mutate(short = forcats::fct_reorder(short, lambda),
+         side = lambda >= 1) %>%
+  ggplot(aes(lambda, short, fill = side)) +
+  geom_col(width = 0.7) +
+  geom_vline(xintercept = 1, colour = "grey40", linewidth = 0.5) +
+  geom_text(aes(label = sprintf("%.2f", lambda)), hjust = -0.15,
+            size = 3.1, colour = "grey30") +
+  scale_fill_manual(values = c(`FALSE` = "#1f3b57", `TRUE` = "#d95f02"), guide = "none") +
+  scale_x_continuous(expand = expansion(mult = c(0.01, 0.12))) +
+  labs(x = "λ", y = NULL,
+       title = "Two schools take far more than their flows would suggest",
+       subtitle = "Fitted pull on disadvantaged children, 2026, today's map and admission rules") +
+  theme_bh()
+```
+
+## What comes out of it
+
+```{r dis-out}
+#| tbl-cap: "The integration measures the strategic view reports, for the baseline run."
+tibble::tribble(
+  ~Measure, ~Value, ~`What it is`,
+  "Gorard segregation index", sprintf("%.3f", o_now$gorard),
+  "half the sum of each school's share of the city's disadvantaged children less its share of all of them; 0 is an even spread",
+  "Most and least disadvantaged intake",
+  sprintf("%s and %s", fmt_pct(100 * o_now$intake_hi), fmt_pct(100 * o_now$intake_lo)),
+  "the ends of the same distribution",
+  "Deprived-journey gap", sprintf("%+.1f minutes", o_now$dep_gap),
+  "how much longer a disadvantaged child's journey is than everyone else's",
+  "City disadvantaged share", fmt_pct(100 * dis_city),
+  "the model's own cohort, from the scaled IDACI scores") %>%
+  knitr::kable(align = "lll")
+```
+
+Every scenario in the strategic view is scored on the first and the
+third of those. A boundary redraw, a closure, a change to admission
+priorities: what moves is which schools the flows go to, and this layer
+turns that into a segregation number.
+
+::: {.callout-warning}
+
+## This measure has changed sign more than once
+
+The direction of a headline finding — whether moving Longhill's
+catchment out of Whitehawk raises or lowers segregation — has changed
+three times during this work, and every change came from a correction to
+*measurement*, not to the scenario:
+
+1. on the neighbourhood measure, it lowered segregation;
+2. on the whole-school fit against today's map, it raised it;
+3. fitted on the map in force before the change, it was flat;
+4. on Year 7 offers with the corrected neighbourhood weighting, it
+   raises it again.
+
+The scenario never moved. That is a warning about how much weight a
+single segregation index can carry, and it is why the strategic view
+reports the direction with the calibration it depends on stated
+alongside.
+:::
+
+## Checks you can run
+
+```{r dis-checks}
+#| tbl-cap: "What the disadvantage layer should satisfy."
+dis_now <- dis_flows(inp, r_ai$flows)
+dis_expected <- r_ai$flows %>%
+  distinct(orig, .keep_all = TRUE) %>%
+  mutate(share = pmin(dp$k * idaci_score, 0.95)) %>%
+  summarise(n = sum(share * Oi_pop)) %>% pull(n)
+tibble::tribble(
+  ~Check, ~Result,
+  "Every school reproduces its target share",
+  sprintf("largest error %.3f percentage points",
+          100 * max(abs(dis_fit$modelled - dis_fit$target))),
+  "No flow carries more disadvantaged children than children",
+  sprintf("largest excess %.1e children", max(dis_now - r_ai$flows$flow)),
+  "The city's disadvantaged children are all placed",
+  sprintf("%s placed against %s in the cohort",
+          fmt_n(round(sum(dis_now))), fmt_n(round(dis_expected))),
+  "The scaling differs from the admission-priority one, and should",
+  sprintf("%.2f × IDACI here against %.2f × IDACI for the FSM tiers (§9)",
+          dp$k, rl$fsm_takeup),
+  "The pull is held fixed while scenarios change",
+  "yes: fitted once on today's map and rules, then never re-fitted") %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+- **Two different disadvantage scalings live in this model**, and they
+  are not a mistake. §9's `r sprintf("%.2f", rl$fsm_takeup)` × IDACI is
+  the group with *current* free-school-meal eligibility, because that is
+  who the admission priority applies to. This section's
+  `r sprintf("%.2f", dp$k)` × IDACI is the broader disadvantaged group —
+  free school meals at any point in six years, plus looked-after children
+  — because that is what the published school-level figures count. They
+  answer different questions and are calibrated to different targets.
+- **$\lambda$ is a summary of everything not modelled.** Sibling
+  patterns, transport cost, appeals, the confidence to name an
+  over-subscribed school first: all of it is inside one number per
+  school.
+- **It is fitted on one year.** A single admissions round, on the current
+  map, under the current rules.
+- **A scenario's segregation number is only as good as $\lambda$.** The
+  model holds the pull fixed while it moves boundaries and schools, which
+  assumes a school's relationship with disadvantaged families travels
+  with it. For a relocation like Elm Grove that is a strong assumption
+  and it is impossible to test from published data.
+
+## Questions this raises
+
+1. Should $\lambda$ be modelled rather than fitted — as a function of
+   distance, catchment and school characteristics — so it can respond to
+   a scenario instead of being carried through it?
+2. Should the disadvantage layer feed back into the flows, so that a
+   family's circumstances change what they ask for as well as what they
+   get?
+3. Is the Gorard index the right summary, given how much of the movement
+   above came from re-measurement rather than from the system changing?
+
 # The matrix, filled in {#sec-end}
 
 ```{r end-setup}
@@ -2978,6 +3421,8 @@ tibble::tribble(
   "the council's published admission arrangements", "§9",
   "Overflow kernel", sprintf("%d shares", length(p$overflow)),
   "second preferences by home catchment, from the same table", "§10",
+  "Disadvantage pull $\\lambda_j$", sprintf("%.2f to %.2f", min(inp$params$dis$lambda), max(inp$params$dis$lambda)),
+  "fitted so each school reproduces its published disadvantaged intake", "§12",
   "Out-of-city schools", sprintf("%d, decay %.1f on straight-line km",
                                  length(p$outside$W), p$outside$decay),
   "fitted to the children the city loses to East Sussex", "§8") %>%
@@ -3007,20 +3452,15 @@ the four fitted quantities and the less on the published ones.
 
 ## What this guide does not cover
 
-Three things in the strategic view are built **on top of** the model in
+Two things in the strategic view are built **on top of** the model in
 this guide rather than being part of it, and each needs its own account:
 
-- **The disadvantage flows.** Which of a neighbourhood's children are
-  disadvantaged, and how they sort between schools, is a separate layer
-  calibrated to the Year 7 free-school-meal offers. The segregation
-  index, the deprived-journey gap and everything in the strategic view's
-  integration section rest on it.
 - **The finances.** Per-pupil funding against the cost of running a
   school at a given size, which turns an intake into a deficit.
 - **The scenarios themselves.** Which combinations of closure,
   relocation, boundary and admission rule are worth running, and how
   their results should be read.
 
-Everything above is the machinery those three use. It should now be
+Everything above is the machinery those two use. It should now be
 possible to check any number in the strategic view by following it back
-through these ten sections to a published source.
+through these sections to a published source.
