@@ -19,19 +19,22 @@ library(scales)
 knitr::opts_chunk$set(dev = "ragg_png", dpi = 150)
 
 oi  <- bh_data("open_inputs.rds")
+mt  <- bh_data("model_terms.rds")
 inp <- readRDS(here::here("app", "data", "sim_inputs.rds"))
 z   <- oi$zones
 zc  <- z %>% filter(area != "Expansion area")
 dem <- inp$demand
+cal <- mt$calibrated
 
 # The state-sector share is a single constant in the open bundle's build.
-# It is recovered here from the projection itself rather than retyped, so
-# this document cannot drift from the number the model used.
+# It is recovered here from the projection rather than retyped, so this
+# document cannot drift from the number the model used.
 dem_raw <- readr::read_csv(here::here("data", "open_demand_projection.csv"),
                            show_col_types = FALSE)
 STATE_SHARE <- with(dem_raw[dem_raw$area == "Brighton & Hove" &
                               dem_raw$entry_year == 2026, ],
                     state_demand / children)
+W5 <- cal$W / mean(cal$W)
 ```
 
 # What this document is
@@ -51,8 +54,8 @@ $$
 | Symbol | Meaning | Section |
 |:--|:--|:--|
 | $T_{ij}$ | children from neighbourhood $i$ modelled as attending school $j$ | the interior of the matrix |
-| $O_i$ | children in neighbourhood $i$ entering Year 7 | §2, this one |
-| $W_j$ | how attractive school $j$ is, net of where it stands | to follow |
+| $O_i$ | children in neighbourhood $i$ entering Year 7 | §2 |
+| $W_j$ | how attractive school $j$ is, net of where it stands | §3 |
 | $c_{ij}$ | routed walk-and-bus journey time from $i$ to $j$ | to follow |
 | $\beta$ | distance decay | to follow |
 | $\gamma_h$ | catchment term, fitted for each catchment $h$ | to follow |
@@ -78,14 +81,16 @@ are set out.
 :::
 
 ```{r matrix-blank}
-#| tbl-cap: "The shape of the model, for four neighbourhoods and four schools. This section fills in the last column; each section that follows fills in another margin, and the interior cells come last."
+#| tbl-cap: "The shape of the model, for four neighbourhoods and four schools. Sections 2 and 3 fill in the two margins shown; the rest follow, and the interior cells come last."
 ex_zones <- zc %>% arrange(desc(Oi)) %>% slice(1:4)
+sch4 <- c("Dorothy Stringer School", "Varndean School",
+          "Longhill High School", "Cardinal Newman Catholic School")
 data.frame(
   Neighbourhood = c(sub("[|].*$", "", ex_zones$zone), "$W_j$"),
-  `Dorothy Stringer` = c(rep("$T_{ij}$", 4), "?"),
-  Varndean = c(rep("$T_{ij}$", 4), "?"),
-  Longhill = c(rep("$T_{ij}$", 4), "?"),
-  `Cardinal Newman` = c(rep("$T_{ij}$", 4), "?"),
+  `Dorothy Stringer` = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[1]]])),
+  Varndean = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[2]]])),
+  Longhill = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[3]]])),
+  `Cardinal Newman` = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[4]]])),
   `$A_i$` = c(rep("?", 4), ""),
   `$O_i$ (2026)` = c(sprintf("%.1f", ex_zones$Oi), ""),
   check.names = FALSE) %>%
@@ -134,15 +139,16 @@ z %>%
   knitr::kable(align = "llllrr")
 ```
 
-## Where the numbers come from
+## Where the numbers come from {#sec-oi-sources}
 
 | Input | Source | What it supplies |
 |:--|:--|:--|
-| Ward population by single year of age, mid-2022 | ONS small area population estimates | how many children of each age live in each ward |
-| LSOA age-11 share | ONS small-area population by single year of age | how a ward's children divide between its LSOAs |
-| Postcode directory, February 2024 | ONS Postcode Directory | which ward and LSOA each postcode is in |
-| Catchment boundaries | The council's option Z map and the map it replaced | the catchment half of the zone key |
-| Year 7 offers, 2024 | Council allocation factsheet | the state-sector share |
+| Ward population by single year of age, mid-2022 | [ONS ward-level mid-year population estimates](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/wardlevelmidyearpopulationestimatesexperimental) (`sapewardstablefinal.xlsx`) | how many children of each age live in each ward |
+| LSOA population by single year of age | [ONS lower super output area mid-year population estimates](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/lowersuperoutputareamidyearpopulationestimates) (`lsoa_age_11_props_totals.xlsx`) | how a ward's children divide between its LSOAs |
+| Postcode directory, February 2024 | [ONS Postcode Directory, ONS Open Geography Portal](https://geoportal.statistics.gov.uk/) | which ward and LSOA each postcode is in |
+| Catchment boundaries | [Brighton & Hove City Council, school admissions](https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions) — the option Z map in force from 2026 entry, and the map it replaced | the catchment half of the zone key |
+| Year 7 offers, 2024 | [Allocation factsheet, Year 7 places September 2024](https://www.brighton-hove.gov.uk/schools-and-learning/school-policies-reports-strategies-and-other-documents/allocation-factsheet-year-7-places-september-2024) | the state-sector share |
+| LSOA boundaries | [ONS Open Geography Portal](https://geoportal.statistics.gov.uk/) | drawing, and joining the age data to zones |
 
 None of it is pupil-level. The smallest thing any of these sources
 describes is a postcode count or an LSOA age band.
@@ -173,28 +179,70 @@ the same year.
 
 **Step 4 — a ward is divided between its zones.** ONS publishes the age
 detail at ward level, so each ward's children are shared out between the
-zones that sit in it, weighted by the age-11 population share of each
-zone's LSOA:
+zones in it. The weight for a zone is its LSOA's age-11 population share,
+divided between the zones that LSOA is cut into by their postcode counts:
 
-$$O_i(2026) \;=\; \text{ward children}_{w(i)} \times \frac{u_i}{\sum_{k \in w(i)} u_k} \times \text{state share}$$
+$$u_i \;=\; \underbrace{p_{\ell(i)}}_{\text{LSOA age-11 share}} \times
+\underbrace{\frac{n_i}{\sum_{k \in \ell(i)} n_k}}_{\text{postcodes in this zone}},
+\qquad
+O_i(2026) \;=\; \text{ward children}_{w(i)} \times \frac{u_i}{\sum_{k \in w(i)} u_k} \times \text{state share}$$
 
-where $u_i$ is the age-11 share of zone $i$'s LSOA and $w(i)$ is the ward
-the zone sits in. `r fmt_n(sum(!is.na(z$prop)))` of the
-`r fmt_n(nrow(z))` zones use that ONS share; the
-`r fmt_n(sum(is.na(z$prop)))` in the expansion area outside the city fall
-back to postcode counts.
+where $\ell(i)$ is the zone's LSOA, $w(i)$ its ward and $n_i$ its
+postcode count. `r fmt_n(sum(!is.na(z$prop)))` of the `r fmt_n(nrow(z))`
+zones use the ONS age share; the `r fmt_n(sum(is.na(z$prop)))` in the
+expansion area outside the city fall back to postcode counts alone.
 
 ::: {.callout-note appearance="simple"}
-## Why not divide by postcode count
+## Why not divide a ward by postcode count
 
 Splitting a ward's children by how many postcodes each LSOA holds assumes
 every postcode contains the same number of eleven-year-olds. Family
 housing, student housing and retirement housing differ enormously on
 that, and the difference runs along exactly the lines catchment
-boundaries follow. An earlier version of this work used postcode counts,
-and the deprivation contrast between the two halves of a paired catchment
-was almost entirely smoothed away.
+boundaries follow. An earlier version of this work used postcode counts
+between LSOAs, and the deprivation contrast between the two halves of a
+paired catchment was almost entirely smoothed away. Postcode counts do
+the narrower job above — dividing one LSOA between its own fragments,
+where nothing finer is published.
 :::
+
+::: {.callout-important}
+## Corrected: a split LSOA used to be counted twice
+
+Until this version, each zone of a split LSOA inherited the **whole**
+LSOA's age-11 share as its weight. Ward and city totals were unaffected,
+because the denominator grew too, but inside a ward a split LSOA took
+about 1.7 to 1.9 times the share its population implied and the unsplit
+LSOAs around it took correspondingly less. The splits sit exactly on the
+catchment boundaries, so the error was concentrated in the neighbourhoods
+these questions turn on — Whitehawk and Kemptown among them.
+
+The weight is now divided between a split LSOA's zones by their postcode
+counts, as in the formula above. The table below is the check that used
+to fail.
+:::
+
+```{r split-check}
+#| tbl-cap: "Each LSOA's modelled share of its ward against the share its age-11 population implies, grouped by how many zones the LSOA is split into. A ratio of 1 is agreement."
+chk <- z %>% filter(!is.na(prop)) %>%
+  group_by(ward) %>% mutate(zone_share = Oi / sum(Oi)) %>% ungroup() %>%
+  group_by(ward, lsoa) %>%
+  summarise(prop = first(prop), zone_share = sum(zone_share),
+            n_zones = n(), .groups = "drop") %>%
+  group_by(ward) %>% mutate(prop_share = prop / sum(prop)) %>% ungroup() %>%
+  mutate(ratio = zone_share / prop_share)
+chk %>%
+  group_by(`Zones the LSOA is split into` = n_zones) %>%
+  summarise(LSOAs = n(), `Median ratio` = sprintf("%.2f", median(ratio)),
+            Lowest = sprintf("%.2f", min(ratio)),
+            Highest = sprintf("%.2f", max(ratio)), .groups = "drop") %>%
+  knitr::kable(align = "rrrrr")
+```
+
+`r fmt_n(sum(z$Oi[z$lsoa %in% chk$lsoa[chk$n_zones > 1]]))` of the
+`r fmt_n(sum(z$Oi))` children in the model live in a split LSOA, so the
+correction moves children between zones inside those wards without
+changing any ward or city total.
 
 ## A worked example
 
@@ -203,18 +251,18 @@ was almost entirely smoothed away.
 wd <- z %>% filter(ward == (z %>% arrange(desc(Oi)) %>% slice(1) %>% pull(ward)))
 wd %>%
   arrange(desc(Oi)) %>%
-  transmute(Zone = sub("[|]", " | ", zone), LSOA = lsoa,
+  transmute(Zone = sub("[|]", " | ", zone), LSOA = lsoa, Postcodes = n_pcd,
             `Age-11 share of LSOA` = sprintf("%.4f", prop),
             `Share of the ward` = sprintf("%.3f", share_in_ward),
             `Ward children` = fmt_n(ward_children),
             `$O_i$ (2026)` = sprintf("%.1f", Oi)) %>%
-  knitr::kable(align = "llrrrr")
+  knitr::kable(align = "llrrrrr")
 ```
 
 Reading the first row: the ward holds `r fmt_n(wd$ward_children[1])`
-children of this cohort; that zone's LSOA carries
-`r sprintf("%.1f%%", 100 * max(wd$share_in_ward))` of the ward's age-11
-weight; multiplied by the state-sector share of
+children of this cohort; that zone carries
+`r sprintf("%.1f%%", 100 * max(wd$share_in_ward))` of the ward's weight;
+multiplied by the state-sector share of
 `r sprintf("%.3f", STATE_SHARE)`, the zone holds
 `r sprintf("%.1f", max(wd$Oi))` Year 7 children in 2026.
 
@@ -232,6 +280,56 @@ zc %>% group_by(Catchment = catchment) %>%
 The city's zones hold `r fmt_n(sum(zc$Oi))` children for 2026 entry. That
 is the model's entire demand before any child chooses anything, and every
 intake the simulator reports is drawn from it.
+
+### Where the city totals come from {#sec-oi-provenance}
+
+Two different city-wide totals appear in this work, and they have
+different provenance. It is worth being explicit about which is which.
+
+**Offers actually made** are the council's own published figures. Its
+[allocation factsheets](https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions)
+are issued after each March allocation round, and the series from 2010 to
+2026 was transcribed school by school in the earlier
+[Brighton and Hove allocations](https://adamdennett.github.io/BH_Schools_2/brighton_and_hove_allocations.html)
+analysis. This bundle does not retype them: `public/R/01a_factsheet_panel.R`
+re-extracts the year-by-year tables from that document, so every offer,
+preference and admission number here traces back to a published council
+factsheet.
+
+**Resident children** are ONS, as set out in @sec-oi-sources. They are a
+different quantity from offers: a resident child may go to an independent
+school, or out of the city.
+
+**The model's city total is the first anchored on the second.** The
+state-sector share of `r sprintf("%.3f", STATE_SHARE)` is the council's
+published 2024 offer total divided by the ONS resident cohort for the same
+entry year, so the model's demand is ONS children scaled to the level the
+council's own offers imply. It is not a free-floating estimate.
+
+```{r oi-provenance}
+#| tbl-cap: "The two totals, and the model's demand between them."
+fp <- bh_data("factsheet_panel.rds")$factsheets %>% filter(name != "Total")
+off <- fp %>% group_by(year) %>% summarise(offers = sum(off_total), .groups = "drop")
+tibble::tribble(
+  ~Quantity, ~Source, ~Value,
+  "Year 7 offers made, 2024", "Council allocation factsheet",
+  fmt_n(off$offers[off$year == 2024]),
+  "Year 7 offers made, latest round", "Council allocation factsheet",
+  sprintf("%s (%d)", fmt_n(off$offers[which.max(off$year)]), max(off$year)),
+  "Resident children, 2024 entry", "ONS ward estimates, mid-2022",
+  fmt_n(dem_raw$children[dem_raw$area == "Brighton & Hove" & dem_raw$entry_year == 2024]),
+  "State-sector share", "The first divided by the second",
+  sprintf("%.3f", STATE_SHARE),
+  "Model demand, 2026 entry", "ONS children x state share",
+  fmt_n(sum(zc$Oi))) %>%
+  knitr::kable(align = "llr")
+```
+
+The model's 2026 demand and the offers made in the 2026 round are not the
+same number and should not be expected to match exactly: the offers
+include children placed at a school they did not name, and exclude
+children who took a place outside the city. The comparison is still worth
+making, and it is the first check listed in @sec-oi-checks.
 
 ## The slider: how $O_i$ changes with the entry year {#sec-oi-year}
 
@@ -276,7 +374,7 @@ Longhill catchment line falls faster than the city's does — so comparing
 catchment totals year by year compares two different claims rather than
 two estimates of one thing.
 
-## Checks you can run
+## Checks you can run {#sec-oi-checks}
 
 ```{r oi-checks}
 #| tbl-cap: "Identities that should hold, and what they give as this document is built."
@@ -294,8 +392,8 @@ tibble::tribble(
   sprintf("%s against %s", fmt_n(sum(zc$Oi)), fmt_n(dem$cohort[dem$year == 2026])),
   "The index is exactly 1 in the base year",
   sprintf("%.6f", dem$index[dem$year == 2026]),
-  "Every zone keeps its share of the city in every year",
-  sprintf("%d zones, one index per year", nrow(zc))) %>%
+  "A split LSOA takes the share its population implies",
+  sprintf("largest ratio %.2f", max(chk$ratio))) %>%
   knitr::kable(align = "lr")
 ```
 
@@ -307,46 +405,6 @@ planning appendix.
 
 ## What to be careful about
 
-::: {.callout-important}
-## A split LSOA is counted twice in its ward's weights
-
-When a catchment boundary cuts an LSOA into two zones, each zone inherits
-the **whole** LSOA's age-11 share as its weight. The ward total is
-unaffected, because the denominator grows too — but within that ward a
-split LSOA takes a larger share of the children than its population
-implies, and the unsplit LSOAs around it take less.
-
-```{r split-check}
-#| tbl-cap: "Each LSOA's modelled share of its ward against the share its age-11 population implies, grouped by how many zones the LSOA is split into. A ratio of 1 is agreement."
-chk <- z %>% filter(!is.na(prop)) %>%
-  group_by(ward) %>% mutate(zone_share = Oi / sum(Oi)) %>% ungroup() %>%
-  group_by(ward, lsoa) %>%
-  summarise(prop = first(prop), zone_share = sum(zone_share),
-            n_zones = n(), .groups = "drop") %>%
-  group_by(ward) %>% mutate(prop_share = prop / sum(prop)) %>% ungroup() %>%
-  mutate(ratio = zone_share / prop_share)
-chk %>%
-  group_by(`Zones the LSOA is split into` = n_zones) %>%
-  summarise(LSOAs = n(), `Median ratio` = sprintf("%.2f", median(ratio)),
-            Lowest = sprintf("%.2f", min(ratio)),
-            Highest = sprintf("%.2f", max(ratio)), .groups = "drop") %>%
-  knitr::kable(align = "rrrrr")
-```
-
-`r fmt_n(sum(z$Oi[z$lsoa %in% chk$lsoa[chk$n_zones > 1]]))` of the
-`r fmt_n(sum(z$Oi))` children in the model live in a split LSOA, and the
-splits sit exactly where catchment boundaries cut through neighbourhoods
-— the Whitehawk and Kemptown zones among them. The fix is one line:
-divide an LSOA's weight between its zones, by postcode count or by any
-better within-LSOA measure, instead of giving each zone the whole share.
-**Nothing has been changed yet.** It is recorded here so that the
-decision is explicit, and so that the size of it is known before anything
-downstream is re-run.
-:::
-
-The rest of what this term assumes is in the code rather than hidden by
-it, but is worth stating in one place:
-
 - **The base is mid-2022.** Migration into or out of the city since then
   is not in the counts, and a child who has moved between wards is still
   counted where they were.
@@ -356,7 +414,7 @@ it, but is worth stating in one place:
   — then $O_i$ is too high in some places and too low in others.
 - **Ward-level age detail.** Within a ward, the LSOA age-11 distribution
   does the work; how children are distributed inside an LSOA is not
-  observed at all.
+  observed, so postcode counts stand in for it where a boundary cuts one.
 - **Peacehaven and the expansion area** are carried in the open bundle
   but excluded from the simulator's zones. Peacehaven Community School is
   a destination in the model, not a source of demand.
@@ -365,10 +423,209 @@ it, but is worth stating in one place:
 
 ## Questions this raises
 
-1. Should the split-LSOA weighting be corrected, and if so, on what
-   within-LSOA measure — postcode counts, or something better?
-2. Should the state-sector share vary by neighbourhood, given that
+1. Should the state-sector share vary by neighbourhood, given that
    independent-school take-up does?
-3. Should the year slider move the *geography* of demand as well as its
+2. Should the year slider move the *geography* of demand as well as its
    size — that is, should each catchment carry its own projection, as the
    council's forecasts do?
+
+# $W_j$: how attractive each school is {#sec-wj}
+
+## What it is
+
+$W_j$ is the pull of school $j$ on a family, **net of where the school
+stands**. It is dimensionless, scaled so the city average is 1, and it
+enters the model multiplicatively: doubling $W_j$ doubles the numerator
+of every flow into $j$ before distance, catchment and competition have
+their say. It also enters the competing-destinations term, because a
+school's rivals count for more when they are schools families want.
+
+It is the hardest term in the model to pin down, because everything
+observable about a school is entangled with where it is. A school with
+high attainment may be sought after because it teaches well, or because
+it sits where better-off families already live.
+
+## Two layers: the open specifications, and the fitted values
+
+**Layer one — the open specifications.** The open bundle carries five
+candidate measures of attractiveness, so that a conclusion can be tested
+across all of them rather than resting on one.
+
+```{r wj-specs}
+#| tbl-cap: "The five open specifications, each scaled so the city average is 1. Weighted preferences count ranks 1 to 3, a second preference worth half a first and a third a quarter."
+oi$attract %>%
+  transmute(School = short_sch(name), PAN = pan, `Attainment 8` = round(att8, 1),
+            Equal = sprintf("%.2f", W_equal), `By PAN` = sprintf("%.2f", W_pan),
+            `First preferences` = sprintf("%.2f", W_prefs),
+            `Weighted preferences` = sprintf("%.2f", W_wprefs),
+            `By Attainment 8` = sprintf("%.2f", W_att8)) %>%
+  arrange(desc(as.numeric(`Weighted preferences`))) %>%
+  knitr::kable(align = "lrrrrrrr")
+```
+
+The central one is **weighted preferences per place**: the council's
+published factsheets, pooled over the most recent rounds, counting first,
+second and third preferences with a geometric discount of 0.5 per rank,
+divided by the admission number. The paired catchments are why: a family
+in Stringer / Varndean or Hove Park / Blatchington Mill must rank two
+local schools against each other, so a first-preference count reads a
+school families put second as one nobody wanted.
+
+**Layer two — the fitted values the simulator uses.** The full model does
+not take any of those five as given. It **balances** $W_j$ so that the
+model reproduces the share of the city's first preferences each school
+actually receives, using the council's catchment-level preference table
+from its evidence to the Schools Adjudicator. The catchment terms
+$\gamma_h$ are fitted in the same loop (§4, to follow), because the two
+trade off against each other.
+
+$$W_j \;\leftarrow\; W_j \left(\frac{\text{target share}_j}{\text{modelled share}_j}\right)^{0.8},
+\qquad \text{repeat until } \max_j |\text{modelled} - \text{target}| < 10^{-6}$$
+
+starting from the weighted-preference values, with the result rescaled to
+a city mean of 1. The exponent 0.8 is damping: it stops the balancing
+oscillating around the target. This is the same device as the balancing
+factor $A_i$, applied to the other margin of the matrix — $A_i$ makes
+every neighbourhood place all its children, and this makes every school
+receive the share of first preferences it is observed to receive.
+
+```{r wj-fitted}
+#| tbl-cap: "The fitted attractiveness the simulator's sliders multiply, beside the weighted-preference measure it starts from, and each school's target share of the city's first preferences."
+tibble(name = names(W5), W5 = as.numeric(W5)) %>%
+  left_join(oi$attract %>% select(name, W_wprefs, att8), by = "name") %>%
+  left_join(tibble(name = names(cal$target_first_prefs),
+                   target = as.numeric(cal$target_first_prefs)), by = "name") %>%
+  arrange(desc(W5)) %>%
+  transmute(School = short_sch(name),
+            `Weighted preferences` = sprintf("%.2f", W_wprefs),
+            `Fitted $W_j$` = sprintf("%.2f", W5),
+            `Target share of first preferences` = sprintf("%.1f%%", 100 * target),
+            `Attainment 8` = sprintf("%.1f", att8)) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+```{r fig-wj}
+#| fig-cap: "The fitted attractiveness against the measure it starts from. A school above the line is one the model has to make more attractive than its weighted preferences suggest to reproduce the preferences each catchment gives it."
+#| fig-height: 4.6
+tibble(name = names(W5), W5 = as.numeric(W5)) %>%
+  left_join(oi$attract %>% select(name, W_wprefs), by = "name") %>%
+  ggplot(aes(W_wprefs, W5)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey60", linetype = "31") +
+  geom_point(size = 3.4, colour = "#1f3b57") +
+  ggrepel::geom_text_repel(aes(label = short_sch(name)), size = 3.4, seed = 1,
+                           colour = "#1f3b57") +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Weighted preferences per place (city mean = 1)",
+       y = "Fitted attractiveness (city mean = 1)",
+       title = "What the balancing does to the starting values") +
+  theme_bh()
+```
+
+## Where it sits in the matrix
+
+```{r matrix-wj}
+#| tbl-cap: "The same four neighbourhoods and schools. Two margins are now filled: the children in each neighbourhood, and the pull of each school."
+data.frame(
+  Neighbourhood = c(sub("[|].*$", "", ex_zones$zone), "$W_j$"),
+  `Dorothy Stringer` = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[1]]])),
+  Varndean = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[2]]])),
+  Longhill = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[3]]])),
+  `Cardinal Newman` = c(rep("$T_{ij}$", 4), sprintf("%.2f", W5[[sch4[4]]])),
+  `$A_i$` = c(rep("?", 4), ""),
+  `$O_i$ (2026)` = c(sprintf("%.1f", ex_zones$Oi), ""),
+  check.names = FALSE) %>%
+  knitr::kable(align = "lccccrr")
+```
+
+## What the attractiveness slider does
+
+Each school's slider multiplies its fitted $W_j$, from
+`r sprintf("%.2f", 0.25)` to `r sprintf("%.0f", 4)` times. Nothing else
+changes: the same journey times, the same catchment terms, the same
+admission numbers. Three details are worth knowing.
+
+- **The multiplier is applied to the fitted value**, not to weighted
+  preferences, so a slider at 1 reproduces the model exactly.
+- **The out-of-city schools are not touched by it.** Priory, Peacehaven,
+  Seahaven and Seaford Head carry their own fitted attractiveness and a
+  decay on straight-line distance, and the sliders do not reach them.
+- **CoMArt has no preferences**, because it does not exist. When it is
+  opened, it borrows the attractiveness of
+  `r inp$comart$w_from_short` as its starting value, and its slider moves
+  from there.
+
+## Turning a multiplier into something meaningful
+
+A slider position is not a quantity anyone outside a model can judge, so
+the app converts it to the one published number families appear to
+respond to. Across the ten city schools, the fitted attractiveness is
+log-linear in Attainment 8:
+
+$$\log W_j = a + b \cdot \text{Attainment 8}_j,
+\qquad b = `r sprintf("%.4f", inp$attain$slope)`,
+\quad R^2 = `r sprintf("%.2f", inp$attain$r2)`,
+\quad n = `r inp$attain$n`$$
+
+so a point of Attainment 8 is worth about
+`r fmt_pct(100 * inp$attain$per_point, 0)` more attractiveness, and a
+multiplier $m$ inverts to $\log(m) / b$ points. That is how the simulator
+answers "how good would this school have to be to fill?" — and it is an
+association, not a lever: Attainment 8 is itself largely a description of
+who a school admits.
+
+## Checks you can run {#sec-oi-checks}
+
+```{r wj-checks}
+#| tbl-cap: "Identities and fits that should hold for the attractiveness term."
+own <- cal$own
+tibble::tribble(
+  ~Check, ~Result,
+  "Fitted attractiveness averages 1 across the city",
+  sprintf("%.6f", mean(W5)),
+  "Balanced first-preference shares match the council's table",
+  sprintf("largest gap %.4f percentage points",
+          100 * max(abs(cal$cells$m5_share - cal$cells$obs_share))),
+  "Share of each catchment's first preferences to its own school",
+  sprintf("observed %.0f%% to %.0f%%, modelled %.0f%% to %.0f%%",
+          100 * min(own$observed), 100 * max(own$observed),
+          100 * min(own$M5), 100 * max(own$M5)),
+  "Attainment 8 explains the fitted values",
+  sprintf("R2 %.2f on %d schools", inp$attain$r2, inp$attain$n),
+  "A slider at 1 reproduces the published model",
+  "checked in app/tests/check.R") %>%
+  knitr::kable(align = "lr")
+```
+
+## What to be careful about
+
+- **Ten observations.** Every statement about *why* a school is
+  attractive rests on ten schools. The balancing is an accounting
+  identity across those ten; the Attainment 8 fit is a description of
+  them, not evidence about causes.
+- **Attractiveness and location are only partly separated.** The
+  balancing asks what pull each school needs *given* where it stands and
+  how far families will travel, which is a real separation — but it
+  inherits whatever $\beta$ and $\gamma_h$ are set to. If distance decay
+  were weaker, the fitted $W_j$ would be different.
+- **The faith schools have no catchment**, so nothing in the model
+  restricts who may choose them. Their fitted attractiveness absorbs the
+  religious criteria that really ration those places, which is why they
+  carry high values.
+- **Peacehaven's preferences are not published** by the council, so both
+  preference measures are filled at the lowest observed rate in the city.
+  That is an assumption, and it flatters Longhill: a weak Peacehaven
+  keeps eastern children in the city.
+- **$W_j$ does not move with time.** A school that improves, or a new
+  building, is a slider position rather than anything the model
+  generates. Whether attractiveness should respond to a school's roll,
+  its intake or its results is exactly the dynamic question §2.7 flags.
+
+## Questions this raises
+
+1. Should $W_j$ be allowed to vary by family type — by deprivation, say —
+   rather than being one number per school for the whole city?
+2. Should the balancing target first preferences, as now, or all three
+   ranks discounted as the open specification does?
+3. Should a school's attractiveness respond to its own intake over time,
+   which is the feedback loop the strategic view describes but the model
+   does not contain?

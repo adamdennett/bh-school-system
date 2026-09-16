@@ -8107,14 +8107,14 @@ come from a separate allocation model the recalibration does not cover,
 and remain withdrawn.
 
 **Several results change.** On this measure returning Whitehawk to
-Longhill's catchment raises segregation a little, but not reliably ---
-the box under Priority 2 sets out why earlier versions said otherwise.
-Priority 6 makes no measurable difference. Closing Longhill, removing
-the oversubscription priorities and trimming Cardinal Newman and King's
-lower segregation; the power diagram, Elm Grove and the packages raise
-it. Most options differ by a few thousandths on the index, and the
-Whitehawk box shows a change of measure moving results of that size, so
-only the larger differences should be read as findings. The journey, displacement, catchment and
+Longhill's catchment raises segregation --- the box under Priority 2
+sets out why earlier versions said otherwise, and how far the finding
+holds. Priority 6 makes no measurable difference. Closing Longhill,
+removing the oversubscription priorities and trimming Cardinal Newman
+and King's lower segregation; the power diagram, Elm Grove and the
+packages raise it. Several options differ by only a few thousandths on
+the index, which is inside what a change of measure has moved, so only
+the larger differences should be read as findings. The journey, displacement, catchment and
 Longhill results do not rest on this measure and are unchanged.
 :::
 
@@ -8203,8 +8203,8 @@ The levers that do move children, ranked by what they add in 2030:
   `r fmt_n(co("today", "lh_intake", 2026))` and
   `r fmt_n(co("today", "lh_intake", 2035))`), and keeps most of that
   gain as the cohort falls. It barely changes journeys, and Priority 3
-  shows it lowers displacement. Its effect on segregation is small and
-  not reliably in either direction (Priority 2).
+  shows it lowers displacement. It raises segregation, by more than any
+  other option short of moving a school (Priority 2).
 - **Moving to Elm Grove with redrawn catchments** adds
   `r fmt_n(co("elm", "lh_intake") - co("today", "lh_intake"))` in 2030 and
   `r fmt_n(co("elm", "lh_intake", 2026) - co("today", "lh_intake", 2026))`
@@ -8275,14 +8275,15 @@ rises from `r sprintf("%.3f", co("today", "gorard"))` to
 `r sprintf("%.3f", co("elm", "gorard"))` with Longhill at Elm Grove and to
 `r sprintf("%.3f", co("comart", "gorard"))` with CoMArt open (@sec-comart).
 
-**Returning Whitehawk to Longhill's catchment makes little difference to
-segregation, and not reliably in either direction.** In 2030 the index
-is `r sprintf("%.3f", co("today", "gorard"))` today and
-`r sprintf("%.3f", co("whitehawk", "gorard"))` with the redraw. Earlier
-versions of this section found first that it lowered segregation and
-then that it clearly raised it. How far it moves the index, and which
-way, turns on how disadvantage is counted, and the box below sets out
-why.
+**Returning Whitehawk to Longhill's catchment raises segregation.** In
+2030 the index is `r sprintf("%.3f", co("today", "gorard"))` today and
+`r sprintf("%.3f", co("whitehawk", "gorard"))` with the redraw; in 2026,
+`r sprintf("%.3f", co("today", "gorard", 2026))` and
+`r sprintf("%.3f", co("whitehawk", "gorard", 2026))`. That is the largest
+rise of any option the council can take without moving or opening a
+school. Earlier versions of this section found first that the redraw
+lowered segregation and then that it barely moved it; the box below sets
+out what changed, and how far the finding now holds.
 
 ::: {.callout-note appearance="default"}
 ## Does returning Whitehawk to Longhill change segregation?
@@ -8352,11 +8353,12 @@ intake, already above that at
 `r fmt_pct(100 * wh_s("Longhill", "whitehawk", "share"), 1)`, which adds
 to the index. Varndean's, also above it today at
 `r fmt_pct(100 * wh_s("Varndean", "today", "share"), 1)`, falls to
-`r fmt_pct(100 * wh_s("Varndean", "whitehawk", "share"), 1)`, closer to
-it, which takes from it. Stringer's goes from
+`r fmt_pct(100 * wh_s("Varndean", "whitehawk", "share"), 1)`, passing
+below it. Stringer's goes from
 `r fmt_pct(100 * wh_s("Dorothy Stringer", "today", "share"), 1)` to
 `r fmt_pct(100 * wh_s("Dorothy Stringer", "whitehawk", "share"), 1)`,
-further below it, which adds. On balance the index is
+further below it again. All three schools end further from the city's
+share than they started, and Gorard's index measures exactly that: it is
 `r sprintf("%.3f", wh_g("today"))` today and
 `r sprintf("%.3f", wh_g("whitehawk"))` with the redraw in 2026,
 `r sprintf("%.3f", wh_g("today", 2030))` and
@@ -8410,7 +8412,7 @@ almost only the disadvantaged Whitehawk children:
 `r wh_fmt(wh_chg[["As fitted"]])`; at half the fitted pull by
 `r wh_fmt(wh_chg[["Half the pull"]])`; with no pull by
 `r wh_fmt(wh_chg[["No pull"]])`.
-`r if (length(unique(sign(round(wh_chg, 3)))) > 1) "The sign changes with the strength of the pull. The honest reading is that the redraw's effect on segregation is too small for this model to call." else "The sign is the same in every version, but the size is small beside the differences between the measures."`
+`r if (wh_chg[["As fitted"]] > 0 && wh_chg[["Half the pull"]] > 0) "It rises at the fitted pull and still rises at half of it, and only reverses when the pull is removed altogether --- which is the version that no longer reproduces the council's offers. The direction is as firm as the fitted pull is, and the size of it is not." else "The sign changes with the strength of the pull, so the direction is not firm."`
 Longhill's pull rests on a single year of offers at a school that made
 fewer than a hundred of them on offer day, and it implies that almost
 every Whitehawk family choosing Longhill would be disadvantaged. A
@@ -8418,8 +8420,8 @@ second year of Year 7 offers would test it; the published whole-school
 figures will not show the 2024 map in full until every year group has
 been admitted under it, in 2029-30.
 
-**What that leaves.** The case for or against returning Whitehawk rests
-on other things: a shorter journey for the children who would take a
+**What that leaves.** The redraw is a genuine trade. Against the rise in
+the index sit a shorter journey for the children who would take a
 Longhill place, `r fmt_n(co("whitehawk", "lh_intake") - co("today", "lh_intake"))`
 more children a year for Longhill by 2030, and less displacement. For
 comparison, the whole pre-2024 map scores
@@ -8541,13 +8543,17 @@ council's case for asking them rests on exactly this comparison.
 
 **Where they compete, and which should give.**
 
-- *Whitehawk is not the trade-off it looked.* Returning Whitehawk to Longhill's
-  catchment gives Longhill
+- *Longhill and journeys against mixed intakes.* Returning Whitehawk to
+  Longhill's catchment gives Longhill
   `r fmt_n(co("whitehawk", "lh_intake") - co("today", "lh_intake"))` more
-  children a year by 2030 and lowers
-  displacement, and its effect on how mixed intakes are is small and
-  turns on how disadvantage is counted. It is not the clear trade
-  against segregation earlier versions of this section showed.
+  children a year by 2030, lowers displacement and shortens the journeys
+  of the children it moves --- and raises the segregation index from
+  `r sprintf("%.3f", co("today", "gorard"))` to
+  `r sprintf("%.3f", co("whitehawk", "gorard"))`, because the
+  neighbourhoods it moves are `r fmt_pct(100 * whx$area$disadvantaged_share, 0)`
+  disadvantaged against `r fmt_pct(100 * whx$area$city_share, 0)` across
+  the city. Which way that trade should go is a judgement, and the
+  council should make it knowing both halves.
 - *Access against segregation.* Elm Grove all but closes the gap between
   deprived children's journeys and everyone else's, and it concentrates
   disadvantaged children in one school: the index rises from
@@ -8614,10 +8620,14 @@ Whitehawk question as part of a redesign. So it leads.
 2. **If the site cannot be had, return Whitehawk to Longhill's catchment
    on its own.** It gives Longhill
    `r fmt_n(co("whitehawk", "lh_intake") - co("today", "lh_intake"))`
-   children a year by 2030 and lowers displacement. Its effect on how
-   mixed intakes are is small and not reliably in either direction, and
-   it does little for Whitehawk's journeys while the school is at
-   Ovingdean.
+   children a year by 2030 and lowers displacement, and it raises the
+   segregation index from `r sprintf("%.3f", co("today", "gorard"))` to
+   `r sprintf("%.3f", co("whitehawk", "gorard"))`. It also does little
+   for Whitehawk's journeys while the school is at Ovingdean: its
+   disadvantaged children travel
+   `r sprintf("%.0f", whe("whitehawk", "minutes_disadvantaged"))` minutes
+   against `r sprintf("%.0f", whe("today", "minutes_disadvantaged"))` now.
+   It is the fallback, not the first choice.
 3. **Set Longhill's admission number at 150**, on either site, and plan
    its budget and staffing for the children it will get --- about a
    hundred at Ovingdean, somewhat more at Elm Grove --- not for 150. Put
