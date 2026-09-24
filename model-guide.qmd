@@ -3589,6 +3589,119 @@ disadvantaged than that. A large $\lambda$ on a small intake is a fragile
 thing, and it is the single number the segregation results are most
 sensitive to.
 
+### Why it is extreme: Longhill was fitted across a boundary change {#sec-dis-whitehawk}
+
+```{r dis-whitehawk}
+#| include: false
+LHN <- "Longhill High School"
+dfl <- dis_fit[dis_fit$short == "Longhill", ]
+wh_geo <- inp; wh_geo$params$dis$lambda[] <- 1
+wh_run <- function(i, design, year = 2026) {
+  r <- run_sim(i, year = year, rules = list(rule = "priorities"), design = design)
+  o <- outcomes(i, r)
+  list(intake = o$mix$n[o$mix$name == LHN],
+       dep = o$mix$dep_share[o$mix$name == LHN], gorard = o$gorard, flows = r$flows)
+}
+wh_now <- wh_run(wh_geo, "Current catchments")
+wh_pre <- wh_run(wh_geo, "Pre-2024 catchments")
+# Whitehawk's own zones, as the strategic view defines them.
+wh_zn <- bh_data("whitehawk_explained.rds")$zones
+wh_to_lh <- function(f) sum(f$flow[f$name == LHN & f$zone %in% wh_zn])
+# Carrying the pre-change pulls forward instead.
+wh_alt <- inp
+wh_alt$params$dis$lambda <- setNames(dis_fit$lambda_pre, dis_fit$name)
+wh_alt$params$dis$k <- inp$params$dis$k_pre
+wh_a30 <- wh_run(wh_alt, "Current catchments", 2030)
+wh_n30 <- wh_run(inp, "Current catchments", 2030)
+```
+
+There is a reason this one number is so far from the others, and it is
+not entirely behavioural. **Longhill's catchment changed between the
+rounds the model is fitted to and the round it is calibrated on.**
+
+Until the 2026 entry year, Whitehawk was in Longhill's catchment. The
+council consulted from October 2024, determined the new arrangements in
+March 2025, and they governed applications made in the autumn of 2025 —
+so **September 2026 was the first intake under the map that moved
+Whitehawk out**. That is the round $\lambda$ is fitted to.
+
+The model does represent the change. On the pre-2024 map it sends
+`r sprintf("%.0f", wh_to_lh(wh_pre$flows))` of Whitehawk's children to
+Longhill; on today's map, `r sprintf("%.0f", wh_to_lh(wh_now$flows))`.
+Geography alone puts Longhill at
+`r fmt_pct(100 * wh_pre$dep)` disadvantaged under the old map and
+`r fmt_pct(100 * wh_now$dep)` under today's. What it was actually
+offered in September 2026 was
+`r fmt_pct(100 * dfl$target)`.
+
+So the pull has to be enormous to close a gap that the boundary change
+opened. Fitted three ways, the same school gives:
+
+```{r dis-whitehawk-table}
+#| tbl-cap: "Longhill's fitted pull on disadvantaged children, against three different targets and maps."
+tibble::tibble(
+  `Fitted to` = c("The published three-year share, on the pre-2024 map",
+                  "The published three-year share, on today's map",
+                  "The September 2026 Year 7 offers, on today's map (adopted)"),
+  Target = c(fmt_pct(100 * dfl$published), fmt_pct(100 * dfl$published),
+             fmt_pct(100 * dfl$target)),
+  `$\\lambda$` = sprintf("%.2f", c(dfl$lambda_pre, dfl$lambda_today_map, dfl$lambda))) %>%
+  knitr::kable(align = "lrr")
+```
+
+Read that table slowly. Under the old map, with the old target,
+Longhill's pull was
+`r sprintf("%.2f", dfl$lambda_pre)` — barely above its fair share.
+Geography did nearly all the work, because Whitehawk was in the
+catchment. Take Whitehawk out and fit to the first cohort admitted
+without it, and the pull has to do the work instead.
+
+**The awkward fact is that the first intake under the new map was the
+most disadvantaged on record.** If Whitehawk's families had simply
+followed the boundary, Longhill's share should have fallen. It rose.
+Longhill is well under its admission number, so a family living outside
+its catchment who names it is admitted anyway — and on these figures a
+good many still did. The catchment term suppresses that demand harder
+than the first year's offers suggest it should, and $\lambda$ quietly
+makes up the difference.
+
+That matters because $\lambda$ is then carried forward unchanged to
+2035. Doing so assumes the transition never completes. Carrying the
+**pre-change** pulls forward instead assumes the opposite — that
+families follow the map at once. The two bracket the answer:
+
+```{r dis-whitehawk-sens}
+#| tbl-cap: "Longhill in 2030 under the two assumptions, with the city's segregation index beside it."
+tibble::tibble(
+  Assumption = c("Pulls fitted to the 2026 offers (as published here)",
+                 "Pulls fitted before the boundary change"),
+  `Longhill's intake` = sprintf("%.0f", c(wh_n30$intake, wh_a30$intake)),
+  `Disadvantaged` = c(fmt_pct(100 * wh_n30$dep), fmt_pct(100 * wh_a30$dep)),
+  `Segregation index` = sprintf("%.3f", c(wh_n30$gorard, wh_a30$gorard))) %>%
+  knitr::kable(align = "lrrr")
+```
+
+A school that is half disadvantaged or a quarter disadvantaged is not a
+detail, and the difference in the city's segregation index,
+`r sprintf("%.3f", abs(wh_n30$gorard - wh_a30$gorard))`, is an
+appreciable fraction of the spread across all the options in the
+strategic view. **Every figure in these documents uses the first
+assumption**, which is the conservative one for any argument that the
+city is segregated, and the wrong one if Whitehawk's families are still
+in the process of moving.
+
+There is a second reading worth holding alongside the first, and it
+points the other way. Longhill's intake has collapsed to
+`r sprintf("%.0f", dfl$intake)` children. The families still choosing it
+may be disproportionately deprived whatever the map says, because the
+others have the means and the inclination to go elsewhere. That is
+sorting, and it would persist. Nothing here separates the two, and only
+one thing will: the September 2027 and 2028 factsheets. If Longhill's
+free school meal share falls back towards a third, the boundary
+explanation was right and $\lambda$ is overstated. If it stays near a
+half, the sorting explanation was right and $\lambda$ is measuring
+something real.
+
 ```{r fig-dis-lambda}
 #| fig-cap: "The fitted pull on disadvantaged children, by school. Above 1 means a disadvantaged child in a given flow is likelier than their neighbours to end up there; below 1, less likely."
 #| fig-height: 4.2
