@@ -563,6 +563,15 @@ xy <- to_ll(schools$easting, schools$northing)
 schools$lon <- xy[, 1]; schools$lat <- xy[, 2]
 xy <- to_ll(schools$elm_easting, schools$elm_northing)
 schools$elm_lon <- xy[, 1]; schools$elm_lat <- xy[, 2]
+# Hove Park's Year 7 campus, so the map can put the school where the run
+# puts it. Every other school keeps its own coordinates here, so the
+# columns can be used unconditionally.
+hpv_e <- ifelse(schools$name == oi$hove_park_valley$school,
+                oi$hove_park_valley$easting, schools$easting)
+hpv_n <- ifelse(schools$name == oi$hove_park_valley$school,
+                oi$hove_park_valley$northing, schools$northing)
+xy <- to_ll(hpv_e, hpv_n)
+schools$valley_lon <- xy[, 1]; schools$valley_lat <- xy[, 2]
 stopifnot(all(is.finite(schools$lon)), all(is.finite(schools$elm_lat)),
           all(schools$lon > -0.4 & schools$lon < 0.2),
           all(schools$lat > 50.7 & schools$lat < 51.0))

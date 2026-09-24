@@ -678,9 +678,24 @@ server <- function(input, output, session) {
   observe({
     s <- sim()
     sch <- s$schools %>% filter(city) %>%
-      inner_join(inp$schools %>% select(name, lon, lat, elm_lon, elm_lat),
+      inner_join(inp$schools %>% select(name, lon, lat, elm_lon, elm_lat,
+                                        valley_lon, valley_lat),
                  by = "name")
     elm <- identical(input$site, "elm")
+
+    # Each school is drawn where this run puts it. Longhill follows the
+    # site control; Hove Park follows the campus the run used, which
+    # comes back from run_sim() rather than from the input, so "follows
+    # the entry year" moves the dot on the year slider too.
+    sch$mlon <- if (elm) sch$elm_lon else sch$lon
+    sch$mlat <- if (elm) sch$elm_lat else sch$lat
+    hpv <- inp$hove_park_valley
+    hp_here <- !is.null(hpv) && identical(s$hp_site, "valley")
+    if (hp_here) {
+      k <- sch$name == hpv$school
+      sch$mlon[k] <- sch$valley_lon[k]
+      sch$mlat[k] <- sch$valley_lat[k]
+    }
 
     # Demand before the ceiling, per school, and where it sits on the scale.
     wanted <- tapply(s$flows$wanted, s$flows$name, sum)
@@ -698,6 +713,12 @@ server <- function(input, output, session) {
                             sch$wanted / sch$pan, fmt_n(sch$wanted - sch$pan)),
                     "Full, with demand close to its places")),
       sch$mean_min)
+    if (!is.null(hpv)) {
+      k <- sch$name == hpv$school
+      sch$lab[k] <- paste0(sch$lab[k], "<br>Year 7 at the ",
+                           if (hp_here) "Valley Campus, Hangleton Way"
+                           else "Nevill Campus, Nevill Road")
+    }
 
     dname <- switch(input$design,
                     "Current catchments" = "Current catchments",
@@ -714,8 +735,8 @@ server <- function(input, output, session) {
       geojson = gj,
       legend = MAP_LEGEND,
       dots = unname(lapply(seq_len(nrow(sch)), function(i) list(
-        lon = if (elm) sch$elm_lon[i] else sch$lon[i],
-        lat = if (elm) sch$elm_lat[i] else sch$lat[i],
+        lon = sch$mlon[i],
+        lat = sch$mlat[i],
         r   = max(5, sqrt(sch$intake[i]) * 1.5),
         col = sch$col[i],
         lab = sch$lab[i])))))
