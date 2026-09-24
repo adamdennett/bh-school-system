@@ -8363,6 +8363,53 @@ count at LSOA level is not disclosive in the way a postcode-level count
 would be, and the council already publishes LSOA-level material
 elsewhere.
 
+### What one small table already settled {#sec-eef-ward}
+
+```{r eef-ward}
+#| include: false
+wv <- bh_data("ward_validation.rds")
+wv_lo <- wv$shares %>% slice_min(share, n = 1)
+wv_hi <- wv$shares %>% slice_max(share, n = 1)
+```
+
+The case for these releases is not hypothetical, because one of them has
+in effect already happened. Appendix 1 of the council's Educational
+Equity Framework, prepared for the People Overview & Scrutiny Committee,
+counts Key Stage 2 and Key Stage 4 pupils by home ward and by middle
+super output area, taken from the January 2025 school census. It was
+published to describe attainment, not pupil numbers, and the counts sit
+in it as a by-product.
+
+Those counts are the first external check this model's **origins** have
+ever had. Every other test in this document tests where the model sends
+children; nothing tested how many it starts with in each neighbourhood,
+and that is built from ONS ward estimates and a single state-sector
+share for the whole city. Set the council's Key Stage 2 count against
+modelled intakes into city schools, ward by ward, and the geography
+holds: the two correlate at
+`r sprintf("%.2f", cor(wv$compare$modelled, wv$compare$ks2))`. The flat
+share does not. It implies a share of each ward's children in city
+schools running from about `r sprintf("%.2f", wv_lo$share)` in
+`r wv_lo$ward` to about `r sprintf("%.2f", wv_hi$share)` in
+`r wv_hi$ward`, against the
+`r sprintf("%.2f", wv$flat_share)` the model applies everywhere.
+Rebuilding the model's origins on per-ward shares moves its intakes
+closer to the offers the city's schools actually made in September 2026,
+on every measure of fit, although the offers play no part in deriving
+the shares. The
+[model guide](https://adamdennett.github.io/bh-school-system/model-guide.html#sec-oi-ward-check)
+sets out the comparison in full; the results in this document still use
+the flat share.
+
+Two things follow. The first is a correction the council could make to
+its own place planning: how many of an area's children take a city state
+school place varies far more across the city than a single rate allows,
+and the variation is large enough to change which schools look full.
+The second is the general point. A table published for another purpose
+entirely, containing nothing more sensitive than counts of pupils by
+ward, answered a question that had been stated as unanswerable. The ten
+releases above are of the same kind.
+
 ## Why now {#sec-why-now}
 
 The cohort projections in section 3 are not forecasts. Those children

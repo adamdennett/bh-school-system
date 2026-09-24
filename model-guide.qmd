@@ -505,6 +505,124 @@ council's published Year 7 offers for the same round, and each
 catchment's total against the catchment forecasts in the council's place
 planning appendix.
 
+## Checked against the council's own count {#sec-oi-ward-check}
+
+```{r oi-ward-setup}
+#| include: false
+wv <- bh_data("ward_validation.rds")
+wv_r   <- cor(wv$compare$modelled, wv$compare$ks2)
+wv_fit <- wv$fit
+wv_lo  <- wv$shares %>% slice_min(share, n = 1)
+wv_hi  <- wv$shares %>% slice_max(share, n = 1)
+```
+
+Everything above tests $O_i$ against its own ingredients. The council's
+Educational Equity Framework makes an external test possible for the
+first time: its Appendix 1 counts Key Stage 2 and Key Stage 4 pupils by
+home ward, assigned from the January 2025 school census. The Key Stage 2
+count is Year 6 in that census — the children who entered Year 7 the
+following September, which is the cohort this term is about. Its
+lineage shares nothing with ours: census home addresses, against our ONS
+mid-year estimates.
+
+One feature of the table decides how it must be used. It counts pupils
+**in Brighton & Hove schools**. Residents at independent schools, at
+schools in other authorities, at non-maintained special schools,
+educated at home or solely registered at a pupil referral unit are all
+absent from it. So the right comparison is not against $O_i$, which also
+holds the children the model sends to Priory, Peacehaven, Seahaven and
+Seaford Head, but against modelled flows *into city schools* by home
+ward. The council's cohort is a year earlier and about 6% larger than
+the 2026 one, so what is compared is the shape: each ward's modelled
+intake against its counted intake, after that city-wide difference is
+divided out.
+
+```{r oi-ward-chart}
+#| fig-height: 5.4
+#| fig-cap: "Modelled intake into city schools against the council's count, by home ward. A ward above the line is one the model sends to city schools in greater numbers than the census found there."
+wv$compare %>%
+  mutate(ward = forcats::fct_reorder(ward, ratio)) %>%
+  ggplot(aes(expected, modelled)) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey60", linetype = "31") +
+  geom_point(colour = "#1f3b57", size = 2.6) +
+  ggrepel::geom_text_repel(aes(label = ward), size = 3, colour = "grey25",
+                           seed = 4, max.overlaps = 20, box.padding = 0.45) +
+  scale_x_continuous(labels = label_comma()) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(x = "Counted in city schools, January 2025 census (scaled to the 2026 cohort)",
+       y = "Modelled intake into city schools, 2026",
+       title = sprintf("The ward geography holds: correlation %.2f", wv_r)) +
+  theme_bh()
+```
+
+The geography is sound. What the residuals show is the assumption the
+previous page warned about: the single state-sector share. Rebuilding
+each ward's children so that modelled city intakes match the counted
+ones — holding the city total fixed, so the council's projection still
+sets the level — implies a share that is anything but flat.
+
+```{r oi-ward-shares}
+#| tbl-cap: "The share of each ward's ONS children implied by the council's count, against the flat share the model uses. Above 1.0 means the ONS estimate is too low for that ward, not that every child attends a city school."
+wv$shares %>%
+  transmute(Ward = ward,
+            `ONS children` = fmt_n(ward_children),
+            `Counted (KS2)` = fmt_n(ks2),
+            `Implied share` = sprintf("%.2f", share),
+            `Against the flat %.2f` = sprintf("%+.0f%%", 100 * (vs_flat - 1))) %>%
+  rlang::set_names(c("Ward", "ONS children", "Counted (KS2)", "Implied share",
+                     sprintf("Against the flat %.2f", wv$flat_share))) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+It runs from `r sprintf("%.2f", wv_lo$share)` in `r wv_lo$ward` to
+`r sprintf("%.2f", wv_hi$share)` in `r wv_hi$ward`. The low end is where
+independent-school take-up is heaviest and, in Rottingdean & West
+Saltdean, where children also cross the boundary eastwards. The values
+above one mean the ONS ward estimate is too low, so the model has been
+carrying too few children in Hangleton & Knoll and Coldean & Stanmer.
+
+The test of whether this is a correction rather than a rearrangement is
+the published offers, which play no part in deriving the shares:
+
+```{r oi-ward-fit}
+#| tbl-cap: "The same model, run on per-ward shares, against the offers Brighton & Hove schools made for September 2026."
+wv_fit %>%
+  transmute(Origins = c("current" = "One share for the whole city",
+                        "per_ward" = "A share for each ward")[origins],
+            `R²` = sprintf("%.3f", r2),
+            `Root mean square error` = sprintf("%.1f", rmse),
+            `Mean absolute error` = sprintf("%.1f", mae)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+The fit improves on every measure, and it improves at the schools where
+the model is furthest out: Patcham comes down from
+`r sprintf("%.0f", wv$intakes$current[wv$intakes$name == "Patcham High School"])`
+to `r sprintf("%.0f", wv$intakes$per_ward[wv$intakes$name == "Patcham High School"])`
+against an observed `r fmt_n(wv$intakes$observed[wv$intakes$name == "Patcham High School"])`,
+and Brighton Aldridge rises from
+`r sprintf("%.0f", wv$intakes$current[wv$intakes$name == "Brighton Aldridge Community Academy"])`
+to `r sprintf("%.0f", wv$intakes$per_ward[wv$intakes$name == "Brighton Aldridge Community Academy"])`,
+still short of its observed `r fmt_n(wv$intakes$observed[wv$intakes$name == "Brighton Aldridge Community Academy"])`
+but less so.
+
+One caution about what the shares mean. For Woodingdean the counted
+intake is well above the modelled one, and the fix raises the ward's
+children by about 40%. That is one of two things, and this table cannot
+tell them apart: either the ONS estimate is too low there, or the model
+sends too many Woodingdean children out of the city to Priory and
+Peacehaven. Both would show up the same way. The adjustment corrects the
+arithmetic either way, but only the first is a statement about how many
+children live there.
+
+**This is not yet in the model the simulator runs.** The results in this
+guide, in the strategic view and in the simulator all use the flat share.
+Changing it rebuilds every number in every document, which is a decision
+to take deliberately rather than as a side effect of a validation
+section. What the section establishes is that the origins are sound in
+shape, that the flat share is the largest remaining error in them, and
+that the correction is available and improves the fit.
+
 ## What to be careful about
 
 - **The base is mid-2022.** Migration into or out of the city since then

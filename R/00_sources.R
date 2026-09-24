@@ -41,6 +41,7 @@ SOURCES <- tibble::tribble(
   "bhcc_adm",    "School admissions: allocation factsheets",  "Brighton & Hove City Council",        "Preferences and offers by school and rank, published each year after allocation.",             "https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions",                        "OGL v3",
   "bhcc_plan",   "School place planning reports and forecasts", "Brighton & Hove City Council",      "Catchment forecasts and admission-number proposals, in committee papers and consultation documents.", "https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions",                    "OGL v3",
   "bhcc_catch",  "Secondary catchment boundaries",            "Brighton & Hove City Council",        "The catchment map in force from September 2026 entry, and the map it replaced.",               "https://www.brighton-hove.gov.uk/schools-and-learning/school-admissions",                        "OGL v3",
+  "bhcc_eef",    "Educational Equity Framework, Appendix 1",  "Brighton & Hove City Council",        "Key Stage 2 and Key Stage 4 pupils and attainment by home ward and middle super output area, from the January 2025 school census (table 13.1.2). Section 2.7 checks the model's origins against it.", "https://www.brighton-hove.gov.uk/schools-and-learning/school-policies-reports-strategies-and-other-documents", "OGL v3",
   "lever",       "How to Pull the Right Lever",               "Dennett and colleagues, UCL CASA",    "The multilevel model of school-level attainment whose specification and decomposition section 2 follows.", "https://adamdennett.github.io/school_attainment_tool/index.html", "author’s own work",
   "fundstats",   "School funding statistics",                 "Department for Education",            "School-level funding allocations for 2025-26, split into the formula's own components.",      "https://explore-education-statistics.service.gov.uk/find-statistics/school-funding-statistics",  "OGL v3",
   "esri",        "World Light Gray Canvas",                   "Esri",                                "The base cartography under every map in this document. Keyless, unlike the CARTO tiles it replaced.", "https://www.arcgis.com/home/item.html?id=979c6cc89af9449cbeb5342a439c6a76",                  "Esri terms, attribution required")
@@ -83,7 +84,8 @@ DATASETS <- tibble::tribble(
   "comart_costs.rds",             "Routed journeys to CoMArt's site",     c("osm", "bods", "onspd"),                            "open Brightopia bundle",
   "priority6_sweep.rds",          "Priority 6 and the social mix of intakes", c("bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "osm", "bods", "perf"), "this repository, R/05_app_inputs.R",
   "route_geometries.rds",         "One journey, leg by leg",               c("osm", "bods"),                                         "open Brightopia bundle",
-  "guide_routes.rds",             "One neighbourhood routed to every school", c("osm", "bods", "onspd"),                            "open Brightopia bundle")
+  "guide_routes.rds",             "One neighbourhood routed to every school", c("osm", "bods", "onspd"),                            "open Brightopia bundle",
+  "ward_validation.rds",          "The origins checked against the council's ward count", c("bhcc_eef", "sape", "onspd", "bhcc_adm"), "open Brightopia bundle")
 
 stopifnot(!any(duplicated(DATASETS$file)),
           all(unlist(DATASETS$from) %in% SOURCES$key))
