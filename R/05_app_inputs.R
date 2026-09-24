@@ -1378,7 +1378,13 @@ hp_move <- purrr::map_dfr(hp_years, function(y) {
   tibble(year = y,
          valley = mv$intake[mv$name == HPS], nevill = mn$intake[mn$name == HPS],
          valley_dep = mv$dep_share[mv$name == HPS],
-         nevill_dep = mn$dep_share[mn$name == HPS])
+         nevill_dep = mn$dep_share[mn$name == HPS],
+         # Blatchington Mill too, because the question people actually
+         # ask is whether the two even out when the Valley Campus closes.
+         valley_dep_bm = mv$dep_share[mv$name == BMS],
+         nevill_dep_bm = mn$dep_share[mn$name == BMS],
+         valley_gap = valley_dep - valley_dep_bm,
+         nevill_gap = nevill_dep - nevill_dep_bm)
 })
 
 # How big an attractiveness multiplier buys the same intake as the move,

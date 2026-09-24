@@ -4046,6 +4046,48 @@ neighbourhood they serve, and the undersubscribed schools take the
 rest.** Blatchington Mill fills; Hove Park takes those who did not get
 in, and those whose families did not name it first.
 
+### Will it even out when the Valley Campus closes? {#sec-hove-park-even}
+
+This is the obvious follow-up, and it is a good theory: if the campus is
+what puts Hove Park's Year 7 in Hangleton, bringing everyone to Nevill
+Road should bring the two schools together. The model's answer is **half
+right**.
+
+```{r hp-campus-even}
+#| tbl-cap: "The gap between the two schools' modelled Year 7, with Hove Park's Year 7 at each campus."
+hpc$move %>%
+  filter(year %in% c(2026, 2028, 2030)) %>%
+  transmute(`Entry year` = year,
+            `Hove Park` = sprintf("%.1f%% → %.1f%%", 100 * valley_dep, 100 * nevill_dep),
+            `Blatchington Mill` = sprintf("%.1f%% → %.1f%%",
+                                          100 * valley_dep_bm, 100 * nevill_dep_bm),
+            `Gap` = sprintf("%.1f → %.1f pts", 100 * valley_gap, 100 * nevill_gap)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+The gap narrows from
+`r sprintf("%.1f", 100 * hp_m(2026, "valley_gap"))` points to
+`r sprintf("%.1f", 100 * hp_m(2028, "nevill_gap"))` --- about
+`r sprintf("%.0f", 100 * (hp_m(2026, "valley_gap") - hp_m(2028, "nevill_gap")) / hp_m(2026, "valley_gap"))`%
+of it --- and it closes from both ends, Hove Park falling and
+Blatchington Mill rising as the two swap children. But it does not
+disappear. Hove Park's intake stays around
+`r sprintf("%.0f", 100 * hp_m(2028, "nevill_gap"))` points more
+disadvantaged, because the part of the gap that is sorting rather than
+geography does not care where the building is. Moving a school changes
+which streets it draws from; it does not change which families name it
+first, or which school fills and which takes those who did not get in.
+
+One caveat runs the other way, and it matters. $\lambda$ is fitted over
+years when the school was split across two sites. If the split site is
+itself part of why families sort as they do --- a lower school in
+Hangleton shaping what parents think they are choosing --- then some of
+what the model counts as sorting would move with the building too, and
+more of the gap would close. The model holds that fixed by construction,
+so **`r sprintf("%.0f", 100 * (hp_m(2026, "valley_gap") - hp_m(2028, "nevill_gap")) / hp_m(2026, "valley_gap"))`%
+is a floor, not a ceiling.** Which of the two readings is right will be
+visible in the September 2028 and 2029 intakes.
+
 ::: {.callout-warning}
 ## What this is, and what it is not
 
