@@ -3607,12 +3607,6 @@ wh_pre <- wh_run(wh_geo, "Pre-2024 catchments")
 # Whitehawk's own zones, as the strategic view defines them.
 wh_zn <- bh_data("whitehawk_explained.rds")$zones
 wh_to_lh <- function(f) sum(f$flow[f$name == LHN & f$zone %in% wh_zn])
-# Carrying the pre-change pulls forward instead.
-wh_alt <- inp
-wh_alt$params$dis$lambda <- setNames(dis_fit$lambda_pre, dis_fit$name)
-wh_alt$params$dis$k <- inp$params$dis$k_pre
-wh_a30 <- wh_run(wh_alt, "Current catchments", 2030)
-wh_n30 <- wh_run(inp, "Current catchments", 2030)
 ```
 
 There is a reason this one number is so far from the others, and it is
@@ -3665,30 +3659,75 @@ good many still did. The catchment term suppresses that demand harder
 than the first year's offers suggest it should, and $\lambda$ quietly
 makes up the difference.
 
-That matters because $\lambda$ is then carried forward unchanged to
-2035. Doing so assumes the transition never completes. Carrying the
-**pre-change** pulls forward instead assumes the opposite — that
-families follow the map at once. The two bracket the answer:
+### Catchment memory {#sec-dis-memory}
 
-```{r dis-whitehawk-sens}
-#| tbl-cap: "Longhill in 2030 under the two assumptions, with the city's segregation index beside it."
-tibble::tibble(
-  Assumption = c("Pulls fitted to the 2026 offers (as published here)",
-                 "Pulls fitted before the boundary change"),
-  `Longhill's intake` = sprintf("%.0f", c(wh_n30$intake, wh_a30$intake)),
-  `Disadvantaged` = c(fmt_pct(100 * wh_n30$dep), fmt_pct(100 * wh_a30$dep)),
-  `Segregation index` = sprintf("%.3f", c(wh_n30$gorard, wh_a30$gorard))) %>%
-  knitr::kable(align = "lrrr")
+```{r dis-memory}
+#| include: false
+CM <- inp$catch_memory
+cm_kids <- sum(inp$zones$Oi[inp$zones$zone %in% CM$zones])
+cm_run <- function(phi, year = 2026) {
+  r <- run_sim(inp, year = year, rules = list(rule = "priorities"), memory = phi)
+  o <- outcomes(inp, r)
+  list(to_lh = sum(r$flows$flow[r$flows$name == LHN & r$flows$zone %in% CM$zones]),
+       intake = o$mix$n[o$mix$name == LHN],
+       dep = o$mix$dep_share[o$mix$name == LHN], gorard = o$gorard)
+}
+cm_0 <- cm_run(0); cm_half <- cm_run(CM$share); cm_1 <- cm_run(1)
+cm_fade <- tibble::tibble(year = c(2026, 2028, 2030, 2035)) %>%
+  dplyr::mutate(phi = CM$share * CM$decay^(year - CM$from_year))
 ```
 
-A school that is half disadvantaged or a quarter disadvantaged is not a
-detail, and the difference in the city's segregation index,
-`r sprintf("%.3f", abs(wh_n30$gorard - wh_a30$gorard))`, is an
-appreciable fraction of the spread across all the options in the
-strategic view. **Every figure in these documents uses the first
-assumption**, which is the conservative one for any argument that the
-city is segregated, and the wrong one if Whitehawk's families are still
-in the process of moving.
+So the model carries an explicit assumption about it. A share of the
+moved neighbourhoods — `r fmt_pct(100 * CM$share)` of them — is treated
+as still choosing the old school: Longhill gains the catchment term for
+those families, and Dorothy Stringer and Varndean lose it. The share
+fades by `r fmt_pct(100 * (1 - CM$decay))` a year from
+`r CM$from_year`, on the reasoning that the households who remember
+Longhill as their school leave the system as their cohorts do.
+
+It has to work on both sides. Handing Whitehawk a Longhill bonus while
+it keeps the Dorothy Stringer and Varndean bonus it gained in 2026
+leaves it with two catchment schools and changes almost nothing, because
+the schools it gained are the far more attractive ones. And it touches
+**demand only**: these children are out of catchment for the
+admission priorities, which is what they legally are. That asymmetry is
+the point. They can still name the school, and at a school under its
+admission number naming it is enough.
+
+```{r dis-memory-table}
+#| tbl-cap: "What the assumption does, 2026. The neighbourhoods hold about 78 children between them."
+tibble::tibble(
+  `Families still choosing Longhill` = c("None", fmt_pct(100 * CM$share), "All"),
+  `Children it sends there` = sprintf("%.0f", c(cm_0$to_lh, cm_half$to_lh, cm_1$to_lh)),
+  `Longhill's intake` = sprintf("%.0f", c(cm_0$intake, cm_half$intake, cm_1$intake)),
+  `Disadvantaged` = c(fmt_pct(100 * cm_0$dep), fmt_pct(100 * cm_half$dep),
+                      fmt_pct(100 * cm_1$dep)),
+  `Segregation index` = sprintf("%.3f", c(cm_0$gorard, cm_half$gorard, cm_1$gorard))) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+**The share is an assumption, not a measurement.** Nothing published
+identifies it. What published data does say is that zero is not tenable:
+a neighbourhood that had followed the boundary would not leave Longhill
+with the most disadvantaged intake it has ever taken. The figure the
+model uses is a half, fading; the table shows what the alternatives
+would do.
+
+Two consequences are worth stating plainly. The assumption is doing real
+work — it takes Longhill's fitted pull from
+`r sprintf("%.2f", dfl$lambda_no_memory)` to
+`r sprintf("%.2f", dfl$lambda)`, which is the difference between a
+number that looks like a behavioural finding and one that looks like a
+correction. And it has a shelf life: by
+`r cm_fade$year[nrow(cm_fade)]` the share is down to
+`r fmt_pct(100 * cm_fade$phi[nrow(cm_fade)])`, so the model expects
+Longhill's intake to become less disadvantaged over the decade even with
+nothing else changing.
+
+**This is the single assumption in the model that the council could
+retire outright.** Section 9 of the strategic view asks for allocations
+by home neighbourhood. That release would replace this half with a
+measured number, for this boundary change and for any other.
 
 There is a second reading worth holding alongside the first, and it
 points the other way. Longhill's intake has collapsed to

@@ -702,13 +702,27 @@ RULES <- list(
   source = "Brighton & Hove City Council, Secondary school admissions guide 2027-2028")
 
 source(file.path(APP_DIR, "R", "model.R"))
+# ---- The neighbourhoods the 2026 map moved out of Longhill ------------
+# Whitehawk. The boundary moved for the September 2026 intake; what
+# families there do about it is a separate question, and the engine
+# carries part of the old attachment forward (see run_sim(), "catchment
+# memory"). Defined in the open bundle so that the calibration
+# (04b_model_terms.R) and the simulator cannot drift apart.
+catch_memory <- oi$catch_memory
+stopifnot(!is.null(catch_memory), all(catch_memory$zones %in% zones$zone))
+message(sprintf("  catchment memory: %d zones out of Longhill, %.0f children, share %.2f",
+                length(catch_memory$zones),
+                sum(zones$Oi[zones$zone %in% catch_memory$zones]),
+                catch_memory$share))
+
 # hove_park_valley has to travel with this, or every calibration run here
 # puts Hove Park's Year 7 at Nevill Road while the saved inputs put it at
 # the Valley Campus, and the fitted free-school-meal and disadvantage
 # layers then reproduce nothing. app/tests/check.R catches that.
 cal <- list(schools = schools, zones = zones, cost = cost, designs = DESIGNS,
             params = params, demand = demand, rules = RULES,
-            hove_park_valley = oi$hove_park_valley)
+            hove_park_valley = oi$hove_park_valley,
+            catch_memory = catch_memory)
 fsm_target <- sum(OUTTURN_2026$offers[OUTTURN_2026$priority %in% 4:5])
 fsm_places <- function(k) {
   cal$zones$fsm <- pmin(k * cal$zones$idaci_score, 0.95)
@@ -814,6 +828,10 @@ stopifnot(with(YEAR7_FSM, all(fsm_p13_2026 + fsm_p45_2026 == fsm_2026)),
 y7_target <- dis_target$published
 y7_target[match(YEAR7_FSM$name, DIS_N)] <- YEAR7_FSM$fsm_2026 / YEAR7_FSM$offers_2026
 fit_y7 <- fit_dis(r_dis, y7_target)
+# The same fit with no catchment memory, so the guide can say how much of
+# Longhill's pull is that assumption and how much is left over.
+fit_nomem <- fit_dis(run_sim(cal, year = 2026, rules = list(rule = "priorities"),
+                             memory = 0), y7_target)
 dis_k <- fit_y7$k
 dis_lam <- fit_y7$lambda
 # What the pre-change pulls give a Year 7 intake under today's map and
@@ -836,7 +854,8 @@ params$dis <- list(
                years = dis_target$years, lambda = unname(dis_lam),
                year7_pre = unname(y7_now),
                lambda_pre = unname(fit_pre$lambda),
-               lambda_today_map = unname(fit_now$lambda)),
+               lambda_today_map = unname(fit_now$lambda),
+               lambda_no_memory = unname(fit_nomem$lambda)),
   k_pre = fit_pre$k, k_today_map = fit_now$k,
   year7_fsm = YEAR7_FSM,
   fitted_on = "Today's map and the council's priorities, 2026: community schools to their September 2026 Year 7 free school meal offers, academies and faith schools to their published whole-school shares",
@@ -871,6 +890,7 @@ message(sprintf("  outside the city, 2026: modelled at East Sussex schools %s; e
                 paste(sprintf("%s %.1f", names(ext_mod), ext_mod), collapse = ", "),
                 paste(sprintf("%s %.1f", names(outflow_other), outflow_other), collapse = ", ")))
 
+
 saveRDS(list(
   schools = schools, zones = zones, cost = cost, designs = DESIGNS,
   rules = RULES, outflow_other = outflow_other,
@@ -881,7 +901,8 @@ saveRDS(list(
   seed_intakes = seed_intakes, idaci = idaci,
   design_geojson = design_geojson, presets = presets,
   city = CITY, out_of_city = OUT_OF_CITY,
-  elm = elm, hove_park_valley = oi$hove_park_valley, built_at = Sys.time()),
+  elm = elm, hove_park_valley = oi$hove_park_valley,
+  catch_memory = catch_memory, built_at = Sys.time()),
   file.path(APP_DIR, "data", "sim_inputs.rds"))
 
 message(sprintf("\nSaved app/data/sim_inputs.rds (%.1f MB)",

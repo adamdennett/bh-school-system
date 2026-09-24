@@ -296,7 +296,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
                     capped = TRUE, gamma = NULL, rules = NULL,
                     exclusive = NULL, comart = NULL, closed = NULL,
-                    hp_site = NULL) {
+                    hp_site = NULL, memory = NULL) {
 
   # The ten city schools, and the four East Sussex schools M5 fits as
   # destinations: children do leave the city, most of them from Longhill's
@@ -409,9 +409,48 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     sch_xy$northing[k] <- hpv$northing
   }
   d$Cj <- compete_now(sch_xy, W, inp$params$sigma)[d$name]
-  d$in_catch <- as.integer(
+  d$in_catch <- as.numeric(
     !is.na(dsg$school[d$name]) &
       dsg$school[d$name] == dsg$zone[d$zone])
+
+  # ---- Catchment memory -------------------------------------------------
+  # A boundary change moves a neighbourhood on the map on one day. It does
+  # not move what families there think their school is. Siblings are
+  # already there, the walk is the walk they know, and some households
+  # will not have registered that anything changed.
+  #
+  # `memory` is the share of a moved neighbourhood's families still
+  # behaving as though they were in the old catchment, entered here as a
+  # fractional catchment term: 1 is the old attachment intact, 0 is the
+  # new map followed to the letter. It decays by `decay` a year from
+  # `from_year`, because the attachment should fade as the cohorts who
+  # remember turn over.
+  #
+  # It touches DEMAND only. The tiered ceiling below reads
+  # `in_catch == 1`, so these children remain out of catchment for
+  # priority, which is what they legally are. That asymmetry is the
+  # point: they can still name the school, and at a school under its
+  # admission number naming it is enough.
+  # The old map gave these neighbourhoods their old school INSTEAD of the
+  # one they have now, so the memory has to work on both sides. Handing
+  # Whitehawk a Longhill bonus while it keeps the Dorothy Stringer and
+  # Varndean bonus it gained in 2026 leaves it with two catchment schools
+  # and changes almost nothing, because the schools it gained are the far
+  # more attractive ones. So a share phi of the neighbourhood is treated
+  # as still on the old map: the old school gains the term, the new one
+  # loses it.
+  cm_mem <- inp$catch_memory
+  if (!is.null(cm_mem) && identical(design, cm_mem$design)) {
+    share <- if (!is.null(memory)) memory else cm_mem$share
+    phi <- share * cm_mem$decay^max(0, year - cm_mem$from_year)
+    if (phi > 0) {
+      moved <- d$zone %in% cm_mem$zones
+      old <- moved & d$name == cm_mem$school
+      new <- moved & d$in_catch == 1
+      d$in_catch[old] <- pmax(d$in_catch[old], phi)
+      d$in_catch[new] <- pmin(d$in_catch[new], 1 - phi)
+    }
+  }
 
   # In the two paired catchments some families would take only one of
   # the two schools. They are carried as populations of their own whose
