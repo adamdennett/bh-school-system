@@ -125,11 +125,19 @@ ext_cost <- OUTSIDE$costs %>% filter(zone %in% zones$zone) %>% select(zone, name
 cm_cost <- CMC$costs %>% filter(zone %in% zones$zone) %>%
   transmute(zone, name = CM_SCEN$name, cij, km)
 stopifnot(nrow(cm_cost) == nrow(zones))
+# Four cost tables, not two. Longhill can be at Ovingdean or Elm Grove,
+# and Hove Park's Year 7 can be at Nevill Road or at the Valley Campus on
+# Hangleton Way, which is where it is until the 2028 entry year. The
+# engine picks the Hove Park site from the entry year unless told
+# otherwise; see run_sim().
+one_cost <- function(tbl) bind_rows(
+  tbl %>% filter(zone %in% zones$zone, name %in% CITY) %>%
+    select(zone, name, cij, km), ext_cost, cm_cost)
 cost <- list(
-  now = bind_rows(oi$costs_now %>% filter(zone %in% zones$zone, name %in% CITY) %>%
-                    select(zone, name, cij, km), ext_cost, cm_cost),
-  elm = bind_rows(oi$costs_elm %>% filter(zone %in% zones$zone, name %in% CITY) %>%
-                    select(zone, name, cij, km), ext_cost, cm_cost))
+  now          = one_cost(oi$costs_now),
+  elm          = one_cost(oi$costs_elm),
+  valley       = one_cost(oi$costs_valley),
+  valley_elm   = one_cost(oi$costs_valley_elm))
 
 stopifnot(all(vapply(cost, function(x) all(is.finite(x$cij)), logical(1))))
 
@@ -587,6 +595,18 @@ presets <- list(
     note = "The relocation, at the reduced admission number, behind the catchments drawn for it.",
     design = "Flow regions, Longhill at Elm Grove", site = "elm", year = 2030,
     pan = c(`Longhill High School` = 150), w = NULL),
+  `Hove Park on one site` = list(
+    note = paste("Hove Park teaches Year 7 at the Valley Campus on Hangleton Way,",
+                 "1.65 km west of the Nevill Road site its address gives. The council",
+                 "has given notice to close the Valley Campus on 31 August 2028. This",
+                 "runs the first year of the consolidated school; switch Hove Park's",
+                 "Year 7 site to the Valley Campus to see the same year as it would",
+                 "have been. The total barely moves. Where the children come from does:",
+                 "at Hangleton Way the school draws far more of Hangleton & Knoll and",
+                 "Portslade, and much less of Westdene, Hove Park ward and Poets'",
+                 "Corner."),
+    design = "Current catchments", site = "now", year = 2028,
+    hp_site = "nevill", pan = NULL, w = NULL),
   `Redraw for balance` = list(
     note = "The power diagram, which spreads disadvantage most evenly of the designs tested, with everything else as it is.",
     design = "Power diagram", site = "now", year = 2030,
@@ -673,8 +693,13 @@ RULES <- list(
   source = "Brighton & Hove City Council, Secondary school admissions guide 2027-2028")
 
 source(file.path(APP_DIR, "R", "model.R"))
+# hove_park_valley has to travel with this, or every calibration run here
+# puts Hove Park's Year 7 at Nevill Road while the saved inputs put it at
+# the Valley Campus, and the fitted free-school-meal and disadvantage
+# layers then reproduce nothing. app/tests/check.R catches that.
 cal <- list(schools = schools, zones = zones, cost = cost, designs = DESIGNS,
-            params = params, demand = demand, rules = RULES)
+            params = params, demand = demand, rules = RULES,
+            hove_park_valley = oi$hove_park_valley)
 fsm_target <- sum(OUTTURN_2026$offers[OUTTURN_2026$priority %in% 4:5])
 fsm_places <- function(k) {
   cal$zones$fsm <- pmin(k * cal$zones$idaci_score, 0.95)
@@ -847,7 +872,7 @@ saveRDS(list(
   seed_intakes = seed_intakes, idaci = idaci,
   design_geojson = design_geojson, presets = presets,
   city = CITY, out_of_city = OUT_OF_CITY,
-  elm = elm, built_at = Sys.time()),
+  elm = elm, hove_park_valley = oi$hove_park_valley, built_at = Sys.time()),
   file.path(APP_DIR, "data", "sim_inputs.rds"))
 
 message(sprintf("\nSaved app/data/sim_inputs.rds (%.1f MB)",

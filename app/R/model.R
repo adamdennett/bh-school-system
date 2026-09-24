@@ -280,6 +280,8 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
 #' @param w_mult named multipliers on baseline attractiveness (1 = as is)
 #' @param pans named admission numbers (NULL = as published)
 #' @param site "now" or "elm"
+#' @param hp_site "valley" or "nevill" for Hove Park's Year 7 campus;
+#'   NULL picks it from the entry year (Valley before 2028)
 #' @param design a name from inp$designs
 #' @param year an entry year; scales the cohort, not its geography
 #' @param capped whether the admission numbers bind
@@ -293,7 +295,8 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
 run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
                     capped = TRUE, gamma = NULL, rules = NULL,
-                    exclusive = NULL, comart = NULL, closed = NULL) {
+                    exclusive = NULL, comart = NULL, closed = NULL,
+                    hp_site = NULL) {
 
   # The ten city schools, and the four East Sussex schools M5 fits as
   # destinations: children do leave the city, most of them from Longhill's
@@ -363,7 +366,30 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   if (cm_on && is.na(dsg$school[cm$name]))
     dsg$school[cm$name] <- unname(dsg$school[cm$joins])
 
-  d <- inp$cost[[site]] %>%
+  # ---- Which Hove Park? ------------------------------------------------
+  # Hove Park teaches Year 7 at the Valley Campus on Hangleton Way, 1.65 km
+  # west of the Nevill Road address the school register gives. The council
+  # gave statutory notice on 8 June 2026 to close the Valley Campus on
+  # 31 August 2028, so entry years up to 2027 belong at Hangleton Way and
+  # 2028 onwards at Nevill Road. That is the default; `hp_site` overrides
+  # it, which is how the scenario holds one site across every year.
+  hpv <- inp$hove_park_valley
+  if (is.null(hp_site)) hp_site <- if (!is.null(hpv) && year < hpv$consolidates)
+    "valley" else "nevill"
+  stopifnot(hp_site %in% c("valley", "nevill"))
+  cost_key <- if (hp_site == "valley")
+    c(now = "valley", elm = "valley_elm")[[site]] else site
+  if (is.null(inp$cost[[cost_key]])) {
+    # An older input bundle has only the two Nevill tables. Fall back
+    # rather than fail, but say so: every Hove Park result is then for
+    # the wrong campus.
+    warning("No '", cost_key, "' cost table in this input bundle; ",
+            "Hove Park stays at Nevill Road.")
+    cost_key <- site
+    hp_site <- "nevill"
+  }
+
+  d <- inp$cost[[cost_key]] %>%
     dplyr::filter(name %in% c(sch$name, ext_names)) %>%
     dplyr::inner_join(z, by = "zone") %>%
     dplyr::filter(Oi > 0, is.finite(cij), cij > 0)
@@ -375,6 +401,12 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   if (site == "elm" && all(c("elm_easting", "elm_northing") %in% names(sch))) {
     sch_xy$easting <- sch$elm_easting
     sch_xy$northing <- sch$elm_northing
+  }
+  # Hove Park's rivals are measured from the campus Year 7 attends too.
+  if (hp_site == "valley" && !is.null(hpv)) {
+    k <- sch_xy$name == hpv$school
+    sch_xy$easting[k] <- hpv$easting
+    sch_xy$northing[k] <- hpv$northing
   }
   d$Cj <- compete_now(sch_xy, W, inp$params$sigma)[d$name]
   d$in_catch <- as.integer(
@@ -436,7 +468,9 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   # move.
   u_ref <- NULL
   if (site != "now") {
-    ref <- inp$cost$now
+    # The reference keeps Hove Park where this run has it, so the
+    # comparison isolates Longhill's move and nothing else.
+    ref <- inp$cost[[if (hp_site == "valley") "valley" else "now"]]
     cij_ref <- ref$cij[match(paste(d$zone, d$name), paste(ref$zone, ref$name))]
     cij_ref[is.na(cij_ref)] <- d$cij[is.na(cij_ref)]
     Cj_ref <- compete_now(sch, W, inp$params$sigma)[d$name]
@@ -522,7 +556,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   list(flows = d, schools = by_school, W = W, cap = cap,
        design_map = dsg, comart = cm_on,
        rule = rule$rule, rules = rule, tiers = tiers,
-       year = year, site = site, design = design, index = idx,
+       year = year, site = site, hp_site = hp_site, design = design, index = idx,
        gamma = g_mult, exclusive = ex_mult,
        in_catch_share = sum(d$flow[d$in_catch == 1]) / sum(d$flow))
 }

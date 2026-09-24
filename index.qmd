@@ -466,6 +466,19 @@ just outside the boundary but inside the travel-to-school geography, and
 is included throughout because families on the eastern edge of the city
 treat it as a real option.
 
+One of the ten is not a single building. **Hove Park teaches Years 7 and
+8 at its Valley Campus on Hangleton Way**, 1.65 km west of the Nevill
+Road site its address gives, and moves pupils to Nevill Road in Year 9.
+The council gave statutory notice on 8 June 2026 to close the Valley
+Campus on 31 August 2028 and bring the school onto one site. Because
+this document is about Year 7, every figure here for entry years up to
+2027 puts Hove Park at Hangleton Way and every figure from 2028 puts it
+at Nevill Road. It makes little difference to how many children the
+school takes, and a large difference to which children: at Hangleton Way
+it draws about twice as many from Hangleton & Knoll and much less from
+Westdene and Poets' Corner
+([the model guide](https://adamdennett.github.io/bh-school-system/model-guide.html#sec-cij-hove-park)).
+
 The city allocates places by **catchment area with a lottery tie-break**
 for oversubscribed schools --- an arrangement that is very unusual in
 England, where distance from the school gate usually decides priority.

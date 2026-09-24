@@ -1334,6 +1334,137 @@ reason for routing at all. King's is
   accessibility of a Brighton secondary, which was wrong by about sixty
   children; the build now stops rather than let that happen silently.
 
+## Corrected: Hove Park has two campuses {#sec-cij-hove-park}
+
+```{r hp-campus}
+#| include: false
+hpv  <- inp$hove_park_valley
+HPN  <- hpv$school
+hp_km <- sqrt((inp$schools$easting[inp$schools$name == HPN] - hpv$easting)^2 +
+              (inp$schools$northing[inp$schools$name == HPN] - hpv$northing)^2) / 1000
+hp_cost <- inp$cost$now %>%
+  filter(name == HPN) %>% select(zone, nevill = cij) %>%
+  inner_join(inp$cost$valley %>% filter(name == HPN) %>% select(zone, valley = cij),
+             by = "zone") %>%
+  mutate(d = valley - nevill)
+hp_run <- function(hp, y = 2026)
+  run_sim(inp, year = y, rules = list(rule = "priorities"), hp_site = hp)
+hp_v <- hp_run("valley"); hp_n <- hp_run("nevill")
+hp_int <- function(r, s = HPN) r$schools$intake[r$schools$name == s]
+# Where its children come from, by home ward. Ward names come with the
+# council's own count (@sec-oi-ward-check).
+hp_wards <- bh_data("ward_validation.rds")$counts %>% select(code = code, ward)
+hp_wt <- oi$zones %>% group_by(zone) %>% mutate(w = Oi / sum(Oi)) %>% ungroup() %>%
+  select(zone, code = ward, w)
+hp_by_ward <- function(r, lab) r$flows %>% filter(name == HPN) %>%
+  group_by(zone) %>% summarise(f = sum(flow), .groups = "drop") %>%
+  inner_join(hp_wt, by = "zone", relationship = "many-to-many") %>%
+  group_by(code) %>% summarise(!!lab := sum(f * w), .groups = "drop")
+hp_comp <- hp_by_ward(hp_n, "nevill") %>%
+  inner_join(hp_by_ward(hp_v, "valley"), by = "code") %>%
+  inner_join(hp_wards, by = "code") %>%
+  mutate(change = valley - nevill) %>%
+  arrange(desc(abs(change)))
+```
+
+Every school in the cost table sits where the school register puts it,
+which is the address the school gives. For Hove Park that address is the
+Nevill Campus on Nevill Road. But Hove Park teaches **Years 7 and 8 at
+the Valley Campus on Hangleton Way**, `r sprintf("%.2f", hp_km)` km
+further west, and only moves pupils to Nevill Road in Year 9. This model
+is about Year 7. Every journey time it used for Hove Park was therefore a
+journey to a building the modelled children would not attend for two
+years.
+
+The error is not random. The Valley Campus is west of the Nevill Campus,
+towards Hangleton and Portslade and away from central Hove and Brighton,
+so putting Year 7 at Nevill Road makes the school look nearer than it is
+to the parts of the city with most children in them, and further than it
+is from Hangleton. Routed to both sites, the Valley Campus is a median
+**`r sprintf("%+.1f", median(hp_cost$d))` minutes** from the city's
+neighbourhoods, but quicker from the
+`r sprintf("%.0f%%", 100 * mean(hp_cost$d < 0))` of them that lie west
+and north west.
+
+This is temporary. The council gave statutory notice on 8 June 2026 to
+discontinue the Valley Campus on 31 August 2028 and consolidate the
+school on Nevill Road from 1 September 2028. So the model now carries
+both sites: **entry years up to 2027 are taught at Hangleton Way, 2028
+onwards at Nevill Road**, and `run_sim()` picks the campus from the entry
+year unless told otherwise. Everything fitted to preferences or offers —
+attractiveness, the catchment terms, the competing-destinations term —
+is fitted with Year 7 at the Valley Campus, because every round it is
+fitted to was taught there.
+
+```{r hp-campus-table}
+#| tbl-cap: "The same entry year, run at each campus. Everything else is held: the same attractiveness, the same catchments, the same admission numbers."
+tibble::tibble(
+  Measure = c("Hove Park's intake",
+              "Its mean journey",
+              "Blatchington Mill's intake",
+              "Portslade Aldridge's intake"),
+  `Valley Campus` = c(
+    sprintf("%.0f", hp_int(hp_v)),
+    sprintf("%.1f min", hp_v$schools$mean_min[hp_v$schools$name == HPN]),
+    sprintf("%.0f", hp_int(hp_v, "Blatchington Mill School")),
+    sprintf("%.0f", hp_int(hp_v, "Portslade Aldridge Community Academy"))),
+  `Nevill Road` = c(
+    sprintf("%.0f", hp_int(hp_n)),
+    sprintf("%.1f min", hp_n$schools$mean_min[hp_n$schools$name == HPN]),
+    sprintf("%.0f", hp_int(hp_n, "Blatchington Mill School")),
+    sprintf("%.0f", hp_int(hp_n, "Portslade Aldridge Community Academy")))) %>%
+  knitr::kable(align = "lrr")
+```
+
+The totals barely move: `r sprintf("%.0f", abs(hp_int(hp_v) - hp_int(hp_n)))`
+children on an intake of about `r sprintf("%.0f", hp_int(hp_v))`. That is
+the answer to the obvious question, and it is worth stating plainly,
+because it means the campus was **not** the reason the model has trouble
+with Hove Park.
+
+What does change, and changes a great deal, is **which children**:
+
+```{r hp-campus-wards}
+#| tbl-cap: "Hove Park's modelled Year 7, by home ward, at each campus. The six wards the campus matters most for."
+hp_comp %>%
+  slice_head(n = 6) %>%
+  transmute(Ward = ward,
+            `At the Valley Campus` = sprintf("%.0f", valley),
+            `At Nevill Road` = sprintf("%.0f", nevill),
+            Difference = sprintf("%+.0f", change)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+About a quarter of the school's intake changes ward. At Hangleton Way it
+draws heavily on **Hangleton & Knoll**, the ward it actually sits in, and
+on Portslade; at Nevill Road it draws instead on **Westdene & Hove Park**
+and **Westbourne & Poets' Corner**. Those are different children, with
+different journeys and a different level of disadvantage, so every
+measure built on the composition of an intake — the segregation index,
+deprived children's journey times, each school's free-school-meal share —
+was being computed for the wrong families in the city's largest paired
+catchment.
+
+::: {.callout-note}
+## What this does and does not fix
+
+It does not fix Hove Park's intake. The model still puts more children
+there than the school was offered in September 2026, and the reason lies
+elsewhere: most of Hove Park's modelled intake is overflow refused at
+Blatchington Mill, and the city's take-up of state places is not uniform
+(@sec-oi-ward-check). Correcting the campus moves those children between
+wards rather than out of the school.
+
+What it fixes is the geography, which everything downstream is built on.
+It also repaired a second fault it exposed: the out-of-city fit is a
+likelihood with more than one basin, and moving Hove Park was enough to
+send the optimiser into the wrong one, which cut the modelled flow from
+Longhill's catchment to Priory School from about 35 children to almost
+none. The starting grid is wider now and the fitted likelihood is
+reported, so the next time the geometry moves this shows up rather than
+passing silently.
+:::
+
 ## Checks you can run
 
 ```{r cij-checks}

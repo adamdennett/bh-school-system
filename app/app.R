@@ -198,6 +198,15 @@ ui <- page_sidebar(
     selectInput("site", "Longhill's site",
                 choices = c("Ovingdean (as now)" = "now",
                             "Elm Grove (relocated)" = "elm")),
+    selectInput("hp_site", "Hove Park's Year 7 site",
+                choices = c("Follows the entry year" = "auto",
+                            "Valley Campus (to 2027)" = "valley",
+                            "Nevill Road (from 2028)" = "nevill")),
+    div(class = "note", style = "margin:-6px 0 8px",
+        "Hove Park teaches Year 7 at the Valley Campus on Hangleton Way, ",
+        "1.65 km west of its Nevill Road site. The council has given notice ",
+        "to close the Valley Campus on 31 August 2028, so entry years to ",
+        "2027 are taught there and 2028 onwards at Nevill Road."),
     sliderInput("year", "Entry year", min = min(inp$demand$year),
                 max = max(inp$demand$year), value = 2026, step = 1, sep = "",
                 ticks = FALSE),
@@ -387,6 +396,9 @@ server <- function(input, output, session) {
     s <- inp$presets[[p]]
     updateSelectInput(session, "design", selected = s$design)
     updateSelectInput(session, "site", selected = s$site)
+    # A preset that says nothing about Hove Park's campus means the one
+    # the entry year implies, not whatever the last preset left behind.
+    updateSelectInput(session, "hp_site", selected = s$hp_site %||% "auto")
     updateSliderInput(session, "year", value = s$year)
     # A preset that does not name a catchment strength means the fitted
     # one, not "leave whatever the last preset set".
@@ -478,11 +490,19 @@ server <- function(input, output, session) {
     "attainment figures. Close any school the same way."),
     inp$comart$w_from_short))
 
+  # "auto" means let run_sim() read the campus off the entry year, which
+  # is what NULL does. The other two pin it, so the same year can be run
+  # both ways and the campus isolated.
+  hp_now <- reactive({
+    v <- input$hp_site %||% "auto"
+    if (identical(v, "auto")) NULL else v
+  })
+
   sim <- reactive({
     req(input$design, input$site, input$year)
     w <- w_now(); p <- pan_now()
     req(all(is.finite(w)), all(is.finite(p)))
-    run_sim(inp, w_mult = w, pans = p, site = input$site,
+    run_sim(inp, w_mult = w, pans = p, site = input$site, hp_site = hp_now(),
             design = input$design, year = input$year, gamma = input$gamma,
             exclusive = input$exclusive, rules = rule_args(),
             closed = closed_now())
@@ -553,7 +573,7 @@ server <- function(input, output, session) {
     base <- inp$designs[["Current catchments"]]$zone
     z <- inp$designs[[input$design]]$zone
     regrouped <- sum(z[names(base)] != base, na.rm = TRUE)
-    now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
+    now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
                    design = "Current catchments", year = input$year,
                    gamma = input$gamma, exclusive = input$exclusive,
                    rules = rule_args(), closed = closed_now())
@@ -1027,7 +1047,7 @@ server <- function(input, output, session) {
     m <- met()
     live <- ""
     if (identical(input$rule, "priorities") && (input$p6 %||% 5) > 0) {
-      r0 <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site,
+      r0 <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
                     design = input$design, year = input$year, gamma = input$gamma,
                     exclusive = input$exclusive,
                     rules = utils::modifyList(rule_args(), list(p6_share = 0)),
@@ -1175,7 +1195,7 @@ server <- function(input, output, session) {
       s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w, pans = p,
                            rules = rule_args(), gamma = input$gamma,
                            exclusive = input$exclusive,
-                           site = input$site, design = input$design,
+                           site = input$site, hp_site = hp_now(), design = input$design,
                            year = input$year, closed = closed_now())
       data.frame(
         name = nm, short = CITY$short[i], att8 = CITY$att8[i],
@@ -1265,7 +1285,7 @@ server <- function(input, output, session) {
     s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w_now(), pans = p,
                            rules = rule_args(), gamma = input$gamma,
                            exclusive = input$exclusive,
-                         site = input$site, design = input$design,
+                         site = input$site, hp_site = hp_now(), design = input$design,
                          year = input$year, closed = closed_now())
     if (is.infinite(s$multiplier))
       sprintf("%s cannot fill %s places at any attractiveness: at 60 times its own it reaches %.0f%%. There are not enough children within reach.",
