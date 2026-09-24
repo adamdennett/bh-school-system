@@ -301,7 +301,16 @@ ui <- page_sidebar(
                 div(plotOutput("p_att_live", height = 292),
                     plotOutput("p_abs_live", height = 292)))),
     nav_panel("Places", plotOutput("p_places", height = 430),
-              tableOutput("t_places")),
+              tableOutput("t_places"),
+              div(class = "note",
+                  "% FSM (est) is the modelled share of each intake eligible for ",
+                  "free school meals, not a published figure. The layer behind it ",
+                  "is fitted to the council's September 2026 Year 7 free school ",
+                  "meal offers for the community schools, and to published ",
+                  "whole-school shares for the academies and faith schools. It ",
+                  "moves with the admission rules on the left, because the free ",
+                  "school meal priority changes who gets the places as well as ",
+                  "how many.")),
     nav_panel("Catchments",
               plotOutput("p_catch", height = 430),
               tableOutput("t_catch"),
@@ -764,9 +773,21 @@ server <- function(input, output, session) {
   })
 
   output$t_places <- renderTable({
-    sim()$schools %>% filter(city) %>% arrange(fill) %>%
+    # The disadvantaged share of each intake comes from the same layer the
+    # Fairness tab uses, so the two always agree. It responds to the
+    # admission rules because the rules decide who gets the places: the
+    # free school meal priority, and the targeted version of it, change
+    # the composition of an intake as well as its size.
+    sim()$schools %>% filter(city) %>%
+      left_join(met()$mix %>% select(name, dep_share), by = "name") %>%
+      arrange(fill) %>%
       transmute(School = short, `Admission number` = fmt_n(pan),
                 Intake = fmt_n(intake), Fill = sprintf("%.0f%%", 100 * fill),
+                # One decimal, because the admission rules move these
+                # shares by a point or two and whole numbers would hide
+                # the response to the controls almost entirely.
+                `% FSM (est)` = ifelse(is.na(dep_share), "—",
+                                       sprintf("%.1f%%", 100 * dep_share)),
                 `Mean journey` = sprintf("%.0f min", mean_min))
   }, striped = TRUE, width = "100%")
 
