@@ -13,6 +13,19 @@ abstract: |
   of the council. It is written to be argued with.
 ---
 
+::: {.callout-tip appearance="default" icon="true"}
+## Try the options yourself
+
+Everything in this document comes out of one model, and that model runs in a
+browser. **[Open the school places simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/){target="_blank"}**
+to change admission numbers, catchments, Longhill's site or the
+oversubscription priorities, and watch what happens to each school's intake,
+to journey times, to the mix of pupils and to school budgets.
+
+There is also [a guide to the model, stage by
+stage](model-guide.qmd), for anyone who wants to check how it works.
+:::
+
 ::: {.callout-warning appearance="default" icon="true"}
 ## Beta
 

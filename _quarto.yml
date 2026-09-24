@@ -17,6 +17,9 @@ website:
         text: "Model guide"
       - href: slides.qmd
         text: "Slides"
+      - href: https://adamdennett-bh-school-system.share.connect.posit.cloud/
+        text: "Try the simulator"
+        target: _blank
     right:
       - icon: github
         href: https://github.com/adamdennett/bh-school-system
