@@ -1723,25 +1723,25 @@
   },
   "files": {
     "app.R": {
-      "checksum": "41d75851a862e931cb9ad91533d9cafd"
+      "checksum": "7ae99fa3ab1a61906ea2358d7b997317"
     },
     "data/sim_inputs.rds": {
-      "checksum": "cf6ae3493f043efa27febd023759c490"
+      "checksum": "644e9f6e47419a27a1e4a5b41b31007b"
     },
     "R/export.R": {
-      "checksum": "71e450b1d0ee434d963e5010bfb5b87b"
+      "checksum": "13227da909243ce7e298461fa7a0d33d"
     },
     "R/model.R": {
-      "checksum": "a17d545e6bd54fc9c7dd6e27eb5dcd74"
+      "checksum": "d33c48f92090e100dd8a6ccfaad13767"
     },
     "R/outcomes.R": {
-      "checksum": "fb60427a37821fd25b3db7a192f2661d"
+      "checksum": "cf7f62ab83141159c1237f6dd669d713"
     },
     "README.md": {
       "checksum": "2c0a235e3f3f5434d1931c6af124ef6d"
     },
     "tests/check.R": {
-      "checksum": "8a3ef65f614d71022397005acbe2ed56"
+      "checksum": "a87ae639c686ce624fef6d2b4dbfa2e5"
     },
     "www/leaflet/images/layers-2x.png": {
       "checksum": "4f0283c6ce28e888000e978e537a6a56"
