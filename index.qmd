@@ -3955,6 +3955,170 @@ finding. It is the kind of thing the council's own preference records
 would settle in an afternoon, and section 9 asks for them.
 ::::
 
+## Why Hove Park takes more disadvantaged children than Blatchington Mill {#sec-hove-park-mix}
+
+```{r hp-campus-prep}
+#| include: false
+hpc <- bh_data("hove_park_campus.rds")
+hp_g <- function(case, col) hpc$gap[[col]][hpc$gap$case == case]
+hp_m <- function(year, col) hpc$move[[col]][hpc$move$year == year]
+hp_lam <- function(s) hpc$lambda[[s]]
+hp_pts <- function(x) sprintf("%.1f", 100 * x)
+# The attractiveness multiplier the move is worth, in Attainment 8
+# points, using this document's own choice fit (section 5.4) so the two
+# cannot drift apart.
+hp_att8 <- log(hpc$mult) / ch_one(CH_DEFAULT, "att8")$slope
+hp_one_pt <- exp(ch_one(CH_DEFAULT, "att8")$slope)
+hp_att8_now <- cd$att8[cd$school == "Hove Park School"]
+hp_att8_top <- max(cd$att8)
+```
+
+This question comes up repeatedly, and it is a good one. Hove Park and
+Blatchington Mill share a catchment and stand
+`r sprintf("%.1f", hpc$km_nevill)` km apart, yet Hove Park's Year 7 is
+about `r hp_pts(hp_g("As calibrated", "hove_park"))`% disadvantaged
+against Blatchington Mill's
+`r hp_pts(hp_g("As calibrated", "blatchington"))`% --- a gap of
+`r hp_pts(hp_g("As calibrated", "gap"))` points between two schools with
+the same catchment and, on the face of it, the same geography.
+
+The model can separate two explanations that are usually run together.
+The disadvantage layer has a term for each school, $\lambda_j$, which is
+how strongly that school pulls the disadvantaged children of a
+neighbourhood it already draws from. Set every $\lambda$ to one and each
+school simply takes its proportional share of each neighbourhood's
+disadvantaged children: what is left is **geography**. The difference
+between that and the published shares is **sorting within
+neighbourhoods**.
+
+```{r hp-campus-gap}
+#| tbl-cap: "The disadvantaged share of each school's modelled Year 7, 2026, under four treatments."
+hpc$gap %>%
+  transmute(Treatment = case,
+            `Hove Park` = paste0(hp_pts(hove_park), "%"),
+            `Blatchington Mill` = paste0(hp_pts(blatchington), "%"),
+            Gap = sprintf("%+.1f pts", 100 * gap)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+Geography explains about
+`r sprintf("%.0f", 100 * hp_g("Geography only", "gap") / hp_g("As calibrated", "gap"))`%
+of the gap --- roughly a third --- and all of that comes from one thing:
+**Year 7 is not taught at Hove Park's registered address.** It is taught
+at the Valley Campus on Hangleton Way, `r sprintf("%.1f", hpc$km_valley)`
+km from Blatchington Mill and in Hangleton rather than central Hove. Put
+Year 7 at Nevill Road and the geographic part of the gap disappears
+entirely: `r sprintf("%+.1f", 100 * hp_g("Geography only, Nevill Road", "gap"))`
+points, which is nothing. Two schools half a kilometre apart draw the
+same children, as you would expect.
+
+The other two thirds is sorting, and the fitted $\lambda$ is a
+measurement of it:
+
+```{r hp-campus-lambda}
+#| tbl-cap: "How strongly each school draws the disadvantaged children of the neighbourhoods it already serves. One means its proportional share."
+tibble::tibble(School = short_sch(names(hpc$lambda)),
+               `Pull on disadvantaged children` = sprintf("%.2f", hpc$lambda)) %>%
+  arrange(desc(as.numeric(`Pull on disadvantaged children`))) %>%
+  knitr::kable(align = "lr")
+```
+
+Hove Park's `r sprintf("%.2f", hp_lam("Hove Park School"))` against
+Blatchington Mill's `r sprintf("%.2f", hp_lam("Blatchington Mill School"))`
+is the heart of it: from the same streets, Hove Park takes about
+`r sprintf("%.0f", 100 * (hp_lam("Hove Park School") / hp_lam("Blatchington Mill School") - 1))`%
+more of the disadvantaged children than its share of the intake implies.
+The two church schools sit at the other end ---
+`r sprintf("%.2f", hp_lam("King's School"))` and
+`r sprintf("%.2f", hp_lam("Cardinal Newman Catholic School"))`, so about
+half their proportional share --- as do Varndean and Dorothy Stringer.
+Longhill is off the scale in the other direction.
+
+That is the interaction worth naming. Closing King's and Cardinal
+Newman in the model narrows the geography-only gap from
+`r hp_pts(hp_g("Geography only", "gap"))` points to
+`r hp_pts(hp_g("Geography only, no faith schools", "gap"))`, so their
+pull is real but modest as a share of the whole. The larger effect is
+not that the church schools take children out of Hove Park's catchment;
+it is that **across the city the schools families compete hardest to
+enter take a smaller share of the disadvantaged children from every
+neighbourhood they serve, and the undersubscribed schools take the
+rest.** Blatchington Mill fills; Hove Park takes those who did not get
+in, and those whose families did not name it first.
+
+::: {.callout-warning}
+## What this is, and what it is not
+
+$\lambda_j$ is **fitted** to reproduce each school's published
+disadvantaged share. It measures sorting; it does not explain it. The
+model can say how much of the Hove Park--Blatchington gap geography
+accounts for --- about a third, all of it the campus --- and how much it
+cannot. It cannot say whether the remaining two thirds is parental
+choice, the order preferences are given in, the lottery, the priorities,
+or something else, and nothing here should be read as saying which.
+:::
+
+## Does moving the school raise demand, or does the school have to change? {#sec-hove-park-demand}
+
+The consolidation on Nevill Road in September 2028 is as close to a
+natural experiment as this system offers: one school, one known date,
+one move of `r sprintf("%.2f", hpc$km_move)`
+km east, with everything else held. The model's answer:
+
+```{r hp-campus-move}
+#| tbl-cap: "Hove Park's modelled Year 7 with the entry year taught at each campus, and how disadvantaged that intake is."
+hpc$move %>%
+  transmute(`Entry year` = year,
+            `At the Valley Campus` = sprintf("%.0f", valley),
+            `At Nevill Road` = sprintf("%.0f", nevill),
+            Difference = sprintf("%+.0f", nevill - valley),
+            `Disadvantaged share` = sprintf("%.0f%% → %.0f%%",
+                                            100 * valley_dep, 100 * nevill_dep)) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+The move is worth about
+**`r sprintf("%+.0f", hp_m(2028, "nevill") - hp_m(2028, "valley"))` children
+a year**, an intake `r sprintf("%.0f", 100 * (hp_m(2028, "nevill") / hp_m(2028, "valley") - 1))`%
+larger, and it holds as the cohort shrinks. It is not nothing: it is
+most of the difference between a viable form entry and an empty one.
+
+But set it against the other lever. Staying at Hangleton Way and making
+the school **`r sprintf("%.0f", 100 * (hpc$mult - 1))`% more attractive**
+produces exactly the same intake. On this document's own choice fit
+(@sec-choice), that multiplier is worth about
+**`r sprintf("%.1f", hp_att8)` Attainment 8 points**. Hove Park's
+Attainment 8 is `r sprintf("%.1f", hp_att8_now)`; the highest in the city
+is `r sprintf("%.1f", hp_att8_top)`. So the whole benefit of moving the
+school across Hove is about what a quarter of its gap to the top of the
+city would buy --- and a single Attainment 8 point is worth roughly
+`r sprintf("%.0f", (hp_one_pt - 1) * 100)`% more demand, or about
+`r sprintf("%.0f", hp_m(2028, "valley") * (hp_one_pt - 1))` children.
+
+**The answer, then, is: the site helps, and the school's standing
+matters more.** The move is a one-off gain of a fixed size. Attractiveness
+has four times the headroom and compounds.
+
+And there is a loop here that the model does not close, which is the
+most interesting thing in this section. The move itself makes Hove
+Park's intake less disadvantaged ---
+`r sprintf("%.0f%%", 100 * hp_m(2028, "valley_dep"))` to
+`r sprintf("%.0f%%", 100 * hp_m(2028, "nevill_dep"))` in 2028 --- purely
+because Nevill Road draws different streets. A less disadvantaged intake
+raises the school's raw Attainment 8, because that is largely what raw
+Attainment 8 measures (@sec-lever). A higher headline score raises
+demand, because that is what families read (@sec-choice). Which raises
+the intake again.
+
+That is the Longhill loop (@sec-exec) running forwards instead of
+backwards, and the consolidation may start it. Nothing in this model
+predicts it: $W_j$ is fixed in every run above, so the figures here are
+the move without the loop. What they do establish is where to look, and
+the September 2028 and 2029 factsheets will show whether it happens.
+**This is a prediction worth recording now**, because a natural
+experiment is only useful if the prediction is written down before the
+result arrives.
+
 ## What pupil-level data would add here
 
 This is a school-level association across ten schools --- ten points.

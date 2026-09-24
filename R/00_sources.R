@@ -85,7 +85,8 @@ DATASETS <- tibble::tribble(
   "priority6_sweep.rds",          "Priority 6 and the social mix of intakes", c("bhcc_osa81", "bhcc_foi24", "bhcc_adm", "imd", "census", "onspd", "osm", "bods", "perf"), "this repository, R/05_app_inputs.R",
   "route_geometries.rds",         "One journey, leg by leg",               c("osm", "bods"),                                         "open Brightopia bundle",
   "guide_routes.rds",             "One neighbourhood routed to every school", c("osm", "bods", "onspd"),                            "open Brightopia bundle",
-  "ward_validation.rds",          "The origins checked against the council's ward count", c("bhcc_eef", "sape", "onspd", "bhcc_adm"), "open Brightopia bundle")
+  "ward_validation.rds",          "The origins checked against the council's ward count", c("bhcc_eef", "sape", "onspd", "bhcc_adm"), "open Brightopia bundle",
+  "hove_park_campus.rds",         "Hove Park's two campuses: the intake mix and the move", c("bhcc_plan", "bhcc_adm", "osm", "bods", "onspd", "imd", "perf"), "this repository, R/05_app_inputs.R")
 
 stopifnot(!any(duplicated(DATASETS$file)),
           all(unlist(DATASETS$from) %in% SOURCES$key))

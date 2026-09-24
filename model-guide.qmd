@@ -1360,6 +1360,13 @@ hp_by_ward <- function(r, lab) r$flows %>% filter(name == HPN) %>%
   group_by(zone) %>% summarise(f = sum(flow), .groups = "drop") %>%
   inner_join(hp_wt, by = "zone", relationship = "many-to-many") %>%
   group_by(code) %>% summarise(!!lab := sum(f * w), .groups = "drop")
+# The eastern outflow, for the note on the out-of-city fit below.
+hp_priory <- hp_v$flows %>%
+  filter(name == "Priory School") %>%
+  group_by(zone) %>% summarise(f = sum(flow), .groups = "drop") %>%
+  inner_join(hp_wt, by = "zone", relationship = "many-to-many") %>%
+  group_by(code) %>% summarise(children = sum(f * w), .groups = "drop") %>%
+  inner_join(hp_wards, by = "code") %>% arrange(desc(children))
 hp_comp <- hp_by_ward(hp_n, "nevill") %>%
   inner_join(hp_by_ward(hp_v, "valley"), by = "code") %>%
   inner_join(hp_wards, by = "code") %>%
@@ -1460,9 +1467,22 @@ It also repaired a second fault it exposed: the out-of-city fit is a
 likelihood with more than one basin, and moving Hove Park was enough to
 send the optimiser into the wrong one, which cut the modelled flow from
 Longhill's catchment to Priory School from about 35 children to almost
-none. The starting grid is wider now and the fitted likelihood is
-reported, so the next time the geometry moves this shows up rather than
-passing silently.
+none, at a likelihood six times worse. The starting grid is wider now
+and the fitted likelihood is reported, so the next time the geometry
+moves this shows up rather than passing silently.
+
+Two things say the recovered basin is the right one rather than merely
+the better-fitting one. It reproduces the council's published 2024
+destinations — 38 children from Longhill's catchment to Priory, against
+35 modelled. And it puts them where local knowledge puts them: of the
+`r sprintf("%.0f", sum(hp_priory$children))` children the model sends to
+Priory, `r sprintf("%.0f%%", 100 * hp_priory$children[1] / sum(hp_priory$children))`
+are from **`r hp_priory$ward[1]`**, the part of the city closest to
+Lewes, and the next largest share is from
+`r hp_priory$ward[2]`. That outflow is a real feature of the eastern edge of
+the city and has no counterpart in the west, which is exactly why a
+badly-fitted version of it is easy to miss: nothing on the Hove side of
+the city would look wrong.
 :::
 
 ## Checks you can run

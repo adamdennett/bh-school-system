@@ -1298,3 +1298,110 @@ message(sprintf("  Whitehawk: %d zones, %.0f children, %.0f%% disadvantaged (cit
                 wh_area$n_zones, wh_area$children, 100 * wh_area$disadvantaged_share, 100 * wh_area$city_share,
                 paste(sprintf("%d %s %.3f", whg$year, whg$map, whg$gorard), collapse = ", ")))
 message("Saved data/whitehawk_explained.rds")
+
+
+# ======================================================================
+# Hove Park's two campuses: what the site does, and what it does not
+# ======================================================================
+# Two questions this cannot be asked of published data, and can be asked
+# of the model:
+#
+#   1  Hove Park and Blatchington Mill share a catchment and stand 0.5 km
+#      apart at Nevill Road, yet Hove Park's Year 7 is far more
+#      disadvantaged. How much of that is geography - Year 7 is taught
+#      1.5 km west at the Valley Campus, in Hangleton - and how much is
+#      sorting between schools within the same neighbourhoods?
+#   2  The consolidation on Nevill Road in September 2028 moves Year 7
+#      east. Is that worth more or less than making the school more
+#      attractive, which is what its raw results currently do for it?
+#
+# The disadvantage layer separates the two cleanly. lambda_j is each
+# school's pull on the disadvantaged children of a neighbourhood it
+# already draws from, fitted so every school reproduces its published
+# share. Setting every lambda to 1 leaves only geography: each school
+# takes its proportional share of each neighbourhood's disadvantaged
+# children. The difference between the two is the sorting the geography
+# does not explain - measured, not explained, because lambda is fitted.
+#
+# Output: data/hove_park_campus.rds
+# ======================================================================
+
+message("\n=== Hove Park: the campus, the mix and the demand ===")
+
+HPS  <- "Hove Park School"
+BMS  <- "Blatchington Mill School"
+FAITH_HP <- c("King's School", "Cardinal Newman Catholic School")
+inp_hp <- readRDS(file.path(APP_DIR, "data", "sim_inputs.rds"))
+hp_geo <- function(i) { i$params$dis$lambda[] <- 1; i }
+hp_mix <- function(i, r) {
+  m <- outcomes(i, r)$mix
+  tibble(name = m$name, intake = m$n, dep_share = m$dep_share)
+}
+hp_run <- function(i = inp_hp, year = 2026, hp = NULL, closed = NULL, w = NULL)
+  run_sim(i, year = year, rules = list(rule = "priorities"),
+          hp_site = hp, closed = closed, w_mult = w)
+
+# ---- 1. Where the gap comes from ------------------------------------
+hp_cases <- tibble::tribble(
+  ~case,                          ~lambda,      ~hp,       ~closed,
+  "As calibrated",                "fitted",     NA,        NA,
+  "Geography only",               "all 1",      NA,        NA,
+  "Geography only, Nevill Road",  "all 1",      "nevill",  NA,
+  "Geography only, no faith schools", "all 1",  NA,        "faith")
+hp_gap <- purrr::pmap_dfr(hp_cases, function(case, lambda, hp, closed) {
+  i <- if (lambda == "all 1") hp_geo(inp_hp) else inp_hp
+  r <- hp_run(i, hp = if (is.na(hp)) NULL else hp,
+              closed = if (is.na(closed)) NULL else FAITH_HP)
+  m <- hp_mix(i, r) %>% filter(name %in% c(HPS, BMS))
+  tibble(case = case,
+         hove_park = m$dep_share[m$name == HPS],
+         blatchington = m$dep_share[m$name == BMS],
+         gap = hove_park - blatchington,
+         hp_intake = m$intake[m$name == HPS],
+         bm_intake = m$intake[m$name == BMS])
+})
+
+# ---- 2. What the move is worth, against attractiveness --------------
+hp_years <- c(2026, 2028, 2030, 2035)
+hp_move <- purrr::map_dfr(hp_years, function(y) {
+  v <- hp_run(year = y, hp = "valley"); n <- hp_run(year = y, hp = "nevill")
+  mv <- hp_mix(inp_hp, v); mn <- hp_mix(inp_hp, n)
+  tibble(year = y,
+         valley = mv$intake[mv$name == HPS], nevill = mn$intake[mn$name == HPS],
+         valley_dep = mv$dep_share[mv$name == HPS],
+         nevill_dep = mn$dep_share[mn$name == HPS])
+})
+
+# How big an attractiveness multiplier buys the same intake as the move,
+# in the first year of the consolidated school.
+HP_Y <- 2028
+hp_base   <- hp_move$valley[hp_move$year == HP_Y]
+hp_target <- hp_move$nevill[hp_move$year == HP_Y]
+hp_at <- function(m) {
+  r <- hp_run(year = HP_Y, hp = "valley", w = setNames(m, HPS))
+  r$schools$intake[r$schools$name == HPS]
+}
+hp_mult <- uniroot(function(m) hp_at(m) - hp_target, c(1, 6))$root
+
+saveRDS(list(gap = hp_gap, move = hp_move, lambda = inp_hp$params$dis$lambda,
+             mult = hp_mult, mult_year = HP_Y,
+             base = hp_base, target = hp_target,
+             km_nevill = sqrt((schools$easting[schools$name == HPS] -
+                                 schools$easting[schools$name == BMS])^2 +
+                              (schools$northing[schools$name == HPS] -
+                                 schools$northing[schools$name == BMS])^2) / 1000,
+             km_valley = sqrt((oi$hove_park_valley$easting -
+                                 schools$easting[schools$name == BMS])^2 +
+                              (oi$hove_park_valley$northing -
+                                 schools$northing[schools$name == BMS])^2) / 1000,
+             km_move = sqrt((oi$hove_park_valley$easting -
+                               schools$easting[schools$name == HPS])^2 +
+                            (oi$hove_park_valley$northing -
+                               schools$northing[schools$name == HPS])^2) / 1000,
+             valley = oi$hove_park_valley, built_at = Sys.time()),
+        file.path(DATA, "hove_park_campus.rds"))
+message(sprintf("  published gap %.1f points; geography alone %.1f; at Nevill Road %.1f",
+                100 * hp_gap$gap[1], 100 * hp_gap$gap[2], 100 * hp_gap$gap[3]))
+message(sprintf("  the move is worth %+.1f children in %d, the same as x%.2f attractiveness",
+                hp_target - hp_base, HP_Y, hp_mult))
+message("Saved data/hove_park_campus.rds")
