@@ -42,6 +42,15 @@ SCH <- inp$schools %>% filter(city | hypothetical %in% TRUE) %>%
   arrange(hypothetical %in% TRUE, short)
 HYP <- SCH$name[SCH$hypothetical %in% TRUE]
 
+# The catchment term is fitted for each catchment, not for the city, and
+# the fitted values differ five-fold. Both the sidebar and the server
+# need the names, so they live here.
+CATCH_LAB <- c(PACA = "Portslade Aldridge", Hove_Blatch = "Hove Park / Blatchington",
+               Patcham = "Patcham", DS_Varndean = "Stringer / Varndean",
+               BACA = "Brighton Aldridge", Longhill = "Longhill")
+GAMMA_FIT <- inp$params$gamma[names(CATCH_LAB)]
+GAMMA_ID  <- paste0("gamma_", names(CATCH_LAB))
+
 # Total places, moved in classes of 30. The slider's grid is laid out from
 # whatever the total currently is, so any sum the ten admission numbers
 # can reach is a point on it and a hand edit never snaps to a neighbour.
@@ -214,6 +223,24 @@ ui <- page_sidebar(
                 min = 0, max = 2, value = 1, step = 0.05, post = "×",
                 ticks = FALSE),
     div(class = "note", textOutput("gamma_note")),
+    # Per catchment, behind a fold. The slider above scales all six
+    # together and is what most questions need; these are for asking
+    # about one part of the city on its own.
+    tags$details(
+      tags$summary(style = "font-size:12px;font-weight:600;cursor:pointer;margin-bottom:4px",
+                   "Catchment by catchment"),
+      div(class = "note", style = "margin-bottom:6px",
+          "Each catchment has its own fitted term, shown beside its name, ",
+          "and these multiply it. They are fitted together on one preference ",
+          "table, so they are surer relative to each other than one at a time: ",
+          "moving one is a question, not a measurement."),
+      lapply(seq_along(CATCH_LAB), function(i)
+        sliderInput(GAMMA_ID[i],
+                    sprintf("%s — fitted %.1f", CATCH_LAB[i], GAMMA_FIT[i]),
+                    min = 0, max = 2, value = 1, step = 0.05, post = "×",
+                    ticks = FALSE)),
+      actionButton("gamma_reset", "Back to the fitted values",
+                   class = "btn-sm btn-outline-secondary")),
     sliderInput("exclusive", "Paired-catchment families who would take only one of the two",
                 min = 0, max = 2, value = 1, step = 0.1, post = "×",
                 ticks = FALSE),
@@ -412,6 +439,15 @@ server <- function(input, output, session) {
     # A preset that does not name a catchment strength means the fitted
     # one, not "leave whatever the last preset set".
     updateSliderInput(session, "gamma", value = s$gamma %||% 1)
+    # A preset sets the city-wide multiplier, so the per-catchment ones go
+    # back to the fitted values rather than carrying over from whatever
+    # the last scenario left behind.
+    ge <- s$gamma_each
+    for (id in GAMMA_ID) {
+      nm <- sub("^gamma_", "", id)
+      updateSliderInput(session, id,
+                        value = if (!is.null(ge) && nm %in% names(ge)) ge[[nm]] else 1)
+    }
     updateSliderInput(session, "exclusive", value = s$exclusive %||% 1)
     # Likewise a preset that says nothing about the admission rules means
     # the published model, not whatever the last preset left.
@@ -499,6 +535,23 @@ server <- function(input, output, session) {
     "attainment figures. Close any school the same way."),
     inp$comart$w_from_short))
 
+  # The catchment term the run uses. One number while the six per-catchment
+  # sliders are all at 1, so nothing changes for anyone who never opens
+  # that fold; a named vector once any of them moves, which run_sim()
+  # reads per catchment.
+  gamma_each <- reactive({
+    v <- vapply(GAMMA_ID, function(id) input[[id]] %||% 1, numeric(1))
+    setNames(v, names(CATCH_LAB))
+  })
+  gamma_now <- reactive({
+    m <- input$gamma %||% 1
+    each <- gamma_each()
+    if (all(abs(each - 1) < 1e-9)) m else m * each
+  })
+  observeEvent(input$gamma_reset, {
+    for (id in GAMMA_ID) updateSliderInput(session, id, value = 1)
+  })
+
   # "auto" means let run_sim() read the campus off the entry year, which
   # is what NULL does. The other two pin it, so the same year can be run
   # both ways and the campus isolated.
@@ -512,7 +565,7 @@ server <- function(input, output, session) {
     w <- w_now(); p <- pan_now()
     req(all(is.finite(w)), all(is.finite(p)))
     run_sim(inp, w_mult = w, pans = p, site = input$site, hp_site = hp_now(),
-            design = input$design, year = input$year, gamma = input$gamma,
+            design = input$design, year = input$year, gamma = gamma_now(),
             exclusive = input$exclusive, rules = rule_args(),
             closed = closed_now())
   })
@@ -526,7 +579,7 @@ server <- function(input, output, session) {
               format(Sys.time(), "%Y%m%d-%H%M")),
     content = function(file) {
       settings <- list(design = input$design, site = input$site, year = input$year,
-                       gamma = input$gamma, exclusive = input$exclusive,
+                       gamma = gamma_now(), exclusive = input$exclusive,
                        rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
                        fsm = isTRUE(input$fsm %||% TRUE),
                        targeted = isTRUE(input$targeted %||% FALSE),
@@ -584,7 +637,7 @@ server <- function(input, output, session) {
     regrouped <- sum(z[names(base)] != base, na.rm = TRUE)
     now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
                    design = "Current catchments", year = input$year,
-                   gamma = input$gamma, exclusive = input$exclusive,
+                   gamma = gamma_now(), exclusive = input$exclusive,
                    rules = rule_args(), closed = closed_now())
     moved <- sum(pmax(0, sim()$schools$intake - now$schools$intake))
     if (regrouped == 0)
@@ -1090,7 +1143,7 @@ server <- function(input, output, session) {
     live <- ""
     if (identical(input$rule, "priorities") && (input$p6 %||% 5) > 0) {
       r0 <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
-                    design = input$design, year = input$year, gamma = input$gamma,
+                    design = input$design, year = input$year, gamma = gamma_now(),
                     exclusive = input$exclusive,
                     rules = utils::modifyList(rule_args(), list(p6_share = 0)),
                     closed = closed_now())
@@ -1235,7 +1288,7 @@ server <- function(input, output, session) {
       nm <- CITY$name[i]
       if (nm %in% closed_now()) return(NULL)
       s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w, pans = p,
-                           rules = rule_args(), gamma = input$gamma,
+                           rules = rule_args(), gamma = gamma_now(),
                            exclusive = input$exclusive,
                            site = input$site, hp_site = hp_now(), design = input$design,
                            year = input$year, closed = closed_now())
@@ -1325,7 +1378,7 @@ server <- function(input, output, session) {
     # The other schools stay where the user has set them: the question
     # is what THIS school needs given everything else on the screen.
     s <- solve_w_for_pan(inp, nm, target_fill = 1, w_mult = w_now(), pans = p,
-                           rules = rule_args(), gamma = input$gamma,
+                           rules = rule_args(), gamma = gamma_now(),
                            exclusive = input$exclusive,
                          site = input$site, hp_site = hp_now(), design = input$design,
                          year = input$year, closed = closed_now())

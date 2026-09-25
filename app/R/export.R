@@ -45,6 +45,15 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     if (length(x) == 0 || all(is.na(x))) return("")
     if (is.logical(x)) ifelse(x, "yes", "no") else as.character(x)
   }
+  # The catchment multiplier is one number for the whole city, or one per
+  # catchment once the per-catchment sliders have been used. Collapse it
+  # to a single cell either way, or the row grows extra columns and the
+  # settings sheet comes out ragged.
+  gam <- function(g) {
+    if (is.null(g) || length(g) == 0) return("1")
+    if (length(g) == 1) return(as.character(round(as.numeric(g), 2)))
+    paste(sprintf("%s %.2f", names(g), as.numeric(g)), collapse = "; ")
+  }
   site_lab <- c(now = "Ovingdean (as now)", elm = "Elm Grove (relocated)")
   rule_lab <- c(published = "Everyone has the same chance (the published model)",
                 priorities = "The council's priorities (2026/27 arrangements)")
@@ -53,7 +62,7 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     c("Catchment map", s$design, settings$design),
     c("Longhill's site", site_lab[[s$site]], site_lab[[settings$site]]),
     c("Entry year", s$year, settings$year),
-    c("How much living in the catchment counts (x fitted)", s$gamma %||% 1, settings$gamma),
+    c("How much living in the catchment counts (x fitted)", gam(s$gamma), gam(settings$gamma)),
     c("Paired-catchment families who would take only one (x fitted)", s$exclusive %||% 1, settings$exclusive),
     c("When a school is full", rule_lab[[s$rule %||% "priorities"]], rule_lab[[settings$rule]]),
     c("Places for single-school catchments, priority 6 (%)", s$p6 %||% 5, settings$p6),

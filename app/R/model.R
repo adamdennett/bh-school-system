@@ -485,13 +485,22 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   # moderate pull in some catchments, a strong one in Stringer/Varndean.
   # Like the paired-school trait it follows the zone's own catchment; the
   # slider scales all of them together.
+  # `gamma` is a multiplier on the fitted terms, and it can be one number
+  # for the whole city or one per catchment, named. Per catchment lets a
+  # run ask what happens if families in one part of the city follow their
+  # catchment less closely than they do, which is a different question
+  # from the whole city loosening at once.
   g_mult <- if (is.null(gamma)) 1 else gamma
   g_fit <- inp$params$gamma
   g <- if (is.null(names(g_fit))) rep(g_fit, nrow(d)) else unname(g_fit[d$catchment])
   g[is.na(g)] <- 0
+  g_scale <- if (!is.null(names(g_mult)) && length(g_mult) > 1) {
+    m <- unname(g_mult[d$catchment]); m[is.na(m)] <- 1; m
+  } else as.numeric(g_mult)
+  g <- g * g_scale
 
   util <- d$Wj * d$cij^(-inp$params$beta) *
-    exp(g_mult * g * d$in_catch + inp$params$delta * log(d$Cj))
+    exp(g * d$in_catch + inp$params$delta * log(d$Cj))
   is_ext <- d$name %in% ext_names
   if (any(is_ext))
     util[is_ext] <- unname(outside$W[d$name[is_ext]]) * d$km[is_ext]^(-outside$decay)
@@ -514,7 +523,7 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     cij_ref[is.na(cij_ref)] <- d$cij[is.na(cij_ref)]
     Cj_ref <- compete_now(sch, W, inp$params$sigma)[d$name]
     util_ref <- d$Wj * cij_ref^(-inp$params$beta) *
-      exp(g_mult * g * d$in_catch + inp$params$delta * log(Cj_ref))
+      exp(g * d$in_catch + inp$params$delta * log(Cj_ref))
     if (any(is_ext)) util_ref[is_ext] <- util[is_ext]
     u_ref <- util_ref * d$Oi_pop / tapply(util_ref, d$orig, sum)[d$orig]
   }
