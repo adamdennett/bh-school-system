@@ -186,7 +186,18 @@ outcomes <- function(inp, r, shed = 0.75) {
   # home must not be netted against a flexible family in the same
   # neighbourhood picking up the Stringer place they gave up.
   by_zone <- f2 %>%
-    dplyr::group_by(orig, zone, home, own = catchment) %>%
+    dplyr::group_by(orig, zone, home, own = catchment,
+                    # In the two paired catchments some families name only
+                    # one of the pair. When that one fills they are
+                    # displaced even if the partner has room, because the
+                    # partner is not in their choice set. That is a
+                    # different thing from a catchment with no room in it,
+                    # and the two are reported apart rather than summed:
+                    # the council's practice on a child refused everywhere
+                    # they named is not reliably "the nearest school with
+                    # places", so neither outcome can simply be assumed
+                    # away.
+                    named_both = is.na(excluded)) %>%
     dplyr::summarise(living = sum(flow),
                      got_home = sum(flow[at_home]),
                      want_home = sum(wanted[at_home]),
@@ -237,17 +248,22 @@ outcomes <- function(inp, r, shed = 0.75) {
                      `Left the city: elsewhere (estimate)` = sum(left_other),
                      `Through priority 6` = sum(through_p6),
                      `Displaced` = sum(displaced),
+                     `Displaced, catchment full` = sum(displaced[named_both]),
+                     `Displaced, named one of the pair` = sum(displaced[!named_both]),
                      to_faith = sum(to_faith), .groups = "drop")
 
   # One row per catchment per destination bucket. This was a
   # tidyr::pivot_longer; stacking three named columns does not justify
   # shipping tidyr with the app.
+  # The two displacement rows sum to Displaced, so they are not part of
+  # the destination buckets - those have to add up to the cohort.
   WHERE <- c("Their own catchment", "Left for a faith school",
              "Left for another city school", "Left the city: East Sussex schools",
              "Left the city: elsewhere (estimate)",
              "Through priority 6", "Displaced")
+  SPLIT <- c("Displaced, catchment full", "Displaced, named one of the pair")
   by_catch <- dplyr::bind_rows(lapply(WHERE, function(w)
-    dplyr::mutate(wide[, setdiff(names(wide), WHERE), drop = FALSE],
+    dplyr::mutate(wide[, setdiff(names(wide), c(WHERE, SPLIT)), drop = FALSE],
                   where = w, n = wide[[w]]))) %>%
     dplyr::mutate(share = n / living,
                   label = dplyr::coalesce(unname(catch_lab[home]), home))
@@ -268,6 +284,20 @@ outcomes <- function(inp, r, shed = 0.75) {
     outside_share = sum(outside$outside) / tot,
     displaced = sum(by_zone$displaced),
     displaced_share = sum(by_zone$displaced) / tot,
+    # Split by whether the family had named both of their catchment's
+    # schools. A catchment with no room left displaces the first kind;
+    # the second kind declined the partner school, which may still have
+    # room. The system failed the first; the second is a choice meeting a
+    # full school, and the council's answer to it is not predictable.
+    displaced_full = sum(by_zone$displaced[by_zone$named_both]),
+    displaced_one_of_pair = sum(by_zone$displaced[!by_zone$named_both]),
+    displaced_by_catchment = wide %>%
+      dplyr::transmute(home,
+                       label = dplyr::coalesce(unname(catch_lab[home]), home),
+                       living,
+                       displaced = `Displaced`,
+                       catchment_full = `Displaced, catchment full`,
+                       one_of_pair = `Displaced, named one of the pair`),
     chose_share = sum(by_zone$chose) / tot,
     faith_choice_share = sum(by_zone$to_faith_school) / tot,
     other_city_share = sum(by_zone$other_city) / tot,

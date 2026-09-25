@@ -966,6 +966,8 @@ server <- function(input, output, session) {
     # catchment per bucket, so a match() is the whole of the pivot, and
     # tidyr need not be deployed for it.
     at <- function(lab, w) b$n[match(paste(lab, w), paste(b$label, b$where))]
+    dd <- m$displaced_by_catchment
+    dsp <- function(lab, col) dd[[col]][match(lab, dd$label)]
     m$outside %>%
       select(label, living, outside_share, displaced_share) %>%
       arrange(desc(displaced_share), desc(outside_share)) %>%
@@ -977,7 +979,15 @@ server <- function(input, output, session) {
                 `East Sussex schools` = fmt_n(at(label, "Left the city: East Sussex schools")),
                 `Elsewhere outside (est.)` = fmt_n(at(label, "Left the city: elsewhere (estimate)")),
                 `Through priority 6` = fmt_n(at(label, "Through priority 6")),
-                `Displaced` = fmt_n(at(label, "Displaced")),
+                # Split, because the two are different failures. The
+                # first is a catchment with no room in it. The second is
+                # a family in a paired catchment who named only one of
+                # the two schools and did not get it, while the other may
+                # still have places.
+                `Displaced: catchment full` =
+                  fmt_n(dsp(label, "catchment_full")),
+                `Displaced: named one of the pair` =
+                  fmt_n(dsp(label, "one_of_pair")),
                 `Outside` = sprintf("%.0f%%", 100 * outside_share),
                 `of which displaced` = sprintf("%.0f%%", 100 * displaced_share))
   }, striped = TRUE, width = "100%")
@@ -1007,12 +1017,21 @@ server <- function(input, output, session) {
       "catchment counts cuts the leaving, but it converts what is left into ",
       "displacement: more children want a place at home, and the full schools ",
       "still cannot take them. The number that measures a system failing ",
-      "its families is the orange one, not the total.</p>"),
+      "its families is the orange one, not the total.</p>",
+      "<p><b>And displacement itself is two things.</b> Of the %s displaced ",
+      "here, %s are in a catchment with no room left in it. The other %s named ",
+      "only one of the two schools in a paired catchment and did not get it, ",
+      "while the partner school may still have had places. Both are real, and ",
+      "the second is the harder to read: a child refused everywhere they named ",
+      "is allocated a school by the council, and that is not reliably the ",
+      "nearest one with places. The model does not guess which, so it reports ",
+      "them apart.</p>"),
       100 * m$outside_share, 100 * m$chose_share,
       100 * m$faith_choice_share, 100 * m$other_city_share, fmt_n(m$left_es),
       fmt_n(m$left_other),
       100 * m$displaced_share, m$worst, 100 * m$worst_share,
-      m$worst_displaced, 100 * m$worst_displaced_share))
+      m$worst_displaced, 100 * m$worst_displaced_share,
+      fmt_n(m$displaced), fmt_n(m$displaced_full), fmt_n(m$displaced_one_of_pair)))
   })
 
   # ---- The council's priorities ---------------------------------------
