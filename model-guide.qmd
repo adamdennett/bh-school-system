@@ -3146,8 +3146,110 @@ tibble(key = names(partner_ov), partner = unname(partner_ov)) %>%
 ```
 
 The families who would take **only** one of the pair are excluded from
-this step: they are carried as populations of their own (§8), and a child
+this step: they are carried as populations of their own, and a child
 who would not take Stringer is never sent there.
+
+### Where the "only one of the pair" families come from {#sec-overflow-exclusive}
+
+```{r ov-exclusive}
+#| include: false
+ex <- inp$params$exclusive
+cal_ex <- mt$calibrated$exclusive
+r_ex <- run_sim(inp, year = 2026, rules = list(rule = "priorities"))
+pop_ex <- r_ex$flows %>%
+  filter(catchment %in% c("DS_Varndean", "Hove_Blatch")) %>%
+  group_by(catchment, pop) %>%
+  summarise(children = sum(flow), .groups = "drop")
+ex_of <- function(s, col) cal_ex[[col]][cal_ex$school == s]
+```
+
+This group matters out of all proportion to its size, because it is the
+only source of displacement the model produces in most years
+(@sec-cap). So it is worth being explicit that **the share is bounded by
+the data rather than measured from it.**
+
+The council's catchment preference table gives, for each catchment, how
+many children named each school at each rank. What it does not give is
+**who named both**. A catchment of `r fmt_n(ex_of("Varndean School", "children"))`
+children in which `r fmt_n(ex_of("Dorothy Stringer School", "named"))`
+named Stringer somewhere in their three choices and
+`r fmt_n(ex_of("Varndean School", "named"))` named Varndean is
+consistent with almost everyone naming both, or with far fewer doing so.
+The counts alone fix only the range:
+
+- the **most** overlap possible is the smaller of the two counts — every
+  child who named the less popular school also named the other;
+- the **least** is what is forced by arithmetic, $n_A + n_B - N$, which
+  is zero unless the two counts together exceed the catchment;
+- **independent** naming, $n_A n_B / N$, is what you would see if
+  choosing one told you nothing about the other.
+
+Families plainly do not choose the two independently — a pair of schools
+in one catchment are substitutes, so overlap should sit above
+independence. The model therefore takes the **midpoint between maximum
+overlap and independence**, and carries the full range with it:
+
+```{r ov-exclusive-table}
+#| tbl-cap: "The share of each paired catchment taken to accept only one of its two schools. The bounds are what the counts allow; the share is the assumption inside them."
+cal_ex %>%
+  transmute(Catchment = catch_lab(catchment),
+            `Would take only` = short_sch(school),
+            `Named it` = fmt_n(named),
+            `Children in the catchment` = fmt_n(children),
+            `If naming were independent` = fmt_pct(100 * share_independent),
+            `Used` = fmt_pct(100 * share),
+            `Range the counts allow` = sprintf("%s to %s",
+                                               fmt_pct(100 * share_lo),
+                                               fmt_pct(100 * share_hi))) %>%
+  knitr::kable(align = "llrrrrr")
+```
+
+In children, for the 2026 cohort, that gives:
+
+```{r ov-exclusive-pops}
+#| tbl-cap: "How each paired catchment's children are split between the populations the model runs."
+pop_ex %>%
+  transmute(Catchment = catch_lab(catchment),
+            Population = dplyr::case_when(
+              pop == "either" ~ "Would take either school",
+              TRUE ~ paste("Would take only", short_sch(sub("^only ", "", pop)))),
+            Children = fmt_n(round(children))) %>%
+  knitr::kable(align = "llr")
+```
+
+Three things follow, and the third is the one to hold onto.
+
+**The populations are not symmetric.** In the Hove Park and Blatchington
+Mill catchment, `r fmt_pct(100 * ex_of("Blatchington Mill School", "share"))`
+are taken to want Blatchington and not Hove Park, against
+`r fmt_pct(100 * ex_of("Hove Park School", "share"))` the other way.
+That is the preference gap between the two schools showing up in the
+choice set itself, not only in the attractiveness term.
+
+**The ranges are wide, and one of them is very wide.** The share who
+would take only Hove Park could be anywhere from
+`r fmt_pct(100 * ex_of("Hove Park School", "share_lo"))` to
+`r fmt_pct(100 * ex_of("Hove Park School", "share_hi"))` on these counts.
+The slider marked *"Paired-catchment families who would take only one of
+the two"* in the simulator exists for this: it scales all four shares, so
+any result that depends on them can be tested against the range rather
+than taken on trust.
+
+**Displacement is sensitive to it, and nothing else in the model is
+nearly as sensitive.** A child who would take either school is almost
+never displaced, because the partner school absorbs them at step one.
+A child who would take only one is displaced whenever that one fills,
+however much room the partner has. That is why the strategic view and
+the simulator now report the two kinds of displacement separately
+(@sec-cap), and why the honest reading of a small displacement figure in
+a paired catchment is *"this many families did not get the one school
+they asked for"* rather than *"this many children could not be
+accommodated near home"*.
+
+The council could replace the whole construction with a fact. The
+preference records it already holds say exactly how many families named
+one school of a pair and not the other; releases 2 and 10 in the
+strategic view's list ask for it.
 
 ## Step two: the second preferences of their catchment
 
