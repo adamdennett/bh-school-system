@@ -905,11 +905,21 @@ server <- function(input, output, session) {
                  `Left the city: East Sussex schools` = "#c4a064",
                  `Left the city: elsewhere (estimate)` = "#e8dcc2",
                  `Through priority 6`           = "#7b61c9",
-                 `Displaced`                    = "#eb6834")
+                 # Two oranges, because displacement is two things. The
+                 # dark one is a catchment with no room left in it. The
+                 # pale one is a family who named one school of a pair
+                 # and did not get it, with the partner possibly still
+                 # open to them.
+                 `Displaced, catchment full`    = "#c2410c",
+                 `Displaced, named one of the pair` = "#fdba74")
 
   catch_plot <- function(b, title, subtitle, base = 12, label_all = TRUE) {
     b <- b %>% mutate(where = factor(where, names(CATCH_COL)))
-    ord <- b %>% filter(where == "Displaced") %>% arrange(share, label)
+    # Ordered and annotated on displacement of both kinds together, so
+    # splitting the colour does not change which catchment sits where.
+    ord <- b %>% filter(grepl("^Displaced", where)) %>%
+      group_by(label) %>% summarise(share = sum(share), .groups = "drop") %>%
+      arrange(share, label)
     b <- b %>% mutate(label = factor(label, ord$label))
     lab <- b %>% filter(where != "Their own catchment") %>%
       group_by(label) %>% summarise(share = sum(share), .groups = "drop")
@@ -947,15 +957,17 @@ server <- function(input, output, session) {
                paste(strwrap(paste(
                  "Dark grey chose a faith school, light grey another city school; sand went to",
                  "Priory, Peacehaven, Seahaven or Seaford Head, pale sand elsewhere outside the city (an estimate);",
-                 "purple was placed under priority 6; orange was pushed out of a full",
-                 "catchment school. Only the orange is a place the system could not provide."),
+                 "purple was placed under priority 6. Dark orange was pushed out of a catchment",
+                 "with no room left in it; pale orange named only one school of a paired catchment",
+                 "and did not get it, with the partner school perhaps still open to them."),
                  width = 84), collapse = "\n"))
   })
 
   output$p_catch_map <- renderPlot({
     catch_plot(met()$catchment$by_catch,
                "Who leaves their catchment, and why",
-               "Greys and sand chose to go; orange was pushed out of a full school.",
+               paste("Greys and sand chose to go; dark orange met a full catchment,",
+                     "pale orange named one school of a pair."),
                base = 9.5)
   })
 

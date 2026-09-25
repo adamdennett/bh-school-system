@@ -255,15 +255,16 @@ outcomes <- function(inp, r, shed = 0.75) {
   # One row per catchment per destination bucket. This was a
   # tidyr::pivot_longer; stacking three named columns does not justify
   # shipping tidyr with the app.
-  # The two displacement rows sum to Displaced, so they are not part of
-  # the destination buckets - those have to add up to the cohort.
+  # Displacement enters the buckets as its two kinds rather than as one
+  # total, so the stacked chart can colour them apart and still add up to
+  # the cohort. `Displaced` stays in `wide` as the sum of the two.
   WHERE <- c("Their own catchment", "Left for a faith school",
              "Left for another city school", "Left the city: East Sussex schools",
              "Left the city: elsewhere (estimate)",
-             "Through priority 6", "Displaced")
-  SPLIT <- c("Displaced, catchment full", "Displaced, named one of the pair")
+             "Through priority 6",
+             "Displaced, catchment full", "Displaced, named one of the pair")
   by_catch <- dplyr::bind_rows(lapply(WHERE, function(w)
-    dplyr::mutate(wide[, setdiff(names(wide), c(WHERE, SPLIT)), drop = FALSE],
+    dplyr::mutate(wide[, setdiff(names(wide), c(WHERE, "Displaced")), drop = FALSE],
                   where = w, n = wide[[w]]))) %>%
     dplyr::mutate(share = n / living,
                   label = dplyr::coalesce(unname(catch_lab[home]), home))
@@ -272,8 +273,8 @@ outcomes <- function(inp, r, shed = 0.75) {
     dplyr::filter(where != "Their own catchment") %>%
     dplyr::group_by(home, label, living) %>%
     dplyr::summarise(outside = sum(n), .groups = "drop") %>%
-    dplyr::left_join(by_catch %>% dplyr::filter(where == "Displaced") %>%
-                       dplyr::select(home, displaced = n), by = "home") %>%
+    dplyr::left_join(wide %>% dplyr::select(home, displaced = `Displaced`),
+                     by = "home") %>%
     dplyr::mutate(outside_share = outside / living,
                   displaced_share = displaced / living)
 
