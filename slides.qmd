@@ -261,6 +261,47 @@ ggplot(rp, aes(year, reserve_pct)) +
 
 # How the model works
 
+## Brighton Secondary School System Simulator
+
+![](assets/simulator-front.png){fig-align="center" width="88%"}
+
+Every option in this deck is a run of this, in a browser, with no login.
+[Try your own.](https://adamdennett-bh-school-system.share.connect.posit.cloud/)
+
+## Why a simulator
+
+::: {.columns}
+::: {.column width="55%"}
+**You can try a policy before you try it on children.**
+
+In 2024 the city argued for months about options whose effects nobody ---
+council, schools or parents --- could see in advance. Decisions were taken
+on assertion, and trust was spent that has not come back.
+
+A model does not settle what the city *should* want. It answers a narrower
+question: **if you did this, what would follow?** Journeys, intakes, the
+social mix, budgets, who gets displaced.
+
+It also makes the trade-offs visible. Almost nothing here is free.
+:::
+::: {.column width="45%"}
+**And it is accurate enough to be worth using.**
+
+- Against the places the city's schools actually offered for September
+  2026: **R² = `r sprintf("%.2f", cor(mt$runs$M5$observed, mt$runs$M5$modelled)^2)`**
+  (next section).
+- Against the council's own count of pupils by home ward, a source the
+  model never saw: **correlation
+  `r sprintf("%.2f", cor(bh_data("ward_validation.rds")$compare$modelled, bh_data("ward_validation.rds")$compare$ks2))`**.
+
+It is fitted to what families **ask for**, not to the offers it is then
+tested against --- so reproducing the offers is a check, not a
+circularity.
+
+Every input is published. Every line of code is open.
+:::
+:::
+
 ## From published data to options
 
 ```{mermaid}
@@ -1044,6 +1085,72 @@ ggplot(tr, aes(dep_gap, gorard)) +
 ```
 
 The evidence leans towards **access**. A more mixed intake is a weak lever on results, and for disadvantaged pupils the national evidence runs the other way: they do slightly better where they are concentrated in a school organised for them, as at Brighton Aldridge. The higher index counts against an option under the council's aim, not on the evidence about results. Whether shorter journeys raise attendance is what the council's own records could settle.
+
+## The option that does not trade off: change the number families read
+
+```{r fig-va-choice}
+#| fig-width: 11.5
+#| fig-height: 5.2
+vac <- bh_data("value_added_choice.rds")
+va26 <- vac$schools |> dplyr::filter(year == 2026) |>
+  dplyr::mutate(short = forcats::fct_reorder(short, change))
+ggplot(va26, aes(change, short, fill = change > 0)) +
+  geom_col(width = 0.68) +
+  geom_vline(xintercept = 0, colour = "grey40") +
+  geom_text(aes(label = sprintf("%+.0f", change),
+                hjust = ifelse(change > 0, -0.25, 1.25)),
+            size = 4.4, colour = INK) +
+  scale_fill_manual(values = c(`TRUE` = "#2b7a4b", `FALSE` = BAD), guide = "none") +
+  scale_x_continuous(expand = expansion(mult = 0.16)) +
+  labs(x = "Change in Year 7 intake, 2026", y = NULL,
+       title = "If families read what a school adds, not the score it publishes",
+       subtitle = "Same children, same places, same catchments, same rules") +
+  theme_slide(14)
+```
+
+Attractiveness rebuilt from the four-year value added measure, at the
+response families currently show to Attainment 8
+(§5.9 of the [strategic view](https://adamdennett.github.io/bh-school-system/#sec-value-added-choice)).
+
+## What that is worth, and what it is not
+
+```{r va-even}
+#| include: false
+ve <- vac$even[vac$even$year == 2026, ]
+vc <- function(b, col) vac$city[[col]][vac$city$year == 2026 & vac$city$basis == b]
+```
+
+::: {.columns}
+::: {.column width="52%"}
+- Brighton Aldridge goes from
+  **`r fmt_n(round(va26$att8_intake[va26$short == "Brighton Aldridge"]))`
+  children to
+  `r fmt_n(round(va26$va_intake[va26$short == "Brighton Aldridge"]))`**
+  on 180 places --- half empty to nearly full.
+- **`r fmt_pct(100 * ve$top3_att8)` of the city's empty Year 7 places sit
+  in three schools today; `r fmt_pct(100 * ve$top3_va)` if families read
+  value added.** A surplus across ten schools is a budgeting problem; a
+  surplus in three is a viability problem.
+- Deprived children's extra travel falls from
+  `r sprintf("%.1f", vc("Attainment 8", "dep_gap"))` to
+  `r sprintf("%.1f", vc("Value added", "dep_gap"))` minutes each way.
+- **Cost: nothing. Consultation: none.** The council writes the guide.
+:::
+::: {.column width="48%"}
+- It creates no places and removes none ---
+  `r fmt_n(round(vc("Value added", "empty")))` stay empty either way.
+  **What changes is which schools are empty.**
+- Segregation rises slightly,
+  `r sprintf("%.3f", vc("Attainment 8", "gorard"))` to
+  `r sprintf("%.3f", vc("Value added", "gorard"))`: the schools that fill
+  are the more disadvantaged ones.
+- By 2030 the unevenness **moves** rather than shrinks --- out of Brighton
+  Aldridge and Longhill, into Cardinal Newman and Patcham.
+- It assumes families would follow a contextualised measure as closely as
+  they follow the headline one. That is a claim about publicity, not a
+  fitted number, and a single school's value added is noisy.
+:::
+:::
 
 # What this means for Longhill
 

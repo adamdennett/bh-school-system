@@ -237,6 +237,29 @@ Figure&nbsp;5
 <h1>How the model works</h1>
 
 </section>
+<section id="brighton-secondary-school-system-simulator" class="slide level2">
+<h2>Brighton Secondary School System Simulator</h2>
+
+<img data-src="assets/simulator-front.png" class="quarto-figure quarto-figure-center r-stretch" style="width:88.0%"><p>Every option in this deck is a run of this, in a browser, with no login. <a href="https://adamdennett-bh-school-system.share.connect.posit.cloud/">Try your own.</a></p>
+</section>
+<section id="why-a-simulator" class="slide level2">
+<h2>Why a simulator</h2>
+<div class="columns">
+<div class="column" style="width:55%;">
+<p><strong>You can try a policy before you try it on children.</strong></p>
+<p>In 2024 the city argued for months about options whose effects nobody — council, schools or parents — could see in advance. Decisions were taken on assertion, and trust was spent that has not come back.</p>
+<p>A model does not settle what the city <em>should</em> want. It answers a narrower question: <strong>if you did this, what would follow?</strong> Journeys, intakes, the social mix, budgets, who gets displaced.</p>
+<p>It also makes the trade-offs visible. Almost nothing here is free.</p>
+</div><div class="column" style="width:45%;">
+<p><strong>And it is accurate enough to be worth using.</strong></p>
+<ul>
+<li>Against the places the city’s schools actually offered for September 2026: <strong>R² = 0.95</strong> (next section).</li>
+<li>Against the council’s own count of pupils by home ward, a source the model never saw: <strong>correlation 0.96</strong>.</li>
+</ul>
+<p>It is fitted to what families <strong>ask for</strong>, not to the offers it is then tested against — so reproducing the offers is a check, not a circularity.</p>
+<p>Every input is published. Every line of code is open.</p>
+</div></div>
+</section>
 <section id="from-published-data-to-options" class="slide level2">
 <h2>From published data to options</h2>
 <div class="cell" data-reveal="true" data-fig-width="12" data-layout-align="default">
@@ -528,6 +551,32 @@ Figure&nbsp;25
 <img data-src="slides_files/figure-revealjs/fig-tradeoff-1.png" id="fig-tradeoff" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
 Figure&nbsp;26
 </p><p>The evidence leans towards <strong>access</strong>. A more mixed intake is a weak lever on results, and for disadvantaged pupils the national evidence runs the other way: they do slightly better where they are concentrated in a school organised for them, as at Brighton Aldridge. The higher index counts against an option under the council’s aim, not on the evidence about results. Whether shorter journeys raise attendance is what the council’s own records could settle.</p>
+</section>
+<section id="the-option-that-does-not-trade-off-change-the-number-families-read" class="slide level2">
+<h2>The option that does not trade off: change the number families read</h2>
+
+<img data-src="slides_files/figure-revealjs/fig-va-choice-1.png" id="fig-va-choice" width="1725" class="r-stretch quarto-figure-center"><p class="caption">
+Figure&nbsp;27
+</p><p>Attractiveness rebuilt from the four-year value added measure, at the response families currently show to Attainment 8 (§5.9 of the <a href="https://adamdennett.github.io/bh-school-system/#sec-value-added-choice">strategic view</a>).</p>
+</section>
+<section id="what-that-is-worth-and-what-it-is-not" class="slide level2">
+<h2>What that is worth, and what it is not</h2>
+<div class="columns">
+<div class="column" style="width:52%;">
+<ul>
+<li>Brighton Aldridge goes from <strong>91 children to 175</strong> on 180 places — half empty to nearly full.</li>
+<li><strong>93% of the city’s empty Year 7 places sit in three schools today; 75% if families read value added.</strong> A surplus across ten schools is a budgeting problem; a surplus in three is a viability problem.</li>
+<li>Deprived children’s extra travel falls from 3.4 to 2.5 minutes each way.</li>
+<li><strong>Cost: nothing. Consultation: none.</strong> The council writes the guide.</li>
+</ul>
+</div><div class="column" style="width:48%;">
+<ul>
+<li>It creates no places and removes none — 299 stay empty either way. <strong>What changes is which schools are empty.</strong></li>
+<li>Segregation rises slightly, 0.117 to 0.127: the schools that fill are the more disadvantaged ones.</li>
+<li>By 2030 the unevenness <strong>moves</strong> rather than shrinks — out of Brighton Aldridge and Longhill, into Cardinal Newman and Patcham.</li>
+<li>It assumes families would follow a contextualised measure as closely as they follow the headline one. That is a claim about publicity, not a fitted number, and a single school’s value added is noisy.</li>
+</ul>
+</div></div>
 </section></section>
 <section>
 <section id="what-this-means-for-longhill" class="title-slide slide level1 center">
