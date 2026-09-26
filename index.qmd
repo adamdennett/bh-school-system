@@ -4161,6 +4161,118 @@ the September 2028 and 2029 factsheets will show whether it happens.
 experiment is only useful if the prediction is written down before the
 result arrives.
 
+## What if families read a different number? {#sec-value-added-choice}
+
+```{r va-choice-prep}
+#| include: false
+vac <- bh_data("value_added_choice.rds")
+va_city <- function(y, b, col) vac$city[[col]][vac$city$year == y & vac$city$basis == b]
+va_sch <- function(y, s, col) {
+  d <- vac$schools[vac$schools$year == y, ]
+  d[[col]][d$short == s]
+}
+va_d <- vac$detail %>%
+  mutate(short = short_sch(name)) %>%
+  arrange(desc(mult))
+va_top <- va_d %>% slice(1)
+va_bot <- va_d %>% slice(n())
+va26 <- vac$schools %>% filter(year == 2026) %>% arrange(desc(change))
+```
+
+Everything above turns on a single fact: the number families read is the
+headline score, and the headline score mostly describes the intake
+(@sec-choice, @sec-lever). That is a loop, and the council holds one end
+of it, because **the council writes the admissions guide** (@sec-exec).
+It cannot make families choose differently. It can stop pointing them at
+the wrong number, and publish a contextualised one beside it.
+
+So it is worth asking what the city would look like if they read it. The
+model can answer, because attractiveness in it is calibrated to what
+families ask for, and that can be rebuilt on a different measure. This
+run puts the four-year value added score on the Attainment 8 scale and
+applies the response families currently show to Attainment 8 — about
+`r sprintf("%.0f%%", 100 * (exp(vac$slope) - 1))` more demand per place
+per point. Everything else is untouched: the same places, the same
+catchments, the same rules, the same journeys. Only the number families
+are taken to be reading changes.
+
+It is a large change. `r va_top$short`, whose value added is the city's
+strongest relative to its headline score, becomes
+`r sprintf("%.1f", va_top$mult)` times as attractive;
+`r va_bot$short`, whose value added is the weakest, falls to
+`r sprintf("%.1f", va_bot$mult)` times.
+
+```{r va-choice-table}
+#| tbl-cap: "Year 7 intakes in 2026 with families reading each measure. Same cohort, same places, same rules."
+va26 %>%
+  transmute(School = short,
+            `Places` = fmt_n(pan),
+            `Reading the headline score` = fmt_n(round(att8_intake)),
+            `Reading value added` = fmt_n(round(va_intake)),
+            Change = sprintf("%+.0f", change),
+            `How full it ends up` = sprintf("%.0f%% → %.0f%%",
+                                            100 * att8_fill, 100 * va_fill)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+**Brighton Aldridge is the headline.** It goes from
+`r fmt_n(round(va_sch(2026, "Brighton Aldridge", "att8_intake")))` children to
+`r fmt_n(round(va_sch(2026, "Brighton Aldridge", "va_intake")))`, from half
+empty to `r sprintf("%.0f%%", 100 * va_sch(2026, "Brighton Aldridge", "va_fill"))`
+full, without a boundary moving or a place being cut. Portslade Aldridge,
+Longhill and Hove Park all fill further. The schools that lose are the
+ones whose headline scores flatter them: Patcham, whose four-year value
+added is the weakest in the city, and Cardinal Newman, whose intake by
+2035 falls by
+`r fmt_n(abs(round(va_sch(2035, "Cardinal Newman", "change"))))`.
+
+Now the caveats, because they matter as much as the finding.
+
+**It does not create a single place or remove one.** The cohort is what
+it is, so the city still has
+`r fmt_n(round(va_city(2026, "Value added", "empty")))` empty Year 7
+places either way. What changes is *where* they are: on the headline
+score the empty places sit at the schools whose viability is in question,
+and on value added they sit at schools with room to absorb it. That is
+the whole of the effect, and it is not nothing — it is the difference
+between a school that looks like it is failing and one that looks full.
+
+**Journeys get shorter, and most for the children who travel furthest.**
+Mean journey falls from
+`r sprintf("%.1f", va_city(2026, "Attainment 8", "mean_min"))` to
+`r sprintf("%.1f", va_city(2026, "Value added", "mean_min"))` minutes, and
+the extra distance the most deprived children travel falls from
+`r sprintf("%.1f", va_city(2026, "Attainment 8", "dep_gap"))` to
+`r sprintf("%.1f", va_city(2026, "Value added", "dep_gap"))` minutes each
+way. Children fill the schools near them.
+
+**Segregation rises slightly**, from
+`r sprintf("%.3f", va_city(2026, "Attainment 8", "gorard"))` to
+`r sprintf("%.3f", va_city(2026, "Value added", "gorard"))` on the index
+used throughout section 8. The schools that fill are the more
+disadvantaged ones, so their intakes grow. On the evidence in
+@sec-concentration-evidence that is not obviously a cost to the children
+concerned, but it is a real movement in the measure the council has said
+it cares about, and it should not be hidden.
+
+::: {.callout-warning}
+## What this is not
+
+It is not a forecast. It assumes families would respond to a
+contextualised measure exactly as strongly as they now respond to the
+headline one, which is an assumption about publicity and persuasion, not
+a fitted quantity. And value added for a single school is a noisy
+measure --- Patcham's fall here rests on one school's four-year figure.
+The honest claim is narrower than the table looks: **the number families
+are pointed at is doing a great deal of work in this system, and it is
+the cheapest thing in this document to change.**
+:::
+
+You can run this yourself. The simulator has a
+[control for what families are choosing on](https://adamdennett-bh-school-system.share.connect.posit.cloud/),
+with the scenario "Families choose on value added", and the per-school
+attractiveness sliders work on top of it.
+
 ## What pupil-level data would add here
 
 This is a school-level association across ten schools --- ten points.

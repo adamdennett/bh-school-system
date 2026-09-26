@@ -1509,3 +1509,69 @@ message(sprintf("  published gap %.1f points; geography alone %.1f; at Nevill Ro
 message(sprintf("  the move is worth %+.1f children in %d, the same as x%.2f attractiveness",
                 hp_target - hp_base, HP_Y, hp_mult))
 message("Saved data/hove_park_campus.rds")
+
+
+# ======================================================================
+# If families read value added instead of the headline score
+# ======================================================================
+# Section 5.4 shows that demand follows the published Attainment 8 score,
+# and section 2 that the headline score is largely a restatement of a
+# school's intake. The council writes the admissions guide, so what
+# families are pointed at is a lever it holds outright - no consultation,
+# no boundary, no money.
+#
+# This runs the city with attractiveness rebuilt from the four-year value
+# added measure, as built in the attractiveness bases above, against the
+# same city as it stands. Everything else is held: places, catchments,
+# rules, journey times.
+#
+# Output: data/value_added_choice.rds
+# ======================================================================
+
+message("\n=== If families read value added instead ===")
+
+inp_va <- readRDS(file.path(APP_DIR, "data", "sim_inputs.rds"))
+VA_MULT <- inp_va$attract_basis$value_added$mult
+va_years <- c(2026, 2030, 2035)
+
+va_run <- function(year, w = NULL) {
+  r <- run_sim(inp_va, year = year, rules = list(rule = "priorities"), w_mult = w)
+  o <- outcomes(inp_va, r)
+  s <- r$schools %>% filter(city)
+  list(schools = s %>% transmute(name, short, pan, intake, fill),
+       mix = o$mix %>% select(name, dep_share),
+       city = tibble(year = year,
+                     intake = sum(s$intake),
+                     empty = sum(pmax(0, s$pan - s$intake)),
+                     short_of_pan = sum(s$intake < s$pan - 0.5),
+                     gorard = o$gorard, mean_min = o$mean_min,
+                     displaced = o$catchment$displaced,
+                     dep_gap = o$dep_gap))
+}
+va_cmp <- purrr::map_dfr(va_years, function(y) {
+  a <- va_run(y); v <- va_run(y, VA_MULT)
+  bind_rows(mutate(a$city, basis = "Attainment 8"),
+            mutate(v$city, basis = "Value added"))
+})
+va_schools <- purrr::map_dfr(va_years, function(y) {
+  a <- va_run(y); v <- va_run(y, VA_MULT)
+  a$schools %>%
+    select(name, short, pan, att8_intake = intake, att8_fill = fill) %>%
+    left_join(v$schools %>% select(name, va_intake = intake, va_fill = fill), by = "name") %>%
+    left_join(a$mix %>% rename(att8_dep = dep_share), by = "name") %>%
+    left_join(v$mix %>% rename(va_dep = dep_share), by = "name") %>%
+    mutate(year = y, change = va_intake - att8_intake)
+})
+
+saveRDS(list(detail = inp_va$attract_basis$detail,
+             slope = inp_va$attract_basis$slope,
+             mult = VA_MULT, city = va_cmp, schools = va_schools,
+             years = va_years, built_at = Sys.time()),
+        file.path(DATA, "value_added_choice.rds"))
+va26 <- va_schools %>% filter(year == 2026)
+message(sprintf("  2026: %s gains %+.0f, %s loses %+.0f; empty places %.0f -> %.0f",
+                va26$short[which.max(va26$change)], max(va26$change),
+                va26$short[which.min(va26$change)], min(va26$change),
+                va_cmp$empty[va_cmp$year == 2026 & va_cmp$basis == "Attainment 8"],
+                va_cmp$empty[va_cmp$year == 2026 & va_cmp$basis == "Value added"]))
+message("Saved data/value_added_choice.rds")
