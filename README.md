@@ -1,3 +1,7 @@
+---
+image: docs/model-guide_files/figure-html/fig-cj-map-1.png
+---
+
 # The Brighton Secondary School System — A Strategic View
 
 A single document assembling what can be established about Brighton &
