@@ -62,6 +62,17 @@ if (!length(W_BASIS))
   W_BASIS <- list(att8 = list(label = "Published Attainment 8 (as now)",
                               note = "", mult = setNames(rep(1, nrow(SCH)), SCH$name)))
 
+# The value added basis was built by putting value added on the
+# Attainment 8 scale, so the response per value-added point is the
+# Attainment 8 response scaled by the ratio of their spreads. That is
+# what lets the charts report a slider in whichever number families are
+# taken to be reading.
+VA_DETAIL <- inp$attract_basis$detail
+VA_SLOPE <- if (is.null(VA_DETAIL)) NA_real_ else
+  inp$attract_basis$slope * sd(VA_DETAIL$att8) / sd(VA_DETAIL$va)
+va_of <- function(nm) if (is.null(VA_DETAIL)) NA_real_ else
+  VA_DETAIL$va[match(nm, VA_DETAIL$name)]
+
 # Total places, moved in classes of 30. The slider's grid is laid out from
 # whatever the total currently is, so any sum the ten admission numbers
 # can reach is a point on it and a hand edit never snaps to a neighbour.
@@ -533,10 +544,18 @@ server <- function(input, output, session) {
     m[is.na(m)] <- 1
     if (is.null(m)) setNames(rep(1, nrow(SCH)), SCH$name) else setNames(m, SCH$name)
   })
-  w_now <- reactive({
+  # The sliders on their own. Everything that asks "what would the school
+  # have to do?" reads this rather than w_now(): switching what families
+  # are choosing on is a change in what they read, not a claim that any
+  # school got better or worse, and charging it to the school's own
+  # results would be a serious misreading.
+  w_user <- reactive({
     v <- vapply(SCH$urn, function(u) input[[paste0("w_", u)]] %||% 1, numeric(1))
-    setNames(as.numeric(v) * unname(w_basis_mult()), SCH$name)
+    setNames(as.numeric(v), SCH$name)
   })
+  w_now <- reactive(setNames(unname(w_user()) * unname(w_basis_mult()), SCH$name))
+  on_va <- reactive(identical(input$w_basis %||% "att8", "value_added") &&
+                      !is.null(VA_DETAIL))
 
   output$w_basis_note <- renderText({
     b <- W_BASIS[[input$w_basis %||% "att8"]]
@@ -1276,17 +1295,22 @@ server <- function(input, output, session) {
   # against the national distribution so the size of the claim is
   # visible rather than buried in a multiplier.
   live <- reactive({
-    w <- w_now()
+    w <- w_user()
     CITY %>%
       mutate(mult = unname(w[name]),
              att8_new = att8 + att8_points(inp, mult),
              abs_new = absence_for(inp, absence, att8, att8_new),
+             va = va_of(name),
+             va_new = va + log(mult) / VA_SLOPE,
              moved = abs(mult - 1) > 0.01)
   })
 
   # A rug of national deciles, with the median and the tails named. All
   # nine are drawn so the spacing shows how bunched the middle is.
   decile_layer <- function(q) {
+    # No national distribution for every measure - value added has none
+    # published - so an empty q draws no backdrop rather than failing.
+    if (length(q) < 10) return(NULL)
     d <- as.numeric(q[2:10])
     list(geom_vline(xintercept = d, colour = "grey88", linewidth = 0.4),
          geom_vline(xintercept = as.numeric(q[c("10%", "50%", "90%")]),
@@ -1329,6 +1353,15 @@ server <- function(input, output, session) {
   }
 
   output$p_att_live <- renderPlot({
+    if (on_va()) {
+      d <- live()
+      rng <- range(c(d$va, d$va_new), na.rm = TRUE)
+      return(live_plot(d, "va", "va_new", numeric(0),
+                       "Value added the slider implies",
+                       paste("Points above or below what a school's intake predicts.",
+                             "Families are reading this, so this is what the slider asks it to reach."),
+                       lims = rng + c(-0.4, 0.4), digits = 2))
+    }
     q <- inp$attain$att8_deciles
     live_plot(live(), "att8", "att8_new", q,
               "Attainment 8 the slider implies",
@@ -1338,6 +1371,25 @@ server <- function(input, output, session) {
   })
 
   output$p_abs_live <- renderPlot({
+    # Absence drives the RAW score. The value added measure is already
+    # net of absence and intake, so "the absence that would go with it"
+    # has no meaning once families are reading value added, and drawing
+    # it anyway would invite exactly the wrong inference.
+    if (on_va())
+      return(ggplot() +
+               annotate("text", x = 0, y = 0.15, size = 3.2, colour = "grey30",
+                        label = paste(strwrap(paste(
+                          "No absence chart while families are reading value added.",
+                          "Absence drives the published Attainment 8 score; the value",
+                          "added measure is already net of absence and of intake, so",
+                          "there is no absence rate that 'goes with' a value added",
+                          "target. Switch back to Attainment 8 to see it."),
+                          width = 52), collapse = "\n")) +
+               scale_y_continuous(limits = c(-0.6, 0.6)) +
+               labs(title = "Absence rate that would go with it") +
+               theme_void(10) +
+               theme(plot.title = element_text(face = "bold", size = 11,
+                                               colour = "grey55")))
     q <- inp$attain$absence$national$q
     live_plot(live(), "absence", "abs_new", q,
               "Absence rate that would go with it",
@@ -1360,17 +1412,45 @@ server <- function(input, output, session) {
                            exclusive = input$exclusive,
                            site = input$site, hp_site = hp_now(), design = input$design,
                            year = input$year, closed = closed_now())
+      # In whichever number families are taken to be reading: a slider
+      # moved while they read value added is asking for value added, not
+      # for a jump in the published score.
+      base_now <- if (on_va()) va_of(nm) else CITY$att8[i]
+      per <- function(m) if (on_va()) log(m) / VA_SLOPE else att8_points(inp, m)
       data.frame(
-        name = nm, short = CITY$short[i], att8 = CITY$att8[i],
-        set_at = CITY$att8[i] + att8_points(inp, w[[nm]]),
+        name = nm, short = CITY$short[i], att8 = base_now,
+        set_at = base_now + per(w_user()[[nm]]),
         needed = if (is.finite(s$multiplier))
-          CITY$att8[i] + att8_points(inp, s$multiplier) else NA_real_,
+          base_now + per(s$multiplier) else NA_real_,
         pan = p[[nm]], stringsAsFactors = FALSE)
     })) %>% mutate(gap = needed - att8)
   })
 
   output$p_att <- renderPlot({
     a <- att_tab() %>% mutate(short = stats::reorder(short, att8))
+    if (on_va()) {
+      return(ggplot(a, aes(y = short)) +
+        geom_vline(xintercept = 0, colour = "grey72", linetype = "31") +
+        geom_segment(aes(x = att8, xend = needed, yend = short),
+                     colour = "grey78", linewidth = 1.1, na.rm = TRUE) +
+        geom_point(aes(x = att8), size = 3.4, colour = "#1f3b57") +
+        geom_point(aes(x = needed), size = 3.4, colour = BAD, na.rm = TRUE) +
+        geom_text(aes(x = needed, label = sprintf("%+.1f", gap)), hjust = -0.35,
+                  size = 3, colour = BAD, na.rm = TRUE) +
+        scale_x_continuous(expand = expansion(mult = c(0.08, 0.14))) +
+        labs(x = "Value added (points above or below what the intake predicts)", y = NULL,
+             title = "What each school would have to add to fill its places",
+             subtitle = paste(strwrap(paste(
+               "Families are reading value added here, so this is what filling would take in",
+               "that measure, not in the published score. Dark dot is the school's four-year",
+               "figure, red is what it would take to fill at the admission number you have set.",
+               "The dashed line is the point where a school adds exactly what its intake predicts."),
+               width = 118), collapse = "\n")) +
+        theme_minimal(12) +
+        theme(panel.grid.major.y = element_blank(),
+              plot.title = element_text(face = "bold"),
+              plot.subtitle = element_text(colour = "grey35", size = 10)))
+    }
     q <- inp$attain$national$q
     # The three reference lines are named in the subtitle rather than
     # labelled in the panel: a numeric y on a discrete axis is what
@@ -1415,7 +1495,28 @@ server <- function(input, output, session) {
                           pmax(1, round(100 - att8_percentile(inp, needed))))))
   }, striped = TRUE, width = "100%")
 
-  output$att_note <- renderUI(HTML(sprintf(
+  output$att_note <- renderUI({
+    if (on_va()) return(HTML(paste0(
+      "<p><b>Families are reading value added in this run, so this page is in ",
+      "value added.</b> The attractiveness sliders are converted into points of ",
+      "value added rather than into Attainment 8, using the same strength of ",
+      "response: the measure families read is the measure a school would have to ",
+      "move.</p>",
+      "<p><b>Switching what families read is not a school improving.</b> Choosing ",
+      "value added on the left re-ranks the schools because it changes the number ",
+      "families are looking at, and this page deliberately ignores that: the dots ",
+      "here move only when <i>you</i> move a slider. A school that gains children ",
+      "when the city switches measure has not raised anything — it was already ",
+      "adding this much, and was being read by the wrong number.</p>",
+      "<p><b>And there is no absence chart while value added is selected.</b> ",
+      "Absence drives the published Attainment 8 score. The value added measure ",
+      "is already net of absence and of intake, so there is no absence rate that ",
+      "corresponds to a value added target.</p>",
+      "<p>Value added here is the four-year school effect from ",
+      "<i>How to Pull the Right Lever</i>: points above or below what a school's ",
+      "intake, prior attainment and absence predict. A single school's figure is ",
+      "noisy, which is why the four-year version is used.</p>")))
+    HTML(sprintf(
     paste0("<p>Attainment 8 explains %.0f%% of the variation in the model's ",
            "attractiveness (M5) across the city's %d schools, on a log scale, and a point ",
            "is worth about %.0f%% more attractiveness. That fit is what converts ",
@@ -1432,7 +1533,8 @@ server <- function(input, output, session) {
     100 * inp$attain$r2, inp$attain$n, 100 * inp$attain$per_point,
     fmt_n(inp$attain$national$n), inp$attain$national$year,
     inp$attain$national$q[["50%"]], inp$attain$national$q[["90%"]],
-    inp$attain$national$q[["100%"]])))
+    inp$attain$national$q[["100%"]]))
+  })
 
   # ---- The inverse question --------------------------------------------
   output$solve_note <- renderText({
