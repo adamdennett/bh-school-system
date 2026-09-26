@@ -1,0 +1,168 @@
+/*-- scss:defaults --*/
+
+// Palette shared with the "Pulling the Right Lever" landing page, so the
+// two sites read as one body of work.
+$ucl-purple:      #361a54;
+$ucl-purple-mid:  #6b2fb5;
+$ucl-purple-brt:  #993bff;
+$ucl-purple-pale: #eedeff;
+$ucl-lavender:    #faf5ff;
+$ucl-orange:      #f56300;
+$ucl-cyan:        #30d6ff;
+$ink:             #1a1a2e;
+$ink-muted:       #666688;
+$rule:            #e8e4f0;
+
+$font-family-sans-serif: "UCL Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+$font-size-root:  16px;
+$line-height-base: 1.65;
+
+$primary:         $ucl-purple;
+$body-color:      $ink;
+$body-bg:         #ffffff;
+$link-color:      $ucl-purple-mid;
+$link-hover-color: $ucl-purple-brt;
+
+$navbar-bg:       $ucl-purple;
+$navbar-fg:       #ffffff;
+$navbar-hl:       $ucl-cyan;
+
+$footer-bg:       $ucl-lavender;
+$footer-fg:       $ink-muted;
+
+$toc-color:       $ink-muted;
+$toc-active-border: $ucl-purple-brt;
+
+$code-bg:         $ucl-lavender;
+$code-color:      $ucl-purple-mid;
+$table-border-color: $rule;
+
+/*-- scss:rules --*/
+
+// --- Headings -------------------------------------------------------------
+
+h1, h2, h3, h4, h5 {
+  color: $ucl-purple;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: 2.0rem; }
+
+// Section rules give the long analysis pages some rhythm.
+h2 {
+  margin-top: 2.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 2px solid $ucl-purple-pale !important;
+}
+
+h3 { margin-top: 1.8rem; }
+
+// --- Title banner ---------------------------------------------------------
+
+.quarto-title-block .quarto-title-banner {
+  background: linear-gradient(135deg, $ucl-purple 0%, #4a2270 60%, $ucl-purple-mid 100%);
+}
+
+.quarto-title-banner .title,
+.quarto-title-banner .subtitle,
+.quarto-title-banner .quarto-title-meta {
+  color: #ffffff;
+}
+
+.quarto-title-banner .subtitle {
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+// --- Navbar ---------------------------------------------------------------
+
+.navbar {
+  border-bottom: 3px solid $ucl-purple-brt;
+}
+
+.navbar-brand {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.navbar .nav-link:hover {
+  color: $ucl-cyan !important;
+}
+
+// --- Table of contents ----------------------------------------------------
+
+#TOC, .sidebar nav[role="doc-toc"] {
+  font-size: 0.87rem;
+
+  ul > li > a.active {
+    color: $ucl-purple-mid;
+    font-weight: 600;
+  }
+}
+
+// --- Tables ---------------------------------------------------------------
+
+table {
+  font-size: 0.92rem;
+}
+
+table thead th,
+.table > thead > tr > th,
+.table > thead th {
+  background-color: $ucl-purple !important;
+  color: #ffffff !important;
+  font-weight: 600;
+  border-bottom: none !important;
+}
+
+tbody tr:nth-child(even) {
+  background: $ucl-lavender;
+}
+
+.table > :not(caption) > * > * {
+  padding: 0.45rem 0.6rem;
+}
+
+caption, .caption, figcaption {
+  color: $ink-muted;
+  font-size: 0.85rem;
+}
+
+// --- Callouts -------------------------------------------------------------
+
+.callout {
+  border-left-width: 4px;
+  border-radius: 4px;
+}
+
+.callout.callout-style-default .callout-title {
+  font-weight: 650;
+}
+
+// --- Code -----------------------------------------------------------------
+
+.code-fold-btn, details > summary {
+  color: $ucl-purple-mid;
+  font-size: 0.86rem;
+}
+
+pre {
+  border-left: 3px solid $ucl-purple-pale;
+  border-radius: 3px;
+}
+
+// --- Figures --------------------------------------------------------------
+
+// Plots are rendered on #FAFAFA, so a hairline keeps them from floating.
+.figure img, p > img {
+  border: 1px solid $rule;
+  border-radius: 4px;
+}
+
+// --- Footer ---------------------------------------------------------------
+
+.nav-footer {
+  border-top: 1px solid $rule;
+  font-size: 0.86rem;
+}

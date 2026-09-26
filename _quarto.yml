@@ -15,8 +15,9 @@ website:
         text: "The analysis"
       - href: model-guide.qmd
         text: "Model guide"
-      - href: slides.qmd
-        text: "Slides"
+      - href: https://adamdennett.github.io/school_attainment_tool/bh_schools_talk_2026_v2.html
+        text: "Talk (V2)"
+        target: _blank
       - href: https://adamdennett-bh-school-system.share.connect.posit.cloud/
         text: "Try the simulator"
         target: _blank
@@ -29,7 +30,10 @@ website:
 
 format:
   html:
-    theme: cosmo
+    theme:
+      - cosmo
+      - brighton.scss
+    title-block-banner: true
     toc: true
     toc-depth: 3
     toc-location: left
