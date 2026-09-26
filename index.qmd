@@ -318,6 +318,18 @@ The council's own catchment forecasts sit above that projection in
 almost every year, and the gap is widest in the Longhill catchment ---
 the place where the consequences of being wrong are largest.
 
+```{r exec-va}
+#| include: false
+ex_vac <- bh_data("value_added_choice.rds")
+ex_va_sch <- function(s, col) {
+  d <- ex_vac$schools[ex_vac$schools$year == 2026, ]
+  d[[col]][d$short == s]
+}
+ex_va_even <- ex_vac$even[ex_vac$even$year == 2026, ]
+ex_va_city <- function(b, col)
+  ex_vac$city[[col]][ex_vac$city$year == 2026 & ex_vac$city$basis == b]
+```
+
 ## What the evidence says
 
 **This is not a school quality problem.** Across English secondaries,
@@ -396,6 +408,27 @@ least attractive --- the opposite of its stated aim. It is the one part
 of the Longhill problem the council could change at no cost
 (@sec-choice).
 
+**And it is the largest lever modelled here.** Run the city with families
+reading the four-year value-added measure as closely as they now read the
+headline score, holding everything else --- same places, same catchments,
+same rules --- and the intakes move further than any boundary change in
+this document. Brighton Aldridge goes from
+`r fmt_n(round(ex_va_sch("Brighton Aldridge", "att8_intake")))` children
+to `r fmt_n(round(ex_va_sch("Brighton Aldridge", "va_intake")))` on 180
+places, from half empty to
+`r sprintf("%.0f%%", 100 * ex_va_sch("Brighton Aldridge", "va_fill"))`
+full; Hove Park and Portslade Aldridge fill; mean journeys shorten, and
+the extra distance the most deprived children travel falls from
+`r sprintf("%.1f", ex_va_city("Attainment 8", "dep_gap"))` to
+`r sprintf("%.1f", ex_va_city("Value added", "dep_gap"))` minutes each
+way. **The share of the city's empty Year 7 places sitting in just three
+schools falls from
+`r sprintf("%.0f%%", 100 * ex_va_even$top3_att8)` to
+`r sprintf("%.0f%%", 100 * ex_va_even$top3_va)`** --- which is the
+difference between a surplus that is a budgeting problem and one that is
+a viability problem. It creates no places and removes none: what changes
+is which schools are empty (@sec-value-added-choice).
+
 **Physical access is unequal, and unequal in the worst direction.**
 `r nrow(ex_zero30)` of `r nrow(acc$lsoa)` neighbourhoods --- about
 `r fmt_n(sum(ex_zero30$Oi))` cohort-aged children --- can reach **no**
@@ -437,8 +470,17 @@ them the pupil projections put next in line.
    the top of Elm Grove with the catchments redrawn round it
    (@sec-weighing).
 3. **Change the admissions guide's advice, and publish a contextualised
-   measure alongside Attainment 8.** It costs nothing and begins to unwind
-   a loop the authority currently sustains through its own guidance.
+   measure alongside Attainment 8.** It costs nothing, needs no
+   consultation, and is the largest single change modelled in this
+   document: if families read what a school adds rather than the score it
+   publishes, Brighton Aldridge fills
+   (`r fmt_n(round(ex_va_sch("Brighton Aldridge", "att8_intake")))` children
+   to `r fmt_n(round(ex_va_sch("Brighton Aldridge", "va_intake")))` on 180
+   places), the share of the city's empty places concentrated in three
+   schools falls from
+   `r sprintf("%.0f%%", 100 * ex_va_even$top3_att8)` to
+   `r sprintf("%.0f%%", 100 * ex_va_even$top3_va)`, and deprived children's
+   extra travel falls by about a minute each way (@sec-value-added-choice).
 4. **Treat the bus network as an admissions instrument.** It is the only
    lever here that widens choice without taking anything from anyone.
 5. **Release ten tables** (§9) that would convert most of the bands in
