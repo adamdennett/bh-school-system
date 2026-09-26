@@ -1563,9 +1563,35 @@ va_schools <- purrr::map_dfr(va_years, function(y) {
     mutate(year = y, change = va_intake - att8_intake)
 })
 
+# How evenly the city's children sit across the places it has. The
+# dissimilarity between where the children are and where the places are,
+# expressed as the number who would have to change school for every
+# school to be equally full. It is a measure of spread, not of quality:
+# a city whose schools are all 88% full scores zero.
+va_even <- va_schools %>%
+  group_by(year) %>%
+  summarise(
+    places = sum(pan),
+    move_att8 = 0.5 * sum(abs(att8_intake / sum(att8_intake) - pan / sum(pan))) *
+      sum(att8_intake),
+    move_va = 0.5 * sum(abs(va_intake / sum(va_intake) - pan / sum(pan))) *
+      sum(va_intake),
+    fill_lo_att8 = min(att8_fill), fill_hi_att8 = max(att8_fill),
+    fill_lo_va = min(va_fill), fill_hi_va = max(va_fill),
+    below80_att8 = sum(att8_fill < 0.8), below80_va = sum(va_fill < 0.8),
+    # And how much of the spare capacity is piled into the three emptiest
+    # schools, which is what makes a surplus a viability problem rather
+    # than a budgeting one.
+    top3_att8 = sum(sort(pmax(0, pan - att8_intake), decreasing = TRUE)[1:3]) /
+      sum(pmax(0, pan - att8_intake)),
+    top3_va = sum(sort(pmax(0, pan - va_intake), decreasing = TRUE)[1:3]) /
+      sum(pmax(0, pan - va_intake)),
+    .groups = "drop")
+
 saveRDS(list(detail = inp_va$attract_basis$detail,
              slope = inp_va$attract_basis$slope,
              mult = VA_MULT, city = va_cmp, schools = va_schools,
+             even = va_even,
              years = va_years, built_at = Sys.time()),
         file.path(DATA, "value_added_choice.rds"))
 va26 <- va_schools %>% filter(year == 2026)

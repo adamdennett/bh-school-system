@@ -4237,6 +4237,57 @@ and on value added they sit at schools with room to absorb it. That is
 the whole of the effect, and it is not nothing — it is the difference
 between a school that looks like it is failing and one that looks full.
 
+**The children sit more evenly across the places the city has — for
+now.** There is a single number for this. Ask how many children would
+have to change school for every school to be equally full, given the
+places that exist. It is zero in a city where every school is at the
+same percentage, and it rises with the unevenness however that
+unevenness arises.
+
+```{r va-choice-even}
+#| tbl-cap: "How evenly the city's children sit across its places, reading each measure. The first column is the number who would have to change school for every school to be equally full."
+vac$even %>%
+  transmute(`Entry year` = year,
+            `Reading the headline score` = fmt_n(round(move_att8)),
+            `Reading value added` = fmt_n(round(move_va)),
+            `Spread of how full, now` = sprintf("%.0f%% to %.0f%%",
+                                                100 * fill_lo_att8, 100 * fill_hi_att8),
+            `Spread of how full, then` = sprintf("%.0f%% to %.0f%%",
+                                                 100 * fill_lo_va, 100 * fill_hi_va),
+            `Empty places in the three emptiest schools` =
+              sprintf("%.0f%% → %.0f%%", 100 * top3_att8, 100 * top3_va)) %>%
+  knitr::kable(align = "lrrrrr")
+```
+
+In 2026 it falls from
+`r fmt_n(round(vac$even$move_att8[vac$even$year == 2026]))` children to
+`r fmt_n(round(vac$even$move_va[vac$even$year == 2026]))`, a reduction of
+about
+`r sprintf("%.0f%%", 100 * (1 - vac$even$move_va[vac$even$year == 2026] / vac$even$move_att8[vac$even$year == 2026]))`,
+and the fullest-to-emptiest range narrows from
+`r sprintf("%.0f%%", 100 * vac$even$fill_lo_att8[vac$even$year == 2026])`
+to `r sprintf("%.0f%%", 100 * vac$even$fill_lo_va[vac$even$year == 2026])`
+at the bottom. The sharpest number is the last column: today
+**`r sprintf("%.0f%%", 100 * vac$even$top3_att8[vac$even$year == 2026])`
+of the city's empty Year 7 places sit in just three schools**, and on
+value added that falls to
+`r sprintf("%.0f%%", 100 * vac$even$top3_va[vac$even$year == 2026])`.
+A surplus spread across ten schools is a budgeting problem; a surplus
+piled into three is a viability problem, and it is the second the city
+actually has.
+
+But read the later years before making too much of it. By
+`r vac$even$year[2]` the measure is
+`r fmt_n(round(vac$even$move_att8[2]))` either way: the unevenness does
+not shrink, it **moves** — out of Brighton Aldridge and Longhill and
+into Cardinal Newman and Patcham, which fall well below their numbers in
+turn. That is the honest limit of this lever. Changing what families
+read can redistribute children across the places that exist; it cannot
+conjure children into a city that has
+`r fmt_n(round(vac$city$empty[vac$city$year == 2035 & vac$city$basis == "Value added"]))`
+more places than children by 2035. Only the places themselves can do
+that, which is section 10's argument and not this one's.
+
 **Journeys get shorter, and most for the children who travel furthest.**
 Mean journey falls from
 `r sprintf("%.1f", va_city(2026, "Attainment 8", "mean_min"))` to
