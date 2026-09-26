@@ -1480,7 +1480,29 @@ server <- function(input, output, session) {
   })
 
   output$t_att <- renderTable({
-    att_tab() %>% arrange(desc(gap)) %>%
+    a <- att_tab() %>% arrange(desc(gap))
+    if (on_va()) {
+      # No national distribution of value added is published, so the
+      # England percentile has nothing to stand on - running a value
+      # added figure through the Attainment 8 distribution put every
+      # school in the top 1%, which was nonsense. Rank within the city
+      # instead, which is a real comparison and the one families make.
+      city_va <- sort(VA_DETAIL$va, decreasing = TRUE)
+      return(a %>%
+        transmute(School = short,
+                  `Admission number` = fmt_n(pan),
+                  `Value added now` = sprintf("%+.2f", att8),
+                  `At this slider` = sprintf("%+.2f", set_at),
+                  `Needed to fill` = ifelse(is.na(needed), "unreachable",
+                                            sprintf("%+.2f", needed)),
+                  `Points short` = ifelse(is.na(gap), "—",
+                                          sprintf("%+.2f", gap)),
+                  `Where that would rank` = ifelse(
+                    is.na(needed), "—",
+                    scales::ordinal(vapply(needed, function(v)
+                      sum(city_va > v) + 1L, integer(1))))))
+    }
+    a %>%
       transmute(School = short,
                 `Admission number` = fmt_n(pan),
                 `Attainment 8 now` = sprintf("%.1f", att8),
