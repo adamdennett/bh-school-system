@@ -604,6 +604,16 @@ presets <- list(
     note = "The relocation, at the reduced admission number, behind the catchments drawn for it.",
     design = "Flow regions, Longhill at Elm Grove", site = "elm", year = 2030,
     pan = c(`Longhill High School` = 150), w = NULL),
+  `Families choose on value added` = list(
+    note = paste("The same city, with families reading what a school adds to its",
+                 "pupils rather than the headline score it publishes. Attractiveness",
+                 "is rebuilt from the four-year value added measure in How to Pull",
+                 "the Right Lever, applied as strongly as the headline score is",
+                 "followed now. Nothing else changes: same places, same catchments,",
+                 "same rules. It is the one lever here that costs nothing and needs",
+                 "no consultation - the council writes the admissions guide."),
+    design = "Current catchments", site = "now", year = 2026,
+    w_basis = "value_added", pan = NULL, w = NULL),
   `Hove Park on one site` = list(
     note = paste("Hove Park teaches Year 7 at the Valley Campus on Hangleton Way,",
                  "1.65 km west of the Nevill Road site its address gives. The council",
@@ -702,6 +712,63 @@ RULES <- list(
   source = "Brighton & Hove City Council, Secondary school admissions guide 2027-2028")
 
 source(file.path(APP_DIR, "R", "model.R"))
+# ---- What families are taken to be choosing on ------------------------
+# The model's attractiveness is calibrated to the first preferences
+# families actually give, and those track the published Attainment 8
+# score closely: on this document's own fit, each point of it goes with
+# several per cent more demand per place, and a school's headline score
+# is largely a restatement of its intake.
+#
+# So a question the council can act on without moving a boundary: what
+# if families read a contextualised measure instead? This builds the
+# attractiveness that would follow, as a multiplier on the calibrated
+# one, by putting value added on the Attainment 8 scale - standardised
+# across the ten city schools - and applying the same fitted response.
+# A school whose value added sits as far above the city average as its
+# Attainment 8 sat below it swaps one for the other.
+#
+# It is a counterfactual about what families read, not a claim that
+# demand would follow it exactly. Everything else - distance, the
+# catchment term, competition - is untouched.
+W_DEC <- bh_data("accessibility.rds")$pref$decay
+w_cd <- bh_data("factsheet_panel.rds")$factsheets %>%
+  filter(name != "Total", year >= max(year) - 4) %>%
+  group_by(name) %>%
+  summarise(p1 = mean(pref1), p2 = mean(pref2), p3 = mean(pref3), .groups = "drop") %>%
+  inner_join(oi$attract %>% select(urn, name), by = "name") %>%
+  inner_join(bh_data("open_scenarios.rds")$choice %>% select(urn, pan, att8, va),
+             by = "urn") %>%
+  mutate(wpp = (p1 + W_DEC * p2 + W_DEC^2 * p3) / pan)
+W_SLOPE <- coef(lm(log(wpp) ~ att8, data = w_cd))[["att8"]]
+w_cd <- w_cd %>%
+  mutate(att8_equiv = mean(att8) + sd(att8) * (va - mean(va)) / sd(va),
+         raw = exp(W_SLOPE * (att8_equiv - att8)),
+         mult = raw / exp(mean(log(raw))))
+# Keyed on the names the simulator uses, not the performance tables'.
+w_va <- setNames(w_cd$mult, oi$schools$name[match(w_cd$urn, oi$schools$urn)])
+stopifnot(!any(is.na(names(w_va))), all(names(w_va) %in% schools$name))
+attract_basis <- list(
+  att8 = list(
+    label = "Published Attainment 8 (as now)",
+    note = paste("Attractiveness as calibrated: the first preferences families",
+                 "actually gave. On the city's own figures the headline score",
+                 "explains most of the difference in demand between schools,",
+                 "and the headline score largely describes the intake."),
+    mult = setNames(rep(1, nrow(schools)), schools$name)),
+  value_added = list(
+    label = "Value added (How to Pull the Right Lever)",
+    note = paste("What families would find attractive if they read the four-year",
+                 "value added measure - what a school adds, once its intake is",
+                 "accounted for - as closely as they now read the headline score.",
+                 "Nothing else about the schools changes."),
+    mult = w_va),
+  detail = w_cd %>%
+    transmute(name = oi$schools$name[match(urn, oi$schools$urn)],
+              att8, va, att8_equiv, mult),
+  slope = W_SLOPE)
+message(sprintf("  attractiveness bases: %.1f%% more demand per Attainment 8 point; value added swings it %.2fx to %.2fx",
+                100 * (exp(W_SLOPE) - 1), min(w_va), max(w_va)))
+
 # ---- The neighbourhoods the 2026 map moved out of Longhill ------------
 # Whitehawk. The boundary moved for the September 2026 intake; what
 # families there do about it is a separate question, and the engine
@@ -902,7 +969,8 @@ saveRDS(list(
   design_geojson = design_geojson, presets = presets,
   city = CITY, out_of_city = OUT_OF_CITY,
   elm = elm, hove_park_valley = oi$hove_park_valley,
-  catch_memory = catch_memory, built_at = Sys.time()),
+  catch_memory = catch_memory, attract_basis = attract_basis,
+  built_at = Sys.time()),
   file.path(APP_DIR, "data", "sim_inputs.rds"))
 
 message(sprintf("\nSaved app/data/sim_inputs.rds (%.1f MB)",

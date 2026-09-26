@@ -51,6 +51,17 @@ CATCH_LAB <- c(PACA = "Portslade Aldridge", Hove_Blatch = "Hove Park / Blatching
 GAMMA_FIT <- inp$params$gamma[names(CATCH_LAB)]
 GAMMA_ID  <- paste0("gamma_", names(CATCH_LAB))
 
+# What families are taken to be reading. The attractiveness the model is
+# calibrated on tracks the published headline score; the alternative asks
+# what would follow if they read a contextualised measure instead. Each
+# basis is a multiplier on the calibrated attractiveness, and the
+# per-school sliders multiply whichever is in force, so the two compose.
+W_BASIS <- inp$attract_basis[c("att8", "value_added")]
+W_BASIS <- W_BASIS[!vapply(W_BASIS, is.null, logical(1))]
+if (!length(W_BASIS))
+  W_BASIS <- list(att8 = list(label = "Published Attainment 8 (as now)",
+                              note = "", mult = setNames(rep(1, nrow(SCH)), SCH$name)))
+
 # Total places, moved in classes of 30. The slider's grid is laid out from
 # whatever the total currently is, so any sum the ten admission numbers
 # can reach is a point on it and a hand edit never snaps to a neighbour.
@@ -270,6 +281,9 @@ ui <- page_sidebar(
         tags$b("Tick the box at the left"), " to close a school: it is taken out of the city, ",
         "its row turns red and its places come out of the total. CoMArt, at the bottom, ",
         "closed in 2005 and starts closed; untick it to open it again."),
+    selectInput("w_basis", "What families are choosing on",
+                choices = setNames(names(W_BASIS), vapply(W_BASIS, `[[`, "", "label"))),
+    div(class = "note", style = "margin:-6px 0 8px", textOutput("w_basis_note")),
     div(class = "sch-row", style = "margin:8px 0 -6px;font-size:11px;color:#666",
         div(class = "sch-close", title = "Close", "✕"),
         div(class = "sch-name", "School"),
@@ -435,6 +449,7 @@ server <- function(input, output, session) {
     # A preset that says nothing about Hove Park's campus means the one
     # the entry year implies, not whatever the last preset left behind.
     updateSelectInput(session, "hp_site", selected = s$hp_site %||% "auto")
+    updateSelectInput(session, "w_basis", selected = s$w_basis %||% "att8")
     updateSliderInput(session, "year", value = s$year)
     # A preset that does not name a catchment strength means the fitted
     # one, not "leave whatever the last preset set".
@@ -509,9 +524,30 @@ server <- function(input, output, session) {
             sh("Hove_Blatch", "Blatchington"), sh("Hove_Blatch", "Hove Park"))
   })
 
+  # The per-school sliders multiply whatever families are taken to be
+  # reading, so choosing value added re-ranks the schools and the sliders
+  # then move them from there.
+  w_basis_mult <- reactive({
+    b <- W_BASIS[[input$w_basis %||% "att8"]]
+    m <- if (is.null(b)) NULL else b$mult[SCH$name]
+    m[is.na(m)] <- 1
+    if (is.null(m)) setNames(rep(1, nrow(SCH)), SCH$name) else setNames(m, SCH$name)
+  })
   w_now <- reactive({
     v <- vapply(SCH$urn, function(u) input[[paste0("w_", u)]] %||% 1, numeric(1))
-    setNames(as.numeric(v), SCH$name)
+    setNames(as.numeric(v) * unname(w_basis_mult()), SCH$name)
+  })
+
+  output$w_basis_note <- renderText({
+    b <- W_BASIS[[input$w_basis %||% "att8"]]
+    if (is.null(b)) return("")
+    if (identical(input$w_basis %||% "att8", "att8")) return(b$note)
+    d <- inp$attract_basis$detail
+    nm <- function(x) SCH$short[match(x, SCH$name)]
+    up <- d$name[which.max(d$mult)]; dn <- d$name[which.min(d$mult)]
+    paste(b$note,
+          sprintf("It lifts %s to %.1f× its calibrated attractiveness and cuts %s to %.1f×.",
+                  nm(up), max(d$mult), nm(dn), min(d$mult)))
   })
   pan_now <- reactive({
     v <- vapply(SCH$urn, function(u) as.numeric(input[[paste0("pan_", u)]] %||% NA),
@@ -583,6 +619,7 @@ server <- function(input, output, session) {
                        rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
                        fsm = isTRUE(input$fsm %||% TRUE),
                        targeted = isTRUE(input$targeted %||% FALSE),
+                       w_basis = input$w_basis %||% "att8",
                        closed = closed_now())
       writexl::write_xlsx(
         scenario_export(inp, sim(), met(), input$preset, settings, w_now(), pan_now()),

@@ -54,6 +54,11 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     if (length(g) == 1) return(as.character(round(as.numeric(g), 2)))
     paste(sprintf("%s %.2f", names(g), as.numeric(g)), collapse = "; ")
   }
+  basis_lab <- function(b) {
+    if (is.null(b) || !nzchar(b)) b <- "att8"
+    lab <- inp$attract_basis[[b]]$label
+    if (is.null(lab)) b else lab
+  }
   site_lab <- c(now = "Ovingdean (as now)", elm = "Elm Grove (relocated)")
   rule_lab <- c(published = "Everyone has the same chance (the published model)",
                 priorities = "The council's priorities (2026/27 arrangements)")
@@ -63,6 +68,7 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     c("Longhill's site", site_lab[[s$site]], site_lab[[settings$site]]),
     c("Entry year", s$year, settings$year),
     c("How much living in the catchment counts (x fitted)", gam(s$gamma), gam(settings$gamma)),
+    c("What families are choosing on", basis_lab(s$w_basis), basis_lab(settings$w_basis)),
     c("Paired-catchment families who would take only one (x fitted)", s$exclusive %||% 1, settings$exclusive),
     c("When a school is full", rule_lab[[s$rule %||% "priorities"]], rule_lab[[settings$rule]]),
     c("Places for single-school catchments, priority 6 (%)", s$p6 %||% 5, settings$p6),
