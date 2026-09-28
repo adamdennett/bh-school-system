@@ -22,10 +22,10 @@ dir.create(DATA, showWarnings = FALSE, recursive = TRUE)
 dir.create(LOGOS, showWarnings = FALSE, recursive = TRUE)
 
 SRC <- list(
-  open   = "E:/BH_Pupil_Destinations/public/output",
-  sat    = "E:/school_attainment_tool",
-  bhs2   = "E:/BH_Schools_2/data",
-  consult = "E:/BH_Schools_Consultation/data")
+  open   = file.path(dirname(here::here()), "BH_Pupil_Destinations/public/output"),
+  sat    = file.path(dirname(here::here()), "school_attainment_tool"),
+  bhs2   = file.path(dirname(here::here()), "BH_Schools_2/data"),
+  consult = file.path(dirname(here::here()), "BH_Schools_Consultation/data"))
 
 missing <- names(SRC)[!dir.exists(unlist(SRC))]
 if (length(missing))
