@@ -3515,6 +3515,181 @@ single-school catchments, set at 5% after a first proposal of 20%. It is
 meant to widen access. @sec-fr-p6 finds that, in the full model, it
 makes almost no difference to how mixed the city's intakes are.
 
+
+## What happens between March and September {#sec-offer-to-september}
+
+Every figure in this document, and every fit reported for the model, is
+measured against **national offer day**. That is the right benchmark for
+what an allocation produces: it is the moment the rules in @sec-rules have
+finished running. It is also the moment that matters most to families,
+because it is when they are told the answer and when the months of
+appeals, waiting lists and phone calls begin.
+
+But it is not the system that exists in September. An FOI response from
+the council (26367489, 30 September 2026) gives the confirmed position
+once term had started for 2026 entry, and it can be set against the
+council's own allocation factsheet for the same cohort. Like everything
+else here it is public information: a Freedom of Information response is
+disclosable to anyone who asks for it, and the figures below are the
+council's own, released under that Act. Counts of five or fewer are
+suppressed in the response and are shown here at their midpoint.
+
+```{r foi-churn}
+#| label: foi-churn
+#| fig-cap: "Change in Year 7 numbers between national offer day and the confirmed September position, 2026 entry. Sources: BHCC Secondary Allocation Factsheet (Table 4); FOI 26367489."
+foi <- tibble::tribble(
+  ~name,                ~pan, ~offer, ~sep,  ~community,
+  "Varndean",             300,   300,  299,  TRUE,
+  "Blatchington Mill",    330,   330,  327,  TRUE,
+  "Patcham",              225,   204,  200,  TRUE,
+  "Dorothy Stringer",     330,   330,  303,  TRUE,
+  "Hove Park",            180,   136,  111,  TRUE,
+  "Longhill",             210,    81,   95,  TRUE,
+  "Brighton Aldridge",    180,   146,  167,  FALSE,
+  "Portslade Aldridge",   220,   183,  193,  FALSE,
+  "Cardinal Newman",      360,   360,  374,  FALSE) |>
+  dplyr::mutate(change = sep - offer,
+                school = forcats::fct_reorder(name, change))
+ggplot(foi, aes(change, school, fill = change > 0)) +
+  geom_col(width = 0.66) +
+  geom_vline(xintercept = 0, colour = "grey45") +
+  geom_text(aes(label = sprintf("%+d", round(change)),
+                hjust = ifelse(change > 0, -0.25, 1.25)), size = 3.6) +
+  scale_fill_manual(values = c(`TRUE` = "#2b7a4b", `FALSE` = "#c2410c"), guide = "none") +
+  scale_x_continuous(expand = expansion(mult = 0.16)) +
+  labs(x = "Change in Year 7 pupils, offer day to September", y = NULL) +
+  theme_bh(11)
+```
+
+The city total barely moves: `r sum(foi$offer)` places on offer day,
+`r sum(foi$sep)` in September, a net change of
+`r sprintf("%+d", sum(foi$sep) - sum(foi$offer))`. But roughly **60
+children — about three per cent of the cohort — are not where they were
+placed in March**, and the direction is systematic. The oversubscribed
+schools lose; the schools with room gain.
+
+Two flows are consistent with this, and the data cannot separate them.
+Children may be leaving the popular schools for the independent sector or
+for another authority, while late arrivals and in-year admissions enter a
+system with vacancies only at the other end. Question 3 of the same FOI
+asked where children who do not take up a Brighton & Hove place actually
+go. The council's answer was that **it does not hold that information**.
+
+### What this means for a family that does not get its first choice
+
+This is the practical question, and the answer is more encouraging than
+offer day alone suggests — with one important qualification.
+
+Places do open up. Dorothy Stringer finished September 27 below its
+admission number, Hove Park 69 below, Patcham 25 below. Those are real
+vacancies at schools that were full, or nearly full, in March.
+
+::: callout-important
+## The qualification
+
+Dorothy Stringer was heavily oversubscribed on offer day and still
+finished the year 27 places below its admission number. If families were
+still waiting for a place in March, the arithmetic says some of them
+should have been offered one by September.
+
+The likeliest explanation is timing. By the point a place falls vacant,
+the family that wanted it has committed elsewhere, and the waiting list
+has dissolved. Capacity and demand both exist; they simply stop
+overlapping. That is a fixable problem, and it is invisible in any
+offer-day figure.
+:::
+
+### The open admissions priority, in practice
+
+The 5% open admissions quota was the most contested element of the 2024
+reforms, and 2026 is the first year it has run. The FOI shows what it
+actually did.
+
+```{r foi-p6}
+#| label: tbl-foi-p6
+#| tbl-cap: "Open admissions (priority 6): places available under the 5% quota, against places filled. Sources: BHCC Secondary Allocation Factsheet (Table 4); FOI 26367489. Figures of five or fewer are suppressed in the FOI and shown here at their midpoint."
+tibble::tribble(
+  ~School,             ~PAN, ~`Offer day`, ~September,
+  "Blatchington Mill",  330,  17,  17,
+  "Dorothy Stringer",   330,  17,  17,
+  "Varndean",           300,  15,  15,
+  "Patcham",            225,   8,  11,
+  "Hove Park",          180,   9,   3,
+  "Longhill",           210,   1,   3) |>
+  dplyr::mutate(`Places available` = round(0.05 * PAN, 1),
+                Filled = sprintf("%.0f%%", 100 * September / `Places available`)) |>
+  dplyr::select(School, PAN, `Places available`, `Offer day`, September, Filled) |>
+  knitr::kable(align = "lrrrrr")
+```
+
+The scheme is fully subscribed wherever it can bite. At the four
+oversubscribed schools it runs at 98 to 103 per cent of the places
+available. It is barely used at Hove Park and Longhill — which is what
+should happen, because neither school is full, and a priority that helps
+you jump a queue is worth nothing where there is no queue.
+
+So the criticism that the policy is not being taken up is not supported
+by this data. The more useful observation is its **scale**. Across the
+six community schools the quota moved about 66 children, or roughly 3 per
+cent of the Year 7 cohort. That is the whole of the council's marquee
+admissions reform. Raising it would not have been free: at the 20 per
+cent originally proposed, the model puts displacement at roughly three
+times the level the 5 per cent settlement produces, and the city slightly
+*more* segregated rather than less.
+
+### Re-validating the model against September
+
+The model is fitted to offer day, so it should be judged against offer
+day — but the September data is the first genuinely out-of-sample test it
+has had, using numbers that did not exist when it was built.
+
+```{r foi-valid}
+#| label: tbl-foi-valid
+#| tbl-cap: "Model fit against offer day and against the confirmed September position, 2026 entry, for the six community schools."
+c6 <- foi |> dplyr::filter(community)
+mi <- c(Varndean = 300, `Blatchington Mill` = 330, Patcham = 215,
+        `Dorothy Stringer` = 330, `Hove Park` = 168, Longhill = 90)
+c6$modelled <- unname(mi[as.character(c6$name)])
+f <- function(a, b) c(R2 = cor(a, b)^2, MAE = mean(abs(a - b)), Bias = mean(a - b))
+rbind(`Model vs offer day`     = f(c6$modelled, c6$offer),
+      `Model vs September`     = f(c6$modelled, c6$sep),
+      `Offer day vs September` = f(c6$offer,    c6$sep)) |>
+  round(2) |> knitr::kable(align = "rrr")
+```
+
+Against offer day, for the six community schools, the model is doing what
+it was built to do. Against September it holds up reasonably — but it
+carries a positive bias of about 16 children per school: **it
+systematically over-predicts the schools that are hard to get into.**
+Almost all of that sits in two schools. Hove Park is modelled at 168 and
+finished at 111; Dorothy Stringer is modelled at its full 330 and
+finished at 303.
+
+That is not a separate error from the churn described above. It is the
+same phenomenon: the model reproduces the allocation, and the allocation
+over-states where children end up. The modelled intakes in this document
+should be read as the offer-day position, which is what they are.
+
+Two consequences follow. Longhill's modelled 2026 intake of 90 sits
+inside the FOI's September range of 91 to 99, so the viability arithmetic
+elsewhere in this document is, if anything, slightly optimistic about how
+much trouble the school is in rather than the reverse. And Hove Park's
+position is materially worse than this document models — which bears
+directly on the Valley Campus consolidation, since a school finishing 69
+below its admission number does not have a demand problem the model has
+captured.
+
+::: callout-note
+## What would settle this
+
+A single published table, each year, giving the September position by
+school alongside the offer-day position. It exists — the council produced
+it on request within a month. Publishing it routinely would let any
+family see how much movement to expect after offer day, and would let
+this model be calibrated on the system as it actually ends up rather than
+as it is first announced.
+:::
+
 ## Sixteen years of demand {#sec-demand-history}
 
 ```{r fig-demand-history}
@@ -6954,7 +7129,7 @@ place. "Set" means chosen and stated rather than estimated.
 | Faith schools | Open to every family | --- | Holding half the city ineligible fits the second-preference profile better but stops Cardinal Newman filling, and it fills. |
 | Capacity | A one-sided ceiling; refused demand re-offered to the other school of a pair, then by second preference, to schools with room | Admission numbers in force; catchment preference table, second preferences | Applicants to a full school are cut back in proportion, which is what a random tie-break averages to --- and the council breaks ties at random. Re-offering refused children in proportion to their *first* preferences (M2 to M4) left Stringer short of its number while counting Stringer / Varndean families as displaced. |
 | Admission rules (simulator only) | Optionally, the council's 2026/27 priorities as a tiered ceiling at the six community schools | Admissions guide 2027--28 | FSM eligibility is the IDACI score scaled by one take-up constant, set so FSM-priority offers at the three schools that ration match the 192 made in September 2026. Priority-6 places are not fitted. |
-| Offer day, not September | Every comparison is with national offer day | --- | Six months of appeals and movement follow offer day, so September rolls are not what an allocation produces. |
+| Offer day, not September | Every comparison is with national offer day | @sec-offer-to-september | Six months of appeals and movement follow offer day, so September rolls are not what an allocation produces. The gap is now measured for 2026 entry: about 60 children, three per cent of the cohort, and the model over-predicts the oversubscribed schools against September by about 16 each. |
 
 
 
