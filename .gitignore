@@ -25,3 +25,6 @@ slides.knit.md
 
 **/*.quarto_ipynb
 data/school-funding-statistics_2025-26.zip
+
+# Non-public data shared by the council (never commit)
+BH Attendance*.xlsx
