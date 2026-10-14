@@ -3690,6 +3690,81 @@ this model be calibrated on the system as it actually ends up rather than
 as it is first announced.
 :::
 
+### The free school meal priorities: a genuine out-of-sample test {#sec-fsm-oos}
+
+The disadvantage layer in @sec-hove-park-mix is **fitted** to each school's
+published disadvantaged share, so the fact that it reproduces that share
+is calibration, not evidence. The same FOI supplies something the model
+was never shown: how many children each community school actually admitted
+under priority 4 (free school meals, in catchment) and priority 5 (free
+school meals, out of catchment).
+
+```{r tbl-fsm-oos}
+#| label: tbl-fsm-oos
+#| tbl-cap: "Children admitted under the free school meal priorities, September 2026: the model's 2026 baseline against the confirmed position. The model was fitted to neither column."
+# Modelled figures are the 2026 baseline run under the council's
+# priorities with the 5% open-admissions share (the configuration used
+# throughout this document), taken from its priority-tier output.
+# Reproduce with:
+#   outcomes(inp, run_sim(inp, year = 2026,
+#     rules = list(rule = "priorities", p6_share = 0.05, fsm = TRUE)))$tiers
+fsm_oos <- tibble::tribble(
+  ~School,              ~m4,  ~p4, ~m5,  ~p5,
+  "Varndean",            56,   59,  34,    6,
+  "Blatchington Mill",   39,   46,  10,   16,
+  "Dorothy Stringer",    30,   32,  23,   32,
+  "Hove Park",           21,   17,   9,   20,
+  "Patcham",             19,   18,  15,   17,
+  "Longhill",            13,   20,   3,    8)
+
+fsm_oos %>%
+  transmute(School,
+            `P4 modelled` = m4, `P4 actual` = p4, `P4 error` = m4 - p4,
+            `P5 modelled` = m5, `P5 actual` = p5, `P5 error` = m5 - p5) %>%
+  knitr::kable(align = "lrrrrrr")
+```
+
+The two priorities behave completely differently.
+
+**In catchment the model is good.** Across the six community schools it
+reaches an R² of `r sprintf("%.2f", cor(fsm_oos$m4, fsm_oos$p4)^2)` against
+the confirmed figures, with a mean absolute error of
+`r sprintf("%.1f", mean(abs(fsm_oos$m4 - fsm_oos$p4)))` children. That is
+a real test passed: nothing in the fitting used these numbers.
+
+**Out of catchment it has no skill whatsoever.** The R² is
+`r sprintf("%.2f", cor(fsm_oos$m5, fsm_oos$p5)^2)`. The model expects 34
+children on free school meals to travel into Varndean under priority 5;
+six did. It under-states Hove Park by the same order in the other
+direction.
+
+That split is informative rather than embarrassing, and it falls exactly
+where the model's own documentation says it should. Priority 4 is close to
+pure geography — disadvantaged children living in a catchment, choosing a
+school in it — and geography is what a spatial interaction model is for.
+Priority 5 requires a family to know the priority exists, to be willing to
+travel on it, and to name the school. That is the whole of what
+$\lambda_j$ absorbs into a single number per school, and @sec-hove-park-mix
+is explicit that it "measures sorting; it does not explain it". Here is
+the cost of that, quantified.
+
+::: callout-important
+## What this means for reading the disadvantage results
+
+Where this document reports how disadvantage would be distributed under a
+scenario, treat the **in-catchment** component as modelled and the
+**out-of-catchment** component as an assumption carried forward from
+today's sorting. A policy whose effect runs mainly through priority 5 —
+open admissions, the free school meal quota applied across catchments —
+is one this model is least equipped to forecast, and the place where its
+numbers should be treated as illustrative.
+:::
+
+This check was only possible because somebody asked for the breakdown. It
+is the strongest argument in this document for publishing allocations by
+priority as a matter of course: it is the only way anyone, including the
+council, can tell which parts of an admissions model are working.
+
 ## Sixteen years of demand {#sec-demand-history}
 
 ```{r fig-demand-history}
