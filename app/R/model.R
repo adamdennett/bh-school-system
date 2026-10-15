@@ -243,12 +243,19 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
 #' and a child refused under one tier goes on to their other choices as a
 #' member of the group they belong to. So each population places all of
 #' its own children, and the ceiling is applied to both together.
+#'
+#' @param ff0 the FSM-eligible flow, already built. Supply it when the two
+#'   populations do not share preferences either - when FSM children have
+#'   their own distance decay, their destinations are not a fixed share of
+#'   everyone else's and cannot be recovered from `flow` and `fsm_share`.
+#'   Left NULL, the original behaviour: a fixed share of each origin's flow.
 ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
                            in_c, s6, com, p6_share, fsm_cap_share,
                            home, pop, kern, partner,
-                           max_iter = 500, tol = 1e-6, ref = NULL) {
+                           max_iter = 500, tol = 1e-6, ref = NULL,
+                           ff0 = NULL) {
   st <- overflow_setup(flow, orig, name, home, pop, kern, partner, ref)
-  ff <- flow * unname(fsm_share[orig])
+  ff <- if (is.null(ff0)) flow * unname(fsm_share[orig]) else pmin(ff0, flow)
   fn <- flow - ff
   for (i in seq_len(max_iter)) {
     acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
@@ -579,9 +586,55 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     share_z <- setNames(share, z$zone)
     share_o <- setNames(unname(share_z[sub("#.*$", "", names(o_pop))]), names(o_pop))
     stopifnot(!is.null(kern))
+
+    # ---- Do disadvantaged children travel like everyone else? ----------
+    # Until now they were taken to: ff was a fixed share of each origin's
+    # flow, so a child on the free school meal priority had exactly the
+    # same shortlist, and the same willingness to cross the city, as the
+    # child next door. The September 2026 FOI says otherwise - the model
+    # placed 34 of them at Varndean on the out-of-catchment priority and
+    # 6 went - and an identical-preferences assumption is the obvious
+    # suspect, because the city-wide total was close while the split
+    # between schools was not.
+    #
+    # beta_fsm gives them their own distance decay. Their flow is built
+    # from the same utility with that exponent in place of beta, and is
+    # production-constrained on its own: every disadvantaged child in a
+    # neighbourhood still goes somewhere. With beta_fsm equal to beta the
+    # two halves sum back to exactly the old flow, so a bundle without the
+    # parameter behaves as before.
+    # alpha_fsm does the same for attractiveness. Against the FOI the
+    # out-of-catchment error tracks a school's Wj at r = +0.75, and barely
+    # tracks how full it is - the model sends 36% of these children to the
+    # single most attractive school where 6% went, while the real spread
+    # is much flatter. An exponent below 1 flattens the response to Wj
+    # without touching what anyone else does.
+    bf <- inp$params$beta_fsm
+    af <- inp$params$alpha_fsm
+    use_bf <- !is.null(bf) && !isTRUE(all.equal(bf, inp$params$beta))
+    use_af <- !is.null(af) && !isTRUE(all.equal(af, 1))
+    ff0 <- NULL
+    if (use_bf || use_af) {
+      if (!use_bf) bf <- inp$params$beta
+      if (!use_af) af <- 1
+      util_f <- d$Wj^af * d$cij^(-bf) *
+        exp(g * d$in_catch + inp$params$delta * log(d$Cj))
+      # Schools outside the city keep their own gravity term either way.
+      if (any(is_ext)) util_f[is_ext] <- util[is_ext]
+      A_f  <- tapply(util_f, d$orig, sum)
+      s_o  <- unname(share_o[d$orig])
+      ff0  <- util_f * (d$Oi_pop * s_o) / A_f[d$orig]
+      fn0  <- util   * (d$Oi_pop * (1 - s_o)) / A[d$orig]
+      d$flow   <- ff0 + fn0
+      # Displacement is measured against what families wanted, so the
+      # baseline has to move with them.
+      d$wanted <- d$flow
+    }
+
     res <- ipf_priorities(d$flow, d$orig, d$name, cap_all, cap_all, share_o,
                           in_c, s6, com, rule$p6_share, rl$fsm_cap_share,
-                          d$catchment, d$pop, kern, partner, ref = u_ref)
+                          d$catchment, d$pop, kern, partner, ref = u_ref,
+                          ff0 = ff0)
     d$flow <- res$flow
     d$fsm_flow <- res$fsm
     d$p6 <- res$p6

@@ -2960,6 +2960,99 @@ to looked-after children, children with SEN and exceptional need. The
 model places those children somewhere — it just cannot tell you that
 this is why.
 
+## Do disadvantaged children choose differently? {#sec-fsm-own-terms}
+
+The tiers above take free school meal children to have the same
+preferences as everyone else. `ipf_priorities()` built their flow as a
+fixed share of each neighbourhood's total — same shortlist, same
+willingness to cross the city — and only the *priorities* differed. A
+September 2026 FOI gave a way to test that, because it recorded how many
+children each school admitted under each priority, which nothing in the
+model was fitted to.
+
+The result looked damning. In catchment the model is close. Out of
+catchment it put **34 children into Varndean where the council admitted
+5**, and the city-wide total was nearly right — 95 modelled against 99 —
+so it was the split between schools that failed, not the volume.
+
+That pattern is what an identical-preferences assumption would produce,
+so the model now carries two parameters to relax it, both no-ops by
+default:
+
+| Parameter | What it does | Default |
+|:--|:--|:--|
+| `beta_fsm` | distance decay for free school meal flows | `beta` |
+| `alpha_fsm` | exponent on attractiveness for those flows | 1 |
+
+Their flow is rebuilt from the same utility with those exponents in
+place, and is production-constrained on its own, so every disadvantaged
+child in a neighbourhood still goes somewhere. Set to the defaults the
+two halves sum back to exactly the old flow.
+
+### Neither of them fixes it
+
+```{r fsm-sweep}
+#| tbl-cap: "Fit against the September 2026 FOI, sweeping each parameter on its own. Lower mean absolute error is better."
+tibble::tribble(
+  ~Parameter,    ~Value, ~`Out-of-catchment MAE`, ~`In-catchment MAE`, ~`Varndean, modelled`,
+  "as published", "—",    10.2,  4.1, 34.5,
+  "beta_fsm",     "2.3",  12.2,  5.5, 28.7,
+  "beta_fsm",     "3.0",  13.0,  8.2, 10.8,
+  "beta_fsm",     "4.0",  15.2, 18.5,  1.2,
+  "alpha_fsm",    "0.6",   9.5,  3.7, 33.8,
+  "alpha_fsm",    "0.4",   9.3,  5.4, 31.2,
+  "alpha_fsm",    "0.0",  10.2,  9.8, 24.5) |>
+  knitr::kable(align = "llrrr", digits = 1)
+```
+
+Making disadvantaged children travel less far makes the fit **worse on
+every measure**, and monotonically. The reason is visible in the totals:
+the city-wide out-of-catchment figure was already right, so suppressing
+travel destroys a number that was correct in order to chase one that was
+not. By `beta_fsm` = 4 the in-catchment error has tripled.
+
+Flattening the response to attractiveness does a little better — the
+out-of-catchment error falls from 10.2 to 9.3 — but it leaves Varndean
+at 31 against 5, which is the whole of the problem.
+
+### Why no preference parameter can close it
+
+Because the two numbers are not counting the same children.
+
+The council's priority 3 is siblings, and it sits *above* both free
+school meal tiers. At Varndean it absorbed
+`r rl$outturn_2026$offers[rl$outturn_2026$school == "Varndean School" & rl$outturn_2026$priority == 3]`
+children. The model has no priority 3 — §8 says so plainly, because
+looked-after children, SEN and siblings cannot be told apart in
+zone-level flows — so a disadvantaged child with an older brother or
+sister at the school lands in the model's tier 4 or 5 and in the
+council's priority 3. Varndean is the school where that bites hardest:
+long oversubscribed, and with families outside its catchment who already
+have a child there.
+
+So the comparison was never like-for-like, and the out-of-catchment
+panel is measuring a definitional gap rather than a behavioural one. No
+exponent on distance or attractiveness can close it, which is what the
+sweep shows.
+
+::: callout-note
+## What to do with this
+
+**Leave both parameters at their defaults.** They are there so the
+question can be asked again — against a future FOI that reports
+priorities 3, 4 and 5 separately, or against pupil-level data — and the
+answer this time is that the model's preference assumptions are not what
+is wrong.
+
+**Read the free school meal tiers as a combined total, not school by
+school.** The three-school total is right by construction and the split
+between them is not, for the reason above.
+
+**Treat priority 5 at an oversubscribed school as unreliable.** It is the
+tier most contaminated by siblings and the one with the fewest children
+in it.
+:::
+
 ## What the ceiling does to the city
 
 ```{r cap-effect}
