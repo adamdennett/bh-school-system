@@ -3535,8 +3535,8 @@ flowchart TB
     s4["<b>4 · Competition</b><br/>C_j from where the schools stand (§7)<br/>↻ attractiveness · site · open or close"]
     s5["<b>5 · Catchment indicator</b><br/>from the map in force (§6)<br/>⚙ Catchment map"]
     s6["<b>6 · Populations</b><br/>families who would take only one of a pair (§8)<br/>⚙ Paired-catchment exclusivity"]
-    s7["<b>7 · Pull</b><br/>W_j · c_ij^−β · e^γ · C_j^δ (§5–§7)<br/>⚙ How much the catchment counts"]
-    s8["<b>8 · Balance</b><br/>A_i, so every row places its children (§8)"]
+    s7["<b>7 · Pull</b><br/>W_j · c_ij^−β · e^γ · C_j^δ (§5–§7)<br/>⚙ How much the catchment counts<br/>↻ built twice, once per population, if<br/>disadvantaged flows carry their own<br/>β or α (§9.5) — off by default"]
+    s8["<b>8 · Balance</b><br/>A_i, so every row places its children (§8)<br/>↻ once per population when 7 splits"]
     s9["<b>9 · Wanted</b><br/>T_ij before any ceiling"]
     d1{"<b>10 · Any school over<br/>its admission number?</b><br/>⚙ Places, per school"}
     s10["<b>11 · Ceiling</b><br/>council tiers at community schools,<br/>proportional elsewhere (§9)<br/>⚙ When a school is full<br/>↻ catchment map · places"]
@@ -3602,7 +3602,10 @@ the balanced attractiveness, $\beta$, each catchment's $\gamma_h$,
 $\delta$ and $\sigma$ — are fixed when the input bundle is built, and a
 run reads them. So does the second-preference kernel (§10), the
 disadvantage pull $\lambda_j$ (§12), and the two routed cost tables,
-which are far too slow to build inside a run.
+which are far too slow to build inside a run. The same goes for
+`beta_fsm` and `alpha_fsm` (§9.5): they live in the bundle, not on a
+slider, and at their defaults step 7 produces a single pull, exactly as
+drawn.
 
 That division is what the sliders mean. The catchment slider does not
 re-estimate how much families follow their catchment; it multiplies the
@@ -3628,6 +3631,17 @@ misses a capped tier at a community school drops into the next tier down
 (§9), in a fixed order rather than by iterating, and the two
 groups — FSM-eligible and everyone else — are carried through it
 separately so each places its own children.
+
+Where that split *begins* depends on the bundle. By default the two
+groups share a pull and only part company at the ceiling, so the
+FSM-eligible flow is a fixed share of each origin's total and
+`ipf_priorities()` takes it from `fsm_share`. Give disadvantaged
+children their own $\beta$ or $\alpha$ (§9.5) and they part company at
+step 7 instead: two pulls, two balancing terms, and the built flow
+handed to `ipf_priorities()` directly, because once the populations
+have different preferences the split can no longer be recovered from
+the total. Either way both halves reach the cascade, and the ceiling
+treats them exactly as drawn.
 
 A third loop, outside the model, sits in the disadvantage layer (§12):
 it shares each neighbourhood's disadvantaged children over the flows it
