@@ -1,4 +1,5 @@
 ---
+title: "Brighton & Hove’s secondary school system"
 image: docs/model-guide_files/figure-html/fig-cj-map-1.png
 ---
 
