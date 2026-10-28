@@ -3,9 +3,10 @@
 # Every figure in this document comes from published data. This file is
 # the register of what that data is: one row per published source with a
 # link, one row per file in data/ saying which sources it derives from,
-# and a scan of index.qmd that works out which sections use which file.
+# and a scan of analysis.qmd that works out which sections use which
+# file.
 #
-# The scan is done by reading index.qmd at render time rather than by
+# The scan is done by reading analysis.qmd at render time rather than by
 # keeping a hand-written list, because a hand-written list of "section 4
 # uses the travel matrix" is wrong within two edits and nobody notices.
 #
@@ -91,7 +92,7 @@ DATASETS <- tibble::tribble(
 stopifnot(!any(duplicated(DATASETS$file)),
           all(unlist(DATASETS$from) %in% SOURCES$key))
 
-# ---- 3. Which object in index.qmd is which file ----------------------
+# ---- 3. Which object in analysis.qmd is which file -------------------
 # Nearly every one of these is a list read once at the top of the
 # document and then used as `obj$field`, so requiring the dollar makes
 # the scan specific. The three that are used bare are geometries and
@@ -138,7 +139,7 @@ stopifnot(all(QMD_VARS$file %in% DATASETS$file))
 #'
 #' @param qmd path to the Quarto source
 #' @return a tibble of section, number, file
-section_uses <- function(qmd = here::here("index.qmd")) {
+section_uses <- function(qmd = here::here("analysis.qmd")) {
   src <- readLines(qmd, warn = FALSE)
 
   # A "# " line inside a code chunk is an R comment, not a heading. The

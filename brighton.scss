@@ -1,40 +1,64 @@
 /*-- scss:defaults --*/
 
-// Palette shared with the "Pulling the Right Lever" landing page, so the
-// two sites read as one body of work.
-$ucl-purple:      #361a54;
-$ucl-purple-mid:  #6b2fb5;
-$ucl-purple-brt:  #993bff;
-$ucl-purple-pale: #eedeff;
-$ucl-lavender:    #faf5ff;
-$ucl-orange:      #f56300;
-$ucl-cyan:        #30d6ff;
+// UCL palette, read off the brand site's own CSS custom properties in
+// October 2026 rather than from memory:
+//   https://www.ucl.ac.uk/brand-and-experience/brand/visual-guidelines/colour
+//
+// The published palette is dark purple, white, bright purple, mid purple,
+// light purple, pale purple and heritage blue - everything except the blue
+// is a purple. "How to Pull the Right Lever" leads with the purples, so to
+// tell these two sites apart at a glance this one leads with the BLUE side
+// of the same palette: heritage blue as the signature colour, over the deep
+// navy steps from UCL's own blue ramp.
+//
+// Heritage blue is a bright cyan and fails contrast against white, so it is
+// never used for body text - only as a highlight on dark grounds, and for
+// rules and accents. That is also what UCL's own guidance asks for.
+
+// --- The blue family (this site's lead) ---------------------------------
+$ucl-blue-heritage: #30d6ff;   // the brand's heritage blue
+$ucl-navy-deep:     #17204d;   // blue-15
+$ucl-navy:          #1f2b66;   // blue-14
+$ucl-navy-mid:      #1f4599;   // blue-13
+$ucl-blue:          #1252b2;   // blue-12
+$ucl-blue-brt:      #0570e3;   // blue-11
+$ucl-blue-pale:     #e5f1ff;   // blue-03
+$ucl-blue-wash:     #f2f8ff;   // blue-02
+
+// --- The purples, kept as the secondary voice ---------------------------
+// Used where this site quotes the Lever work, and for the odd accent, so
+// the two still read as one body of work.
+$ucl-purple:      #361a54;     // brand-15, dark purple
+$ucl-purple-mid:  #ba82ff;     // brand-08, mid purple
+$ucl-purple-brt:  #9a3bff;     // brand-10, bright purple
+$ucl-purple-pale: #eedeff;     // brand-04, pale purple
+
 $ink:             #1a1a2e;
-$ink-muted:       #666688;
-$rule:            #e8e4f0;
+$ink-muted:       #5a6478;
+$rule:            #dde6f2;
 
 $font-family-sans-serif: "UCL Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 $font-size-root:  16px;
 $line-height-base: 1.65;
 
-$primary:         $ucl-purple;
+$primary:         $ucl-navy;
 $body-color:      $ink;
 $body-bg:         #ffffff;
-$link-color:      $ucl-purple-mid;
-$link-hover-color: $ucl-purple-brt;
+$link-color:      $ucl-blue;
+$link-hover-color: $ucl-blue-brt;
 
-$navbar-bg:       $ucl-purple;
+$navbar-bg:       $ucl-navy-deep;
 $navbar-fg:       #ffffff;
-$navbar-hl:       $ucl-cyan;
+$navbar-hl:       $ucl-blue-heritage;
 
-$footer-bg:       $ucl-lavender;
+$footer-bg:       $ucl-blue-wash;
 $footer-fg:       $ink-muted;
 
 $toc-color:       $ink-muted;
-$toc-active-border: $ucl-purple-brt;
+$toc-active-border: $ucl-blue-heritage;
 
-$code-bg:         $ucl-lavender;
-$code-color:      $ucl-purple-mid;
+$code-bg:         $ucl-blue-wash;
+$code-color:      $ucl-navy-mid;
 $table-border-color: $rule;
 
 /*-- scss:rules --*/
@@ -42,7 +66,7 @@ $table-border-color: $rule;
 // --- Headings -------------------------------------------------------------
 
 h1, h2, h3, h4, h5 {
-  color: $ucl-purple;
+  color: $ucl-navy;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -53,7 +77,7 @@ h1 { font-size: 2.0rem; }
 h2 {
   margin-top: 2.4rem;
   padding-bottom: 0.35rem;
-  border-bottom: 2px solid $ucl-purple-pale !important;
+  border-bottom: 2px solid $ucl-blue-pale !important;
 }
 
 h3 { margin-top: 1.8rem; }
@@ -61,7 +85,7 @@ h3 { margin-top: 1.8rem; }
 // --- Title banner ---------------------------------------------------------
 
 .quarto-title-block .quarto-title-banner {
-  background: linear-gradient(135deg, $ucl-purple 0%, #4a2270 60%, $ucl-purple-mid 100%);
+  background: linear-gradient(135deg, $ucl-navy-deep 0%, $ucl-navy 55%, $ucl-navy-mid 100%);
 }
 
 .quarto-title-banner .title,
@@ -78,7 +102,7 @@ h3 { margin-top: 1.8rem; }
 // --- Navbar ---------------------------------------------------------------
 
 .navbar {
-  border-bottom: 3px solid $ucl-purple-brt;
+  border-bottom: 3px solid $ucl-blue-heritage;
 }
 
 .navbar-brand {
@@ -87,7 +111,7 @@ h3 { margin-top: 1.8rem; }
 }
 
 .navbar .nav-link:hover {
-  color: $ucl-cyan !important;
+  color: $ucl-blue-heritage !important;
 }
 
 // --- Table of contents ----------------------------------------------------
@@ -96,7 +120,7 @@ h3 { margin-top: 1.8rem; }
   font-size: 0.87rem;
 
   ul > li > a.active {
-    color: $ucl-purple-mid;
+    color: $ucl-navy-mid;
     font-weight: 600;
   }
 }
@@ -110,14 +134,14 @@ table {
 table thead th,
 .table > thead > tr > th,
 .table > thead th {
-  background-color: $ucl-purple !important;
+  background-color: $ucl-navy !important;
   color: #ffffff !important;
   font-weight: 600;
   border-bottom: none !important;
 }
 
 tbody tr:nth-child(even) {
-  background: $ucl-lavender;
+  background: $ucl-blue-wash;
 }
 
 .table > :not(caption) > * > * {
@@ -143,12 +167,12 @@ caption, .caption, figcaption {
 // --- Code -----------------------------------------------------------------
 
 .code-fold-btn, details > summary {
-  color: $ucl-purple-mid;
+  color: $ucl-navy-mid;
   font-size: 0.86rem;
 }
 
 pre {
-  border-left: 3px solid $ucl-purple-pale;
+  border-left: 3px solid $ucl-blue-pale;
   border-radius: 3px;
 }
 
@@ -165,4 +189,327 @@ pre {
 .nav-footer {
   border-top: 1px solid $rule;
   font-size: 0.86rem;
+}
+
+// --- Landing page ---------------------------------------------------------
+// Only index.qmd carries .landing on the body, so none of this reaches the
+// analysis or the model guide.
+
+.landing {
+  // The landing page supplies its own hero, so Quarto's banner and the
+  // empty table of contents column are both in the way.
+  .quarto-title-block, #title-block-header { display: none; }
+  #quarto-margin-sidebar, #TOC, nav[role="doc-toc"] { display: none !important; }
+  #quarto-content > * { padding-top: 0; }
+  main.content { max-width: none; padding-left: 0; padding-right: 0; }
+}
+
+.hero {
+  position: relative;
+  min-height: 430px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  background: $ucl-navy-deep;
+  margin-bottom: 2.5rem;
+}
+
+// The competing-destinations map, washed out behind the text. It is a
+// light figure on white, so it reads as a pale tracery over the navy
+// rather than as a picture - which is the intention. The vertical offset
+// crops the figure's own title out of shot.
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  // assets/hero-cj-map.png is the competing-destinations figure with its
+  // title, legend and padding already cropped away, so a plain `cover`
+  // works at every width and nothing stray shows through the text.
+  background-image: url("assets/hero-cj-map.png");
+  background-size: cover;
+  background-position: center 45%;
+  background-repeat: no-repeat;
+  opacity: 0.26;
+}
+
+.hero-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(23, 32, 77, 0.35) 0%,
+    rgba(23, 32, 77, 0.62) 50%,
+    rgba(23, 32, 77, 0.95) 100%
+  );
+}
+
+// --- Graphic pillars ------------------------------------------------------
+// After UCL's graphic-pillars guidance:
+//   https://www.ucl.ac.uk/brand-and-experience/brand/visual-guidelines/graphic-pillars
+// "Each pillar set is made up of vertical bars and the spaces between them."
+//
+// These are drawn here in CSS rather than placed from UCL's own vector
+// files, which are issued on request by the brand team - so treat them as
+// the motif rather than the official asset.
+//
+// Two rules from the guidance are followed deliberately:
+//   - a sticker is the SAME colour as the container it touches, and sits
+//     flush against it, so the box looks like it is breaking into bars;
+//   - stickers are never heritage blue, which is reserved for the
+//     bicentenary. The ones here are navy or white.
+// The guidance also asks that pillars not overwhelm a layout, "particularly
+// for people who are neurodiverse or have photosensitive epilepsy", so
+// nothing here moves and the pattern sits at low contrast.
+
+@mixin pillar-sticker($colour, $w: 5px, $gap: 5px) {
+  content: "";
+  position: absolute;
+  right: 100%;
+  bottom: 0;
+  width: ($w * 3) + ($gap * 2);
+  height: 100%;
+  background-image:
+    linear-gradient($colour, $colour),
+    linear-gradient($colour, $colour),
+    linear-gradient($colour, $colour);
+  background-size: $w 38%, $w 64%, $w 100%;
+  background-position: 0 100%, ($w + $gap) 100%, ($w + $gap) * 2 100%;
+  background-repeat: no-repeat;
+}
+
+// A one-row pattern, used as an edge. Even bars, as UCL's pattern files are.
+@mixin pillar-pattern($colour, $w: 7px, $pitch: 19px) {
+  background-image: repeating-linear-gradient(
+    90deg,
+    $colour 0, $colour $w,
+    transparent $w, transparent $pitch
+  );
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 980px;
+  padding: 3rem 2.5rem 2.6rem;
+}
+
+// One-row pattern along the base of the hero, white on navy.
+.hero-pillars {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 54px;
+  z-index: 1;
+  @include pillar-pattern(rgba(255, 255, 255, 0.5));
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 100%);
+}
+
+.hero-label {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: $ucl-blue-heritage;
+  margin-bottom: 0.8rem;
+}
+
+.hero h1 {
+  color: #ffffff !important;
+  font-size: 2.6rem;
+  line-height: 1.12;
+  margin: 0 0 0.7rem;
+  border-bottom: none;
+}
+
+.hero p {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 1.1rem;
+  line-height: 1.5;
+  max-width: 44em;
+  margin: 0;
+}
+
+// --- Landing: the rest ----------------------------------------------------
+
+.landing-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+
+.landing-lede {
+  font-size: 1.12rem;
+  line-height: 1.6;
+  max-width: 46em;
+  margin-bottom: 2.2rem;
+  color: $ink;
+}
+
+// A two-pillar mark before each section label - the smallest sticker in the
+// guidance, "for small elements where space is tight".
+.section-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: $ucl-navy-mid;
+  margin: 2.8rem 0 0.7rem;
+
+  &::before {
+    content: "";
+    flex: none;
+    width: 11px;
+    height: 0.95rem;
+    background-image:
+      linear-gradient($ucl-navy-mid, $ucl-navy-mid),
+      linear-gradient($ucl-blue-heritage, $ucl-blue-heritage);
+    background-size: 4px 55%, 4px 100%;
+    background-position: 0 100%, 7px 100%;
+    background-repeat: no-repeat;
+  }
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.3rem 2.4rem;   // the column gap leaves room for the pillar sticker
+  margin-bottom: 1rem;
+  padding-left: 15px;
+}
+
+// Each card is a fenced div carrying a Bootstrap .stretched-link, so the
+// whole tile is clickable. It is deliberately NOT a raw <a> wrapping block
+// elements: pandoc wraps a raw anchor in <p>, and <p><a><div> is invalid,
+// so the parser splits every card in two and leaves an empty ghost behind.
+.card-link {
+  position: relative;
+  display: block;
+  padding: 1.3rem 1.4rem;
+  border: 1px solid $rule;
+  background: #ffffff;
+  color: $ink;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+
+  p { margin: 0; }
+
+  &:hover {
+    border-color: $ucl-blue-brt;
+    box-shadow: 0 4px 16px rgba(31, 43, 102, 0.1);
+    transform: translateY(-2px);
+  }
+
+  // A two-pillar sticker on the left edge. UCL's rule is that a sticker
+  // takes the container's own colour, which works for the filled cards
+  // below and for the stat tiles - but a plain card's fill is the page
+  // white, and a white sticker on a white page is nothing at all. These
+  // take the card's border colour instead, which is the only thing
+  // defining the container.
+  &::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    bottom: 0;
+    width: 15px;
+    height: 100%;
+    background-image:
+      linear-gradient($ucl-blue-pale, $ucl-blue-pale),
+      linear-gradient($ucl-blue-pale, $ucl-blue-pale);
+    background-size: 5px 42%, 5px 74%;
+    background-position: 0 100%, 10px 100%;
+    background-repeat: no-repeat;
+  }
+
+  &.featured {
+    background: $ucl-blue-wash;
+    border-color: $ucl-blue-pale;
+
+    &::before {
+      background-image:
+        linear-gradient($ucl-blue-wash, $ucl-blue-wash),
+        linear-gradient($ucl-blue-wash, $ucl-blue-wash);
+    }
+  }
+}
+
+.card-kicker {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: $ucl-navy-mid;
+  margin-bottom: 0.4rem;
+}
+
+.card-title {
+  display: block;
+  font-weight: 650;
+  font-size: 1.08rem;
+  color: $ucl-navy;
+  margin-bottom: 0.35rem;
+}
+
+.card-desc {
+  display: block;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: $ink-muted;
+}
+
+// Key numbers strip. Each tile carries a three-pillar sticker on its left
+// edge, in the tile's own navy, so the box reads as breaking into bars.
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem 2.3rem;
+  margin: 1rem 0 0.5rem;
+  padding-left: 25px;
+}
+
+.stat {
+  position: relative;
+  padding: 1.1rem 1.2rem;
+  background: $ucl-navy;
+  color: #ffffff;
+
+  &::before { @include pillar-sticker($ucl-navy); }
+}
+
+.stat-number {
+  display: block;
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.05;
+  color: $ucl-blue-heritage;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  margin-top: 0.35rem;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.landing-note {
+  border-left: 4px solid $ucl-blue-heritage;
+  background: $ucl-blue-wash;
+  padding: 1.1rem 1.3rem;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin: 2rem 0 0;
+}
+
+@media (max-width: 640px) {
+  .hero { min-height: 340px; }
+  .hero h1 { font-size: 1.9rem; }
+  .hero-content { padding: 2rem 1.3rem 1.8rem; }
+  .landing-wrap { padding: 0 1.1rem 2.5rem; }
 }

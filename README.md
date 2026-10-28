@@ -16,8 +16,12 @@ on top of it.
 
 | Path | What it is |
 |---|---|
-| `index.qmd` | The analysis page |
+| `index.qmd` | The landing page |
+| `analysis.qmd` | The analysis — the main document |
+| `model-guide.qmd` | The technical guide to every model term |
 | `slides.qmd` | The deck |
+| `brighton.scss` | Site theme. Leads with UCL's heritage blue rather than the purples, so it reads apart from *How to Pull the Right Lever* |
+| `assets/hero-cj-map.png` | Landing-page hero image, cropped from the competing-destinations figure |
 | `R/00_core.R` | Paths, palettes, school lookups, map helpers |
 | `R/01_assemble.R` | Pulls every input into `data/`. Run once |
 | `R/02_accessibility.R` | New analysis: LSOA accessibility, two measures |
