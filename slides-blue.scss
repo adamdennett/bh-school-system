@@ -1,0 +1,136 @@
+/*-- scss:defaults --*/
+
+// Deck theme for slides.qmd, matching brighton.scss so the deck and the
+// site read as one thing. Self-contained: the sibling school_attainment_tool
+// repo holds a fuller UCL slide theme, but a Quarto theme path reaching
+// across repositories would stop this site rendering from a fresh clone.
+//
+// Palette and rationale are the same as brighton.scss. The published UCL
+// palette is dark purple, white and four more purples, plus heritage blue,
+// so leading with the blue is what tells this apart from the purple
+// "How to Pull the Right Lever" decks. The deep navy steps come from UCL's
+// own blue ramp.
+//
+// Heritage blue is a bright cyan - 1.9:1 on white - so it is never text
+// here, only rules, accents and highlights on dark grounds.
+
+$ucl-blue-heritage: #30d6ff;
+$ucl-navy-deep:     #17204d;
+$ucl-navy:          #1f2b66;
+$ucl-navy-mid:      #1f4599;
+$ucl-blue:          #1252b2;
+$ucl-blue-brt:      #0570e3;
+$ucl-blue-pale:     #e5f1ff;
+$ucl-blue-wash:     #f2f8ff;
+$ink:               #1a1a2e;
+$ink-muted:         #5a6478;
+
+$font-family-sans-serif: "UCL Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+$presentation-heading-font: $font-family-sans-serif;
+$presentation-heading-color: $ucl-navy;
+$presentation-font-size-root: 36px;
+$presentation-line-height: 1.4;
+
+$body-bg:          #fafafa;
+$body-color:       $ink;
+$link-color:       $ucl-blue;
+$link-color-hover: $ucl-blue-brt;
+$selection-bg:     $ucl-blue-pale;
+$code-block-bg:    #eef3fa;
+
+/*-- scss:rules --*/
+
+.reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+// A heritage-blue rule under each slide title, as on the site.
+.reveal h2 {
+  color: $ucl-navy;
+  border-bottom: 3px solid $ucl-blue-heritage;
+  padding-bottom: 0.25em;
+  margin-bottom: 0.6em;
+}
+
+.reveal h3 { color: $ucl-navy-mid; }
+
+// Section dividers carry a background colour from the deck's own YAML.
+.reveal section[data-background-color] h1,
+.reveal section[data-background-color] h2 {
+  color: #ffffff !important;
+  border-bottom: none;
+  text-align: center;
+  margin-top: 1.2em;
+}
+
+// Bold takes the heading colour, which disappears on the dark dividers.
+.reveal section[data-background-color] strong,
+.reveal #title-slide strong {
+  color: #ffffff;
+}
+
+.reveal #title-slide .title { color: #ffffff; }
+
+.reveal #title-slide .subtitle,
+.reveal #title-slide .quarto-title-author,
+.reveal #title-slide .date {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+// Tables, matching the site's navy header band.
+.reveal table { font-size: 0.82em; }
+
+.reveal table thead th {
+  background: $ucl-navy;
+  color: #ffffff;
+  font-weight: 600;
+  border-bottom: none;
+}
+
+.reveal table tbody tr:nth-child(even) { background: $ucl-blue-wash; }
+
+.reveal blockquote {
+  background: $ucl-blue-wash;
+  border-left: 5px solid $ucl-blue-heritage;
+  box-shadow: none;
+  font-style: normal;
+}
+
+.reveal .callout { border-left-width: 4px; }
+
+.reveal .slide-number { color: $ink-muted; }
+
+.reveal .progress span { background: $ucl-blue; }
+
+// Plots render on #FAFAFA, so a hairline stops them floating.
+.reveal .slide img { border-radius: 3px; }
+
+// The graphic-pillar motif from the site: a one-row pattern as a bottom
+// edge on the slides that carry a background colour, drawn in CSS rather
+// than placed from UCL's own vector files. Nothing animates, which the
+// pillar guidance asks for on behalf of neurodiverse and photosensitive
+// readers.
+//
+// Hung off .reveal rather than off the section: a revealjs section is only
+// as tall as its content, so `bottom: 0` on the section put the pillars
+// across the middle of the title slide. :has() keeps them to the slides
+// that have a dark ground, and a browser without it simply shows none.
+.reveal:has(.slides section.present[data-background-color])::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  z-index: 1;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.45) 0, rgba(255, 255, 255, 0.45) 7px,
+    transparent 7px, transparent 19px
+  );
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 100%);
+}

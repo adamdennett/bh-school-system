@@ -3,9 +3,11 @@ title: "Brighton & Hove secondary schools"
 subtitle: "What the evidence says, how it was built, and what to do about Longhill"
 author: "Adam Dennett, UCL Centre for Advanced Spatial Analysis"
 date: today
+title-slide-attributes:
+  data-background-color: "#17204d"
 format:
   revealjs:
-    theme: simple
+    theme: [default, slides-blue.scss]
     slide-number: true
     width: 1280
     height: 720
@@ -103,7 +105,7 @@ sch_city <- inp$schools[inp$schools$city & !(inp$schools$hypothetical %in% TRUE)
 - Every stage of the model, opened up for checking: [The model, stage by stage](https://adamdennett.github.io/bh-school-system/model-guide.html)
 - Try any option yourself: [the policy simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/)
 
-# The situation
+# The situation {background-color="#17204d"}
 
 ## A system built for more children than it has
 
@@ -259,7 +261,7 @@ ggplot(rp, aes(year, reserve_pct)) +
 - **Concentrated disadvantage is not the harm it is assumed to be.** Nationally, disadvantaged pupils do slightly *better* in schools with more of them, once absence and prior attainment are allowed for. Brighton Aldridge is the local example: its disadvantaged pupils leave with about **3 GCSE points more** than comparable pupils elsewhere (four-year average; 5.7 in 2024-25).
 - Children from the most deprived neighbourhoods travel **`r sprintf("%.1f", co("today", "dep_gap", 2026))` minutes further** each way than everyone else, under the map in force.
 
-# How the model works
+# How the model works {background-color="#17204d"}
 
 ## Brighton Secondary School System Simulator
 
@@ -663,7 +665,7 @@ ggplot(mix, aes(share, forcats::fct_rev(school), fill = Catchment)) +
   theme_slide(15)
 ```
 
-# Does the model reproduce what we know?
+# Does the model reproduce what we know? {background-color="#17204d"}
 
 ## It reproduces the 2026 offers, which it was not fitted to
 
@@ -765,7 +767,7 @@ inp$params$dis$fit |>
                           legend.justification = "left")
 ```
 
-# A system that moves
+# A system that moves {background-color="#17204d"}
 
 ## The same system, year by year
 
@@ -856,7 +858,7 @@ ggplot(mb, aes(gap_pct, short)) +
   theme_slide(15) + theme(legend.position = "top")
 ```
 
-# Complex interactions, surprising results
+# Complex interactions, surprising results {background-color="#17204d"}
 
 ## Pull one lever, and the effect turns up somewhere else
 
@@ -977,7 +979,7 @@ ggplot(dm, aes(delta, label, fill = dir)) +
   theme_slide(15) + theme(legend.position = "top")
 ```
 
-# The options
+# The options {background-color="#17204d"}
 
 ## How to read an option
 
@@ -1152,7 +1154,7 @@ vc <- function(b, col) vac$city[[col]][vac$city$year == 2026 & vac$city$basis ==
 :::
 :::
 
-# What this means for Longhill
+# What this means for Longhill {background-color="#17204d"}
 
 ## A smaller Longhill at the top of Elm Grove
 
@@ -1190,7 +1192,7 @@ tibble::tibble(id = elm_rows) |>
 :::
 :::
 
-# Recommendations
+# Recommendations {background-color="#17204d"}
 
 ## What to do
 

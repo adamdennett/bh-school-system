@@ -129,6 +129,16 @@ pupil records are used anywhere.
 
 ::: {.cards}
 
+::: {.card-link .featured}
+[November 2026]{.card-kicker}
+
+[Nov 2026 Talk &rarr;]{.card-title}
+
+[The travelling version: the problem, the tool, a live demo — and the argument it leads to. Why consultations test consent rather than options, and what would have to change for an authority to model honestly, in public, before it has decided.]{.card-desc}
+
+[](https://adamdennett.github.io/school_attainment_tool/nov_2026_talk.html){.stretched-link target="_blank"}
+:::
+
 ::: {.card-link}
 [November 2026 &middot; Brighton AI, Plus X]{.card-kicker}
 

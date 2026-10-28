@@ -18,6 +18,9 @@ website:
         text: "The analysis"
       - href: model-guide.qmd
         text: "Model guide"
+      - href: https://adamdennett.github.io/school_attainment_tool/nov_2026_talk.html
+        text: "Nov 2026 Talk"
+        target: _blank
       - href: https://adamdennett.github.io/school_attainment_tool/brighton_ai_talk.html
         text: "Brighton AI Talk"
         target: _blank
