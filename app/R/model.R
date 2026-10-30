@@ -184,9 +184,16 @@ partner_map <- function(ex) {
 #' faith schools keep the proportional ceiling; their own criteria are not
 #' in any published data.
 #'
-#' Priorities 1-3 - looked-after children, SEN and exceptional need, and
-#' siblings - cannot be told apart in zone-level flows. Most siblings live
-#' in the catchment, so they sit inside tier 7.
+#' Priorities 1 and 2 - looked-after children and exceptional need - are
+#' small and cannot be told apart in zone-level flows, so they sit inside
+#' the tier the child would otherwise have reached.
+#'
+#' Priority 3, the sibling link, is neither small nor invisible, and it is
+#' ABOVE both free school meal priorities in the published order. Pass
+#' `sib` to give it its own tier; leave it NULL and the function behaves
+#' exactly as before, with siblings dissolved into tiers 7 and 8. See
+#' @sec-siblings in the model guide for what turning it on does and does
+#' not fix.
 #'
 #' The council's published admission arrangements break ties inside each
 #' priority by random allocation rather than by distance, which is why the
@@ -196,8 +203,10 @@ partner_map <- function(ex) {
 #' @param in_c,s6,com logical per flow row: lives in the destination's
 #'   catchment; lives in a single-school catchment and is applying outside
 #'   it; the destination is a community school
+#' @param sib NULL, or a named share per school of arriving demand that
+#'   has a sibling already at that school
 tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
-                        p6_share, fsm_cap_share) {
+                        p6_share, fsm_cap_share, sib = NULL) {
   S <- names(cap)
   by <- factor(name, levels = S)
   sumby <- function(x) { v <- tapply(x, by, sum); v[is.na(v)] <- 0; v[S] }
@@ -206,23 +215,65 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
   Fc <- fsm_cap_share * pan[S]
   Rc <- p6_share * pan[S]
 
-  d4  <- sumby(ff * in_c)
-  d5s <- sumby(ff * (!in_c & s6))
-  d5o <- sumby(ff * (!in_c & !s6))
+  # ---- Priority 3: the sibling link -------------------------------------
+  # Taken off the top, before the free school meal priorities, because
+  # that is where the published arrangements put it. The consequence is
+  # the one the council missed in the 2024/25 round: a child who is BOTH
+  # free-school-meal eligible and a sibling is admitted here, so they do
+  # not consume the free school meal quota below - but they do count in
+  # the school's free school meal share. That is how Varndean reached
+  # 40% against a stated 30% ceiling. Capping the quota is not the same
+  # as capping the intake, and the model now says so instead of quietly
+  # routing every eligible child through the capped tier.
+  #
+  # s is the share of arriving demand with a sibling at that school. The
+  # split is applied to both populations, so siblings can be free school
+  # meal eligible or not in the same proportion as the demand they come
+  # from.
+  s <- if (is.null(sib)) setNames(rep(0, length(S)), S)
+       else { v <- sib[S]; v[is.na(v)] <- 0; pmin(pmax(v, 0), 1) }
+  k0 <- as.character(name)
+  sh <- unname(s[k0])
+  ffs <- ff * sh; ffn <- ff - ffs       # FSM: sibling, and not
+  fns <- fn * sh; fnn <- fn - fns       # everyone else: sibling, and not
+
+  d3 <- sumby(ffs + fns)
+  a3 <- pmin(d3, C); r3 <- ratio(a3, d3); C <- C - a3
+
+  # Everything below is the non-sibling demand, plus whatever the sibling
+  # tier could not seat, which rejoins the queue at its own next tier.
+  # Held in new names: ff and fn are still needed at full size for the
+  # proportional fallback at the end, and overwriting them there shrinks
+  # the denominator and hands the faith schools an intake they never had.
+  ff4 <- ffn + ffs * (1 - r3[k0])
+  fn4 <- fnn + fns * (1 - r3[k0])
+
+  d4  <- sumby(ff4 * in_c)
+  d5s <- sumby(ff4 * (!in_c & s6))
+  d5o <- sumby(ff4 * (!in_c & !s6))
   a4 <- pmin(d4, Fc, C); r4 <- ratio(a4, d4); C <- C - a4
   a5 <- pmin(d5s + d5o, pmax(Fc - a4, 0), C); r5 <- ratio(a5, d5s + d5o); C <- C - a5
-  d6 <- sumby(fn * s6) + d5s * (1 - r5)
+  d6 <- sumby(fn4 * s6) + d5s * (1 - r5)
   a6 <- pmin(d6, Rc, C); r6 <- ratio(a6, d6); C <- C - a6
-  d7 <- sumby(fn * in_c) + d4 * (1 - r4)
+  d7 <- sumby(fn4 * in_c) + d4 * (1 - r4)
   a7 <- pmin(d7, C); r7 <- ratio(a7, d7); C <- C - a7
-  d8 <- sumby(fn * (!in_c & !s6)) + d5o * (1 - r5) + d6 * (1 - r6)
+  d8 <- sumby(fn4 * (!in_c & !s6)) + d5o * (1 - r5) + d6 * (1 - r6)
   a8 <- pmin(d8, C); r8 <- ratio(a8, d8)
 
   k <- as.character(name)
-  af <- ifelse(in_c, r4[k] + (1 - r4[k]) * r7[k],
+  # The chance a NON-sibling child of each type is seated, working down
+  # the tiers it is eligible for.
+  bf <- ifelse(in_c, r4[k] + (1 - r4[k]) * r7[k],
         ifelse(s6, r5[k] + (1 - r5[k]) * (r6[k] + (1 - r6[k]) * r8[k]),
                    r5[k] + (1 - r5[k]) * r8[k]))
-  an <- ifelse(in_c, r7[k], ifelse(s6, r6[k] + (1 - r6[k]) * r8[k], r8[k]))
+  bn <- ifelse(in_c, r7[k], ifelse(s6, r6[k] + (1 - r6[k]) * r8[k], r8[k]))
+
+  # A share sh of the row has a sibling and gets the tier-3 draw first,
+  # falling back to the same path if that tier is full. With sh = 0 this
+  # is exactly bf and bn, so the no-sibling behaviour is unchanged.
+  p3 <- sh * unname(r3[k])
+  af <- bf + p3 * (1 - bf)
+  an <- bn + p3 * (1 - bn)
 
   # Everywhere else, the proportional ceiling.
   g <- pmin(cap[S] / sumby(ff + fn), 1)
@@ -230,10 +281,14 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
   af[!com] <- g[k][!com]
   an[!com] <- g[k][!com]
 
+  # The open-quota shares are of the demand that actually reaches tier 6,
+  # which is what is left after the sibling tier has taken its share.
   list(f = unname(af), n = unname(an),
-       p6f = unname(ifelse(com & s6, (1 - r5[k]) * r6[k], 0)),
-       p6n = unname(ifelse(com & s6, r6[k], 0)),
-       tiers = data.frame(name = S, p45_in = unname(a4), p45_out = unname(a5),
+       p6f = unname(ifelse(com & s6, (1 - p3) * (1 - r5[k]) * r6[k], 0)),
+       p6n = unname(ifelse(com & s6, (1 - p3) * r6[k], 0)),
+       sib = unname(p3),
+       tiers = data.frame(name = S, p3_sibling = unname(a3),
+                          p45_in = unname(a4), p45_out = unname(a5),
                           p6 = unname(a6), p7 = unname(a7), p8 = unname(a8)))
 }
 
@@ -253,13 +308,13 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
                            in_c, s6, com, p6_share, fsm_cap_share,
                            home, pop, kern, partner,
                            max_iter = 500, tol = 1e-6, ref = NULL,
-                           ff0 = NULL) {
+                           ff0 = NULL, sib = NULL) {
   st <- overflow_setup(flow, orig, name, home, pop, kern, partner, ref)
   ff <- if (is.null(ff0)) flow * unname(fsm_share[orig]) else pmin(ff0, flow)
   fn <- flow - ff
   for (i in seq_len(max_iter)) {
     acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
-                       p6_share, fsm_cap_share)
+                       p6_share, fsm_cap_share, sib)
     Hf <- ff * acc$f
     Hn <- fn * acc$n
     rf <- ff - Hf
@@ -275,9 +330,10 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
   }
   # The tiers of the intake that results, not of the last round's queue.
   acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
-                     p6_share, fsm_cap_share)
+                     p6_share, fsm_cap_share, sib)
   list(flow = unname(ff + fn), fsm = unname(ff),
        p6 = unname(ff * acc$p6f + fn * acc$p6n),
+       sib = unname((ff + fn) * acc$sib),
        tiers = acc$tiers, iterations = i)
 }
 
@@ -547,9 +603,22 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
   rule <- utils::modifyList(
     list(rule = "published",
          p6_share = if (is.null(rl)) 0.05 else rl$p6_share,
-         fsm = TRUE, targeted = FALSE),
+         fsm = TRUE, targeted = FALSE,
+         # Priority 3, the sibling link. FALSE reproduces every figure
+         # published before the FOI allocation maps arrived; TRUE gives
+         # it its own tier above the free school meal priorities, where
+         # the council's arrangements put it. Off by default because the
+         # disadvantage layer's lambda was fitted without it - see
+         # @sec-siblings.
+         siblings = FALSE),
     if (is.null(rules)) list() else rules)
   stopifnot(rule$rule %in% c("published", "priorities"))
+  sib_share <- if (isTRUE(rule$siblings)) inp$sibling_share else NULL
+  if (isTRUE(rule$siblings) && is.null(sib_share)) {
+    stop("rules$siblings is TRUE but inp$sibling_share is missing. ",
+         "Build it with R/20_sibling_share.R and attach it: ",
+         "inp$sibling_share <- readRDS('data/sibling_share.rds')$share")
+  }
 
   d$p6 <- 0
   d$fsm_flow <- 0
@@ -634,9 +703,10 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     res <- ipf_priorities(d$flow, d$orig, d$name, cap_all, cap_all, share_o,
                           in_c, s6, com, rule$p6_share, rl$fsm_cap_share,
                           d$catchment, d$pop, kern, partner, ref = u_ref,
-                          ff0 = ff0)
+                          ff0 = ff0, sib = sib_share)
     d$flow <- res$flow
     d$fsm_flow <- res$fsm
+    d$sib_flow <- if (is.null(res$sib)) 0 else res$sib
     d$p6 <- res$p6
     tiers <- res$tiers[res$tiers$name %in% rl$community, ]
   }

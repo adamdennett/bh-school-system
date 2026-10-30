@@ -33,6 +33,10 @@ acc <- bh_data("accessibility.rds")
 # R/18_foi_model_check.R; this document only reads them.
 foi <- bh_data("foi_allocations.rds")
 fmc <- bh_data("foi_model_check.rds")
+
+# Priority 3, for @sec-siblings. Built by R/20_sibling_share.R.
+sib    <- bh_data("sibling_share.rds")
+sibchk <- sib$effect
 foi_recov <- round(100 * sum(foi$validation$extracted) /
                      sum(foi$validation$off_total))
 
@@ -2896,17 +2900,153 @@ queue by missing a tier.
 
 ## What the model cannot see: priorities 1 to 3
 
-Looked-after children, children with SEN or exceptional need, and
-siblings cannot be told apart in flows between neighbourhoods and
-schools — nothing in the published data says which children have a
-sibling already at a school. Most siblings live in the catchment, so
-they sit inside tier 7, and the comparison below folds the council's
-published priority 3 into tier 7 for that reason.
+Looked-after children and children with SEN or exceptional need cannot be
+told apart in flows between neighbourhoods and schools, and they are few:
+together they are
+`r sum(rl$outturn_2026$offers[rl$outturn_2026$priority %in% 0:2])`
+of the
+`r sum(rl$outturn_2026$offers)`
+offers at the three rationing schools. They sit inside whichever tier the
+child would otherwise have reached.
+
+Priority 3, the sibling link, is a different matter — it is a fifth of
+the intake, and it sits **above** both free school meal priorities. The
+default model folds it into tier 7 and the comparison below does the
+same, which is why this section is headed as it is. @sec-siblings sets
+out what that costs, and the tier that now exists to fix it.
 
 The tie-break *inside* each priority is a random draw, not distance: the
 council's published admission arrangements break ties by random
 allocation. That is what makes a proportional cut within a tier the right
 average.
+:::
+
+## Priority 3: the sibling link {#sec-siblings}
+
+The published criteria put the sibling link third, above both free school
+meal priorities:
+
+| | Criterion |
+|:--|:--|
+| 1 | Looked after and previously looked after children |
+| 2 | Compelling medical or other exceptional reasons |
+| **3** | **Sibling link** |
+| 4 | In catchment and eligible for free school meals, to the city average |
+| 5 | Other children eligible for free school meals, to the city average |
+| 6 | Outside the catchment but within BACA, PACA, Patcham or Longhill, to 5% |
+| 7 | Living in the catchment |
+| 8 | Other children |
+
+The model described above has tiers 4 to 8. Tier 3 is not small: at the
+three schools that actually ration it is about a fifth of every intake.
+
+```{r sib-observed}
+#| tbl-cap: "Offers under the sibling link, from the council's own outturn by priority, 2026 entry."
+sib$observed %>%
+  transmute(School = short_sch(school), Offers = offers,
+            `Sibling link` = siblings,
+            `Share` = sprintf("%.1f%%", 100 * share),
+            `FSM criterion (4, 5)` = fsm_criterion) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+### Why the order matters
+
+Because a child can satisfy more than one criterion, and is admitted
+under the **highest** one they meet. A child who is both eligible for
+free school meals and has a sibling at the school comes in at 3. They
+therefore never consume the quota at 4 and 5 — but they do count in the
+school's free school meal share.
+
+**Capping the quota is not the same as capping the intake.** That is how
+Varndean reached about 40% free school meals in 2024/25 against a stated
+ceiling of 30%: the siblings being admitted were disproportionately
+eligible, and were not counted towards the limit the council had set.
+The counting was corrected for the 2025/26 round.
+
+The model, without a tier 3, has the mirror image of the same confusion.
+Every eligible child is routed through the capped tiers, so the cap binds
+harder in the model than it does in life, and a scenario that tightens it
+will overstate how much it achieves.
+
+### What the tier does
+
+`rules$siblings = TRUE` gives priority 3 its own tier, drawn from both
+populations in the proportions the demand arrives in, and seated before
+tiers 4 and 5. Children it cannot seat rejoin the queue at the tier they
+would otherwise have reached.
+
+```{r sib-tiers}
+#| tbl-cap: "Sibling-link admissions at the rationing schools: the council's outturn against the model with the tier switched on."
+sibchk$counts %>%
+  transmute(School = short_sch(school), Council = observed,
+            Model = sprintf("%.1f", modelled)) %>%
+  knitr::kable(align = "lrr")
+```
+
+That is calibration, not validation: the share was derived from those
+same counts, and the schools are full, so the tier reproduces them by
+construction. What is *not* by construction is what it does to the free
+school meal share once the quota binds.
+
+```{r sib-stack}
+#| tbl-cap: "Free school meal share of the intake at the rationing schools, with the quota set to the city average the criteria actually name. Without a sibling tier every eligible child is capped; with it, those who have a sibling arrive above the cap."
+sibchk$stack %>%
+  transmute(School = short_sch(school),
+            `Quota` = sprintf("%.1f%%", 100 * cap),
+            `FSM share, no sibling tier` = sprintf("%.1f%%", fsm_off),
+            `FSM share, with it` = sprintf("%.1f%%", fsm_on),
+            `Difference` = sprintf("%+.1f", fsm_on - fsm_off)) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+With the quota set at the city average of
+`r fmt_pct(100 * rl$fsm_city)` — which is what criteria 4 and 5 say —
+Varndean lands at
+`r sprintf("%.0f%%", sibchk$stack$fsm_on[grepl("Varndean", sibchk$stack$school)])`
+once siblings are modelled, against
+`r sprintf("%.0f%%", sibchk$stack$fsm_off[grepl("Varndean", sibchk$stack$school)])`
+without. The school overshoots the ceiling, in the direction and at the
+school where it actually happened. Dorothy Stringer moves the other way,
+because siblings seated ahead of the quota displace eligible children who
+then go elsewhere. The redistribution is the point: this is a system,
+and a cap on one school is a push on another.
+
+::: callout-important
+## It is off by default, and why
+
+`rules$siblings` defaults to `FALSE`, and every figure in this document
+and in @sec-scenarios is produced with it off. Switching it on is
+bit-identical to the previous model in five configurations tested —
+baseline 2026 and 2035, the priorities rule, Longhill at Elm Grove and
+the pre-2024 catchments — so nothing already published has moved.
+
+It stays off because **the disadvantage layer was fitted without it**.
+@sec-cap's multiplier was solved so that tiers 4 and 5 total the offers
+the council made. Insert a tier above them that takes eligible children
+out of those tiers, and the multiplier is answering a question that no
+longer exists. Turning siblings on without re-solving it double-counts.
+
+Doing this properly means re-fitting that multiplier with the sibling
+tier in place, against the same published outturn. Until that is done
+the tier is a tool for asking what priority stacking does — which is
+what it was built for — and not a replacement baseline.
+:::
+
+::: callout-note
+## What it does not fix
+
+It was built in the hope of closing @sec-end-origins' Longhill gap. It
+does not, and the reason is worth stating. Priorities only bite where a
+school is oversubscribed. Longhill admits everyone who names it, so the
+criterion a child arrives under is a label rather than a gate, and the
+three sibling places in its FOI table would have been offered anyway
+under criterion 8. The sibling tier changes who gets in at Blatchington
+Mill, Dorothy Stringer and Varndean, and changes nothing at all at the
+five schools with room.
+
+Longhill's origin gap is a demand problem, not a rationing one. It
+remains open.
 :::
 
 ## Who counts as FSM
