@@ -27,6 +27,8 @@ on top of it.
 | `R/01_assemble.R` | Pulls every input into `data/`. Run once |
 | `R/02_accessibility.R` | New analysis: LSOA accessibility, two measures |
 | `R/03_flow_regions.R` | Catchments regionalised from the modelled flows |
+| `R/extract_foi_allocations.py` | Turns the FOI 26370589 allocation maps into points. The only Python here; its CSV is committed so the R side never needs it |
+| `R/17_foi_allocations.R` | Those points as data: joined to LSOA, and checked against the published factsheets |
 | `data/` | Self-contained inputs |
 | `docs/` | Rendered site, served by GitHub Pages |
 
