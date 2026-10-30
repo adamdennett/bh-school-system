@@ -97,11 +97,17 @@ sibling_effect <- function(inp, share, cap = inp$rules$fsm_city) {
   rationing <- names(share)[share > 0 &
                             names(share) %in% inp$rules$outturn_2026$school]
 
+  # The stacking demonstration asks for the 2024/25 counting explicitly -
+  # eligible siblings NOT counted against the ceiling - because that is
+  # the mechanism it exists to show. run_sim() now defaults to the
+  # corrected rule, and left to the default this table would quietly stop
+  # demonstrating anything. R/21_sibling_refit.R covers the rule in force.
   run <- function(fsm_cap, sibs) {
     i2 <- inp; i2$rules$fsm_cap_share <- fsm_cap
     run_sim(i2, year = 2026,
             rules = list(rule = "priorities", p6_share = inp$rules$p6_share,
-                         fsm = TRUE, targeted = FALSE, siblings = sibs))
+                         fsm = TRUE, targeted = FALSE, siblings = sibs,
+                         sibling_fsm_counts = FALSE))
   }
 
   on_default <- run(inp$rules$fsm_cap_share, TRUE)

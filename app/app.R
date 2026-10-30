@@ -1130,7 +1130,10 @@ server <- function(input, output, session) {
     long <- dplyr::bind_rows(
       tibble(school = mod$name, src = "model", bucket = b[1], n = mod$p45_in + mod$p45_out),
       tibble(school = mod$name, src = "model", bucket = b[2], n = mod$p6),
-      tibble(school = mod$name, src = "model", bucket = b[3], n = mod$p7),
+      # With the sibling tier on, priority 3 is its own column; it belongs
+      # in the same bucket as the council's 1-3. Zero when the tier is off.
+      tibble(school = mod$name, src = "model", bucket = b[3],
+             n = mod$p7 + (if (is.null(mod$p3_sibling)) 0 else mod$p3_sibling)),
       tibble(school = mod$name, src = "model", bucket = b[4], n = mod$p8),
       inp$rules$outturn_2026 %>%
         mutate(bucket = dplyr::case_when(priority %in% 4:5 ~ b[1],

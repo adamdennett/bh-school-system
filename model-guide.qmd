@@ -37,6 +37,7 @@ fmc <- bh_data("foi_model_check.rds")
 # Priority 3, for @sec-siblings. Built by R/20_sibling_share.R.
 sib    <- bh_data("sibling_share.rds")
 sibchk <- sib$effect
+sref   <- bh_data("sibling_refit.rds")   # R/21_sibling_refit.R
 foi_recov <- round(100 * sum(foi$validation$extracted) /
                      sum(foi$validation$off_total))
 
@@ -2990,7 +2991,7 @@ construction. What is *not* by construction is what it does to the free
 school meal share once the quota binds.
 
 ```{r sib-stack}
-#| tbl-cap: "Free school meal share of the intake at the rationing schools, with the quota set to the city average the criteria actually name. Without a sibling tier every eligible child is capped; with it, those who have a sibling arrive above the cap."
+#| tbl-cap: "Free school meal share of the intake at the rationing schools under the 2024/25 counting, with the quota set to the city average the criteria actually name. Without a sibling tier every eligible child is capped; with it, those who have a sibling arrive above the cap and are not counted against it."
 sibchk$stack %>%
   transmute(School = short_sch(school),
             `Quota` = sprintf("%.1f%%", 100 * cap),
@@ -3012,25 +3013,128 @@ because siblings seated ahead of the quota displace eligible children who
 then go elsewhere. The redistribution is the point: this is a system,
 and a cap on one school is a push on another.
 
+### Re-fitting with the tier in {#sec-siblings-refit}
+
+Two quantities were fitted without a sibling tier, and the tier changes
+the question each was answering.
+
+- **The take-up constant** $k$ in
+  $\text{FSM share}_i = \min(k \times \text{IDACI}_i, 0.95)$ — who the
+  *tiers* treat as eligible. Solved so that tiers 4 and 5 at the three
+  rationing schools total the council's
+  `r sref$on$target` priority 4 and 5 offers. Put a tier above them that
+  seats eligible siblings first, and at the old $k$ those tiers fall well
+  short.
+- **The pulls $\lambda_j$** in the separate disadvantage layer that
+  *reports* each school's disadvantaged share (@sec-cap and outcomes.R).
+  They do not feed the tiers; they are fitted to whatever flows $k$
+  produces, so they follow it.
+
+`R/21_sibling_refit.R` re-runs both fits, with R/05's own procedure. Run
+with the tier off it reproduces the published bundle — $k$ to within the
+bisection tolerance and every $\lambda$ to five decimal places — which is
+the check that it is R/05's fit and not a near relative.
+
+**The first attempt found the wrong answer, and the way it was wrong
+mattered.** Re-fitted with the tier modelling the 2024/25 counting, the
+tier-3 free school meal admissions came out about right, but Varndean's
+whole intake came out at
+`r sprintf("%.0f", sref$on_2425$by_school$fsm[grepl("Varndean", sref$on_2425$by_school$name)])`
+eligible children — about 39%. That is the 2024/25 outcome, and the
+offers being fitted are 2026's. The council's own 2026 figures show the
+corrected counting to the child: at Varndean, 66 offers under priorities
+4 and 5 plus 24 eligible children under 1 to 3 is 90, which is exactly
+the 30% ceiling on 300 places. So the tier now has a counting rule,
+`rules$sibling_fsm_counts`, defaulting to the rule in force: eligible
+siblings seated at 3 come off the ceiling before tiers 4 and 5 see it.
+
+That also explains an error this section has carried for a long time:
+the model has always given Varndean the full 90 under priorities 4 and 5,
+where the council gave 66. It was never a problem with the quota. It was
+the 24 eligible children the model could not see arriving above it.
+
+One more thing changed in the fitting. Under the corrected counting the
+response is not monotone: more eligibility puts more eligible siblings
+above the quota, which then shrinks, so tiers 4 and 5 rise, peak and fall
+and cross the target twice. The re-fit takes the first crossing — the
+lowest take-up consistent with the offers.
+
+```{r sib-refit}
+#| tbl-cap: "The three rationing schools, against the council's 2026 outturn. Only the three-school total under priorities 4 and 5 is fitted; how it splits between the schools, the eligible children arriving under 1 to 3, and the total eligible intake are all left free."
+bind_rows(
+  sref$off$by_school %>% mutate(fit = "No sibling tier"),
+  sref$on$by_school  %>% mutate(fit = "Sibling tier, re-fitted")) %>%
+  transmute(Fit = fit, School = short_sch(name),
+            `4-5 model` = sprintf("%.0f", p45), `4-5 council` = p45_council,
+            `FSM via 1-3 model` = sprintf("%.0f", p3_fsm),
+            `FSM via 1-3 council` = fsm_p13_2026,
+            `All FSM model` = sprintf("%.0f", fsm), `All FSM council` = fsm_2026) %>%
+  knitr::kable(align = "llrrrrrr")
+```
+
+```{r sib-refit-score}
+#| tbl-cap: "Mean absolute error at the three rationing schools, in children, for each fit."
+tibble::as_tibble(sref$scores, rownames = "fit") %>%
+  transmute(Fit = c(off = "No sibling tier",
+                    on_2024_25 = "Sibling tier, 2024/25 counting",
+                    on_2025_26 = "Sibling tier, 2025/26 counting")[fit],
+            `Priorities 4-5, by school` = sprintf("%.1f", p45_mae),
+            `FSM via 1-3` = sprintf("%.1f", p13_mae),
+            `All FSM` = sprintf("%.1f", fsm_mae)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+Under the counting rule actually in force, every unfitted error falls by
+a factor of four or more.
+
+The take-up constant rises from
+`r sprintf("%.3f", sref$off$k_fsm)` to `r sprintf("%.3f", sref$on$k_fsm)`,
+which puts `r fmt_pct(100 * sref$on$fsm_city, 1)` of the city's Year 7
+children in the eligible group rather than
+`r fmt_pct(100 * sref$off$fsm_city, 1)`. That looks like a large move
+until it is set against the council's own figure: the six community
+schools offered `r fmt_pct(sref$adoption$council_city_y7, 1)` of their
+September 2026 places to eligible children. The old constant was low
+because it was carrying the siblings it could not see.
+
+The pulls barely move — the largest change is Varndean's, at
+`r sprintf("%+.0f%%", sref$lambda$change_pct[sref$lambda$school == "Varndean School"])`
+— and the disadvantage layer's own constant does not move at all, because
+the sibling tier reorders who is admitted rather than how many.
+
 ::: callout-important
-## It is off by default, and why
+## Still off by default, and what adopting it would mean
 
-`rules$siblings` defaults to `FALSE`, and every figure in this document
-and in @sec-scenarios is produced with it off. Switching it on is
-bit-identical to the previous model in five configurations tested —
-baseline 2026 and 2035, the priorities rule, Longhill at Elm Grove and
-the pre-2024 catchments — so nothing already published has moved.
+`rules$siblings` still defaults to `FALSE`, and every figure in this
+document and in @sec-scenarios is produced with it off. With it off the
+model is bit-identical to the version before the tier existed, in all
+five configurations tested.
 
-It stays off because **the disadvantage layer was fitted without it**.
-@sec-cap's multiplier was solved so that tiers 4 and 5 total the offers
-the council made. Insert a tier above them that takes eligible children
-out of those tiers, and the multiplier is answering a question that no
-longer exists. Turning siblings on without re-solving it double-counts.
+Adopting it means three things together — the tier, the counting rule,
+and the re-fitted constants — which `with_siblings()` in
+`R/21_sibling_refit.R` applies to a bundle in one call. Using the tier
+without the re-fit is the double-count this section began with.
 
-Doing this properly means re-fitting that multiplier with the sibling
-tier in place, against the same published outturn. Until that is done
-the tier is a tool for asking what priority stacking does — which is
-what it was built for — and not a replacement baseline.
+What it would move, in the simulator's own 2026:
+
+- **Intakes:** by at most
+  `r sprintf("%.1f", sref$adoption$intake_shift)` of a child at any
+  school.
+- **Segregation, the travel gap, journey times:**
+  `r paste(sprintf("%s %.3f to %.3f", sref$adoption$headline$measure, sref$adoption$headline$now, sref$adoption$headline$adopted), collapse = "; ")`.
+  Nothing the analysis argues from changes.
+- **The free school meal share the tiers work with:** up by six to eleven
+  points at five of the six community schools (Varndean, held at its
+  ceiling, moves by under two) — and towards the council's figures, not away
+  from them. Against the published September 2026 Year 7 shares at the
+  six community schools, which neither fit used, the mean error falls
+  from `r sprintf("%.1f", sref$adoption$fsm_mae_now)` to
+  `r sprintf("%.1f", sref$adoption$fsm_mae_new)` points.
+
+So it is a better model of how places are filled and leaves the
+conclusions where they were. It is not yet the default only because
+adopting it means rebuilding the input bundle and re-running the stored
+scenarios, which is a deliberate step rather than a side effect.
 :::
 
 ::: callout-note

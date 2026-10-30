@@ -206,7 +206,7 @@ partner_map <- function(ex) {
 #' @param sib NULL, or a named share per school of arriving demand that
 #'   has a sibling already at that school
 tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
-                        p6_share, fsm_cap_share, sib = NULL) {
+                        p6_share, fsm_cap_share, sib = NULL, sib_counts = TRUE) {
   S <- names(cap)
   by <- factor(name, levels = S)
   sumby <- function(x) { v <- tapply(x, by, sum); v[is.na(v)] <- 0; v[S] }
@@ -239,6 +239,16 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
 
   d3 <- sumby(ffs + fns)
   a3 <- pmin(d3, C); r3 <- ratio(a3, d3); C <- C - a3
+
+  # Whether those eligible siblings count against the free school meal
+  # ceiling is a counting rule, not a law of nature, and the council has
+  # used both. In the 2024/25 round they did not: the quota was filled at
+  # 4 and 5 regardless, and Varndean came out near 40% against 30%. From
+  # the 2025/26 round they do: the quota left for 4 and 5 is the ceiling
+  # less the eligible children already seated above it. The 2026 outturn
+  # shows it to the child - at Varndean, 66 offers under 4 and 5 plus 24
+  # eligible children under 1 to 3 is 90, which is 30% of 300.
+  if (isTRUE(sib_counts)) Fc <- pmax(Fc - sumby(ffs) * r3, 0)
 
   # Everything below is the non-sibling demand, plus whatever the sibling
   # tier could not seat, which rejoins the queue at its own next tier.
@@ -288,6 +298,11 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
        p6n = unname(ifelse(com & s6, (1 - p3) * r6[k], 0)),
        sib = unname(p3),
        tiers = data.frame(name = S, p3_sibling = unname(a3),
+                          # The FSM-eligible part of the sibling tier: the
+                          # children the 2024/25 counting left out of the
+                          # quota. Seated at the same rate as the rest of
+                          # the tier, so it is the eligible demand times r3.
+                          p3_fsm = unname(sumby(ffs) * r3),
                           p45_in = unname(a4), p45_out = unname(a5),
                           p6 = unname(a6), p7 = unname(a7), p8 = unname(a8)))
 }
@@ -308,13 +323,13 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
                            in_c, s6, com, p6_share, fsm_cap_share,
                            home, pop, kern, partner,
                            max_iter = 500, tol = 1e-6, ref = NULL,
-                           ff0 = NULL, sib = NULL) {
+                           ff0 = NULL, sib = NULL, sib_counts = TRUE) {
   st <- overflow_setup(flow, orig, name, home, pop, kern, partner, ref)
   ff <- if (is.null(ff0)) flow * unname(fsm_share[orig]) else pmin(ff0, flow)
   fn <- flow - ff
   for (i in seq_len(max_iter)) {
     acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
-                       p6_share, fsm_cap_share, sib)
+                       p6_share, fsm_cap_share, sib, sib_counts)
     Hf <- ff * acc$f
     Hn <- fn * acc$n
     rf <- ff - Hf
@@ -330,7 +345,7 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
   }
   # The tiers of the intake that results, not of the last round's queue.
   acc <- tier_accept(ff, fn, name, cap, pan, in_c, s6, com,
-                     p6_share, fsm_cap_share, sib)
+                     p6_share, fsm_cap_share, sib, sib_counts)
   list(flow = unname(ff + fn), fsm = unname(ff),
        p6 = unname(ff * acc$p6f + fn * acc$p6n),
        sib = unname((ff + fn) * acc$sib),
@@ -610,7 +625,12 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
          # the council's arrangements put it. Off by default because the
          # disadvantage layer's lambda was fitted without it - see
          # @sec-siblings.
-         siblings = FALSE),
+         siblings = FALSE,
+         # When the tier is on, whether eligible siblings count against
+         # the free school meal ceiling. TRUE is the rule in force since
+         # the 2025/26 round; FALSE is the 2024/25 counting that let
+         # Varndean reach about 40% against 30%.
+         sibling_fsm_counts = TRUE),
     if (is.null(rules)) list() else rules)
   stopifnot(rule$rule %in% c("published", "priorities"))
   sib_share <- if (isTRUE(rule$siblings)) inp$sibling_share else NULL
@@ -703,7 +723,8 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     res <- ipf_priorities(d$flow, d$orig, d$name, cap_all, cap_all, share_o,
                           in_c, s6, com, rule$p6_share, rl$fsm_cap_share,
                           d$catchment, d$pop, kern, partner, ref = u_ref,
-                          ff0 = ff0, sib = sib_share)
+                          ff0 = ff0, sib = sib_share,
+                          sib_counts = !isFALSE(rule$sibling_fsm_counts))
     d$flow <- res$flow
     d$fsm_flow <- res$fsm
     d$sib_flow <- if (is.null(res$sib)) 0 else res$sib
