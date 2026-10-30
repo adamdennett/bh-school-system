@@ -29,6 +29,7 @@ on top of it.
 | `R/03_flow_regions.R` | Catchments regionalised from the modelled flows |
 | `R/extract_foi_allocations.py` | Turns the FOI 26370589 allocation maps into points. The only Python here; its CSV is committed so the R side never needs it |
 | `R/17_foi_allocations.R` | Those points as data: joined to LSOA, and checked against the published factsheets |
+| `R/18_foi_model_check.R` | The FOI origins against the model’s own flows — the first independent test of the geography the model was never fitted to |
 | `data/` | Self-contained inputs |
 | `docs/` | Rendered site, served by GitHub Pages |
 
