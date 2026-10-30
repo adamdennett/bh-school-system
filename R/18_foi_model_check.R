@@ -23,7 +23,8 @@ suppressPackageStartupMessages({
   library(dplyr); library(tidyr); library(sf)
 })
 
-OUT <- here::here("data", "foi_model_check.rds")
+OUT  <- here::here("data", "foi_model_check.rds")
+LSOA <- here::here("data", "lsoa.geojson")
 
 
 #' Baseline flows for the year the FOI maps cover
@@ -102,6 +103,37 @@ catchment_fit <- function(foi, flows_raw, zones) {
     mutate(obs_share = observed / sum(observed),
            mod_share = modelled / sum(modelled)) |>
     ungroup()
+}
+
+
+#' How far the catchment-memory term can go towards closing the Longhill gap
+#'
+#' §"Catchment memory" in app/R/model.R already carries a share of the six
+#' neighbourhoods moved out of Longhill's catchment in 2024 as though they
+#' were still in it. It is set to 0.5. Sweeping it says whether the Longhill
+#' origin gap is that parameter being too low, or something the parameter
+#' cannot reach.
+memory_sweep <- function(inp, foi, zones, phis = c(0, 0.3, 0.5, 0.7, 0.85, 1)) {
+  lk <- zones |> select(lsoa, catchment) |> distinct(lsoa, .keep_all = TRUE)
+  obs <- foi$by_lsoa |>
+    filter(school == "Longhill High School") |>
+    left_join(lk, by = c("lsoa21cd" = "lsoa")) |>
+    summarise(intake = sum(children),
+              own_pct = 100 * sum(children[catchment == "Longhill"], na.rm = TRUE) / intake,
+              from_dsv = sum(children[catchment == "DS_Varndean"], na.rm = TRUE))
+
+  rows <- lapply(phis, function(p) {
+    s <- run_sim(inp, year = foi$entry_year, memory = p)
+    lh <- s$flows |> filter(name == "Longhill High School") |>
+      left_join(lk, by = "lsoa", suffix = c("", "_z"))
+    tibble(phi = p,
+           intake = sum(lh$flow),
+           own_pct = 100 * sum(lh$flow[lh$catchment_z == "Longhill"], na.rm = TRUE) / sum(lh$flow),
+           from_dsv = sum(lh$flow[lh$catchment_z == "DS_Varndean"], na.rm = TRUE))
+  })
+  bind_rows(rows) |>
+    bind_rows(tibble(phi = NA_real_, intake = obs$intake,
+                     own_pct = obs$own_pct, from_dsv = obs$from_dsv))
 }
 
 
@@ -202,8 +234,27 @@ build_foi_model_check <- function() {
   print(as.data.frame(dis |> mutate(across(where(is.numeric), ~round(.x, 2)))),
         row.names = FALSE)
 
+  sweep <- memory_sweep(inp, foi, inp$zones)
+  message("\nCatchment-memory sweep at Longhill (last row is observed):")
+  print(as.data.frame(sweep |> mutate(across(where(is.numeric), ~round(.x, 1)))),
+        row.names = FALSE)
+
+  # City LSOAs in the boundary file that the model gives no origin
+  # population: they are Lewes, so the model is right to exclude them -
+  # but children do cross the boundary into Longhill and it cannot
+  # represent them.
+  lsoa_all <- st_read(LSOA, quiet = TRUE)
+  outside <- setdiff(lsoa_all$lsoa21cd, unique(inp$zones$lsoa))
+  cross <- foi$by_lsoa |> filter(lsoa21cd %in% outside) |>
+    group_by(lsoa21cd, school) |>
+    summarise(children = sum(children), .groups = "drop")
+  message("\nChildren from LSOAs with no modelled origin population: ",
+          sum(cross$children))
+  print(as.data.frame(cross), row.names = FALSE)
+
   out <- list(cells = s, by_school = fit, by_catchment = cf,
               catchment_fit = cfit, own_catchment = own, distance = dis,
+              memory_sweep = sweep, cross_boundary = cross,
               overall = overall, entry_year = foi$entry_year,
               built_at = Sys.time())
   saveRDS(out, OUT)

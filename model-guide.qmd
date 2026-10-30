@@ -28,6 +28,14 @@ cal <- mt$calibrated
 rc  <- bh_data("reception_cohort.rds")
 acc <- bh_data("accessibility.rds")
 
+# The FOI allocation maps and the check of the model against them, for
+# @sec-end-origins. Built by R/17_foi_allocations.R and
+# R/18_foi_model_check.R; this document only reads them.
+foi <- bh_data("foi_allocations.rds")
+fmc <- bh_data("foi_model_check.rds")
+foi_recov <- round(100 * sum(foi$validation$extracted) /
+                     sum(foi$validation$off_total))
+
 # The simulator's own engine, so the guide can run the model it describes.
 source(here::here("app", "R", "model.R"))
 source(here::here("app", "R", "outcomes.R"))
@@ -4769,6 +4777,197 @@ many to Hove Park and Patcham. That is one story, not four: the model has
 no term for a school's reputation changing, and these are the schools
 whose intakes have moved most in recent rounds. §3's note on time is the
 place that gap is discussed.
+
+## Does it put the children in the right places? {#sec-end-origins}
+
+The check above asks whether the model gets each school's intake right.
+It was fitted to exactly that, so passing it is necessary rather than
+impressive. The harder question is whether the children it sends to a
+school come from where real children come from — and until October 2026
+there was nothing to check that against.
+
+Then Brighton & Hove released eight maps under
+[FOI 26370589](https://www.whatdotheyknow.com/request/evaluation_of_secondary_school_a),
+one per community school, showing where the children allocated to it on
+National Offer Day live, coloured by the preference that got them the
+place. `R/extract_foi_allocations.py` turns those pictures back into
+points — the grid ticks are live text in the PDF, so the fit to the
+national grid is sub-metre — and `R/18_foi_model_check.R` compares them
+with the model's own flows.
+
+**Nothing in the model was fitted to this.** $\beta$, $\gamma_h$ and
+$\delta$ were calibrated against school totals. Where those totals come
+from is a prediction, and this is the first time it has been tested.
+
+::: callout-important
+## Read the counts with care
+
+The extraction recovers about `r foi_recov`% of the council's published
+offers, because symbols that overlap merge into one blob and a symbol
+wholly underneath another leaves no trace. That loss is worst in dense
+neighbourhoods, which is where the biggest flows are. So every
+comparison below is on **shares** — each school's distribution over
+origins — not on counts. The shortfall is common to a school, so it
+cancels.
+:::
+
+### At catchment level, it holds
+
+```{r end-origin-catch}
+#| tbl-cap: "The model's origin distribution against the FOI maps, by catchment. Dissimilarity is the share of a school's children who would have to change catchment for the two to coincide."
+fmc$catchment_fit %>%
+  transmute(School = short_sch(school),
+            `r` = sprintf("%.3f", r),
+            `Dissimilarity` = sprintf("%.3f", dissim)) %>%
+  knitr::kable(align = "lrr")
+```
+
+Between `r sprintf("%.0f", 100*min(fmc$catchment_fit$dissim))`% and
+`r sprintf("%.0f", 100*max(fmc$catchment_fit$dissim))`% of children would
+have to change catchment for the modelled and observed distributions to
+coincide. For a term that was never fitted to origins, that is a good
+result.
+
+The journeys agree too, on a measure that does not pass through
+catchments at all:
+
+```{r end-origin-dist}
+#| tbl-cap: "Mean straight-line distance from home to the allocated school, observed against modelled."
+fmc$distance %>%
+  transmute(School = short_sch(school),
+            `Observed km` = sprintf("%.2f", obs_km),
+            `Modelled km` = sprintf("%.2f", mod_km),
+            `Difference` = sprintf("%+.2f", diff_km)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+### At LSOA level, it does not
+
+```{r end-origin-lsoa}
+#| tbl-cap: "The same comparison at LSOA level."
+fmc$by_school %>%
+  transmute(School = short_sch(school),
+            `r` = sprintf("%.3f", r),
+            `Dissimilarity` = sprintf("%.3f", dissim)) %>%
+  knitr::kable(align = "lrr")
+```
+
+Across all `r format(nrow(fmc$cells), big.mark = ",")` LSOA × school
+cells, $r$ = `r sprintf("%.3f", fmc$overall[["r"]])`.
+
+Both tables are here because reporting only the first would be
+misleading. But the second is mostly a statement about the unit, not the
+model. An LSOA holds a handful of secondary-age children, so most cells
+are 0, 1 or 2; and the extraction's undercount is worst in precisely the
+dense LSOAs carrying the largest flows. A model that was exactly right
+would still score poorly on this table. The catchment comparison is the
+one to use, and it is also the unit the argument is conducted in.
+
+### Where it is wrong: Longhill
+
+One school stands out, and it is the one the strategic question turns on.
+
+```{r end-origin-own}
+#| tbl-cap: "Share of each school's intake drawn from its own catchment, observed against modelled. `Recovered` is how much of the council's published offer count the extraction found for that school."
+fmc$own_catchment %>%
+  transmute(School = short_sch(school),
+            `Observed %` = obs_pct, `Modelled %` = mod_pct,
+            `Gap` = sprintf("%+d", gap),
+            `Recovered %` = recovered) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+The model is **systematically too catchment-bound**: for seven of the
+eight schools it keeps more of the intake inside the catchment than the
+maps show. For most of them the gap is small, and the recovery column is
+the reason to be cautious about it — the dots the extraction loses sit in
+the dense core of a catchment, so a school at 79% recovery probably has
+a truer own-catchment share than the table says, and a smaller gap.
+
+Longhill is different on both counts. Its gap is
+`r abs(fmc$own_catchment$gap[fmc$own_catchment$school == "Longhill High School"])`
+points, and its extraction recovers
+`r fmc$own_catchment$recovered[fmc$own_catchment$school == "Longhill High School"]`%
+of published offers — there is nothing material missing, so the caveat
+that rescues the others does not apply here.
+
+The whole of that gap is one flow. By catchment of origin:
+
+```{r end-origin-lh}
+#| tbl-cap: "Longhill's intake by catchment of origin, observed against modelled."
+fmc$by_catchment %>%
+  filter(school == "Longhill High School", observed + modelled > 0.5) %>%
+  arrange(desc(observed)) %>%
+  transmute(`Catchment of origin` = catchment,
+            Observed = observed,
+            Modelled = sprintf("%.1f", modelled),
+            `Observed %` = sprintf("%.0f", 100*obs_share),
+            `Modelled %` = sprintf("%.0f", 100*mod_share)) %>%
+  knitr::kable(align = "lrrrr")
+```
+
+Nineteen children come to Longhill from the Dorothy Stringer and Varndean
+catchment; the model sends about five. Those nineteen are concentrated in
+the six neighbourhoods that were moved **out** of Longhill's catchment in
+2024 — the ones @sec-gamma's catchment-memory term already exists to
+handle. One LSOA alone sends eleven children the model gives under one.
+
+### Can the memory term absorb it?
+
+Not on its own. Sweeping the memory share $\phi$ from 0 to 1, against the
+observed figures in the last row:
+
+```{r end-origin-sweep}
+#| tbl-cap: "Longhill under different values of the catchment-memory share. The last row is what the FOI maps show."
+fmc$memory_sweep %>%
+  transmute(`$\\phi$` = ifelse(is.na(phi), "**observed**", sprintf("%.2f", phi)),
+            `Longhill intake` = sprintf("%.0f", intake),
+            `Own catchment %` = sprintf("%.0f", own_pct),
+            `From DS/Varndean` = sprintf("%.1f", from_dsv)) %>%
+  knitr::kable(align = "lrrr")
+```
+
+At $\phi$ = 1 — the 2024 boundary change having no behavioural effect
+whatsoever — the model gets the cross-catchment flow almost right, 17.5
+against 19. But Longhill's modelled intake rises to 100, and the council
+offered 81 places there on offer day. §@sec-end's validation puts the
+model at 87 against that 81, which the FOI's September range of 91 to 99
+makes defensible; 100 does not sit inside anything.
+
+So the parameter can buy the right origins only by paying in the one
+quantity the model is actually calibrated on.
+
+There is also a part of the gap $\phi$ cannot reach at all. Six of
+Longhill's children come from two LSOAs in **Lewes** — Telscombe and
+Peacehaven, immediately east of the catchment. The model has no origin
+population outside Brighton & Hove, so it cannot produce them at any
+value of any parameter. On a modelled intake of 87 that is seven per
+cent of the school, and it is roughly five of the seventeen points.
+
+::: callout-note
+## What was changed: nothing
+
+The memory share stays at `r inp$catch_memory$share`. Raising it fixes
+the origin geography by breaking the intake total, and it would be
+fitting the right number for the wrong reason, because a third of the
+discrepancy is cross-boundary in-flow that the term does not represent.
+
+What would change that judgement: an origin population for the Lewes
+LSOAs that feed Longhill, so the two causes could be separated. With
+that in place the memory share could be re-fitted against the FOI
+origins without the cross-boundary children loading onto it, and the
+right value is likely to be higher than
+`r inp$catch_memory$share`.
+
+Until then the honest statement is the one the tables above make.
+**Longhill draws about a quarter of its intake from outside its
+catchment and the model has it at under a tenth, so every scenario that
+turns on Longhill's catchment — moving it, redrawing around it,
+returning Whitehawk to it — is being read off a model that understates
+how far the school already reaches.** That is a caution to carry into
+@sec-scenarios, not a reason to distrust the intake figures, which are
+validated separately and well.
+:::
 
 ## Every quantity in one table
 
