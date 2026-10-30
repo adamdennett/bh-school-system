@@ -790,25 +790,63 @@ cal <- list(schools = schools, zones = zones, cost = cost, designs = DESIGNS,
             params = params, demand = demand, rules = RULES,
             hove_park_valley = oi$hove_park_valley,
             catch_memory = catch_memory)
+
+# Priority 3, the sibling link (October 2026). The published criteria put
+# it ABOVE both free school meal priorities, so a child who is both is
+# seated at 3 and never reaches the quota. Each school's sibling share is
+# taken from the council's 2026 outturn by priority (R/20_sibling_share.R);
+# from the 2025/26 round eligible siblings count against the 30% ceiling,
+# which run_sim() models by default. The take-up below is fitted with the
+# tier in. The fit without it is kept beside it, for the comparison in
+# the guide and for the simulator's switch (without_siblings()).
+source(here::here("R", "20_sibling_share.R"))
+SIBLINGS <- sibling_share(list(rules = RULES, schools = schools))
+RULES$siblings <- TRUE
+cal$rules <- RULES
+cal$sibling_share <- SIBLINGS$share
+message(sprintf("  sibling link: %s of offers at the rationing schools; city mean %.1f%% elsewhere",
+                paste(sprintf("%s %.1f%%", short_sch(SIBLINGS$observed$school),
+                              100 * SIBLINGS$observed$share), collapse = ", "),
+                100 * SIBLINGS$city))
+
 fsm_target <- sum(OUTTURN_2026$offers[OUTTURN_2026$priority %in% 4:5])
-fsm_places <- function(k) {
+fsm_places <- function(k, sibs = TRUE) {
   cal$zones$fsm <- pmin(k * cal$zones$idaci_score, 0.95)
-  t <- run_sim(cal, year = 2026, rules = list(rule = "priorities"))$tiers
+  t <- run_sim(cal, year = 2026,
+               rules = list(rule = "priorities", siblings = sibs))$tiers
   sum((t$p45_in + t$p45_out)[t$name %in% RATIONING])
 }
-lo <- 0.05; hi <- 6
-if (fsm_places(hi) < fsm_target)
-  stop("FSM take-up cannot reach the published FSM offers at any level")
-for (i in 1:40) {
-  mid <- (lo + hi) / 2
-  if (fsm_places(mid) < fsm_target) lo <- mid else hi <- mid
-  if (hi - lo < 1e-4) break
+# With the tier in and eligible siblings counted against the ceiling, the
+# response is not monotone: more eligibility seats more eligible siblings
+# above the quota, which shrinks it, so tiers 4 and 5 rise, peak, fall and
+# cross the target twice. A coarse grid finds the FIRST crossing - the
+# lowest take-up consistent with the offers - and the bisection works
+# inside that bracket. Without the tier there is one crossing and this is
+# the old bisection.
+fit_takeup <- function(sibs) {
+  above <- NA
+  for (g in seq(0.25, 6, by = 0.25))
+    if (fsm_places(g, sibs) >= fsm_target) { above <- g; break }
+  if (is.na(above))
+    stop("FSM take-up cannot reach the published FSM offers at any level")
+  lo <- max(0.05, above - 0.25); hi <- above
+  for (i in 1:40) {
+    mid <- (lo + hi) / 2
+    if (fsm_places(mid, sibs) < fsm_target) lo <- mid else hi <- mid
+    if (hi - lo < 1e-4) break
+  }
+  hi
 }
+k_nosib <- fit_takeup(FALSE)
+hi <- fit_takeup(TRUE)
 zones$fsm <- pmin(hi * zones$idaci_score, 0.95)
 RULES$fsm_takeup <- hi
 RULES$fsm_city <- weighted.mean(zones$fsm, zones$Oi)
+cal$rules <- RULES
 message(sprintf("  FSM take-up %.3f x IDACI: %.0f FSM-priority places at the three rationing schools (published %d); %.1f%% of the city's children",
                 hi, fsm_places(hi), fsm_target, 100 * RULES$fsm_city))
+message(sprintf("  ... without the sibling tier it would be %.3f, %.1f%% of the city's children",
+                k_nosib, 100 * weighted.mean(pmin(k_nosib * zones$idaci_score, 0.95), zones$Oi)))
 
 # ---- 10b. Disadvantaged pupils, calibrated to the published shares ---
 # Checked against the Department for Education's published share of
@@ -901,6 +939,19 @@ fit_nomem <- fit_dis(run_sim(cal, year = 2026, rules = list(rule = "priorities")
                              memory = 0), y7_target)
 dis_k <- fit_y7$k
 dis_lam <- fit_y7$lambda
+# The same Year 7 fit on the flows the model gives without the sibling
+# tier, at the take-up fitted without it. Kept so the simulator can switch
+# the tier off and move the constants with it.
+cal_ns <- cal
+cal_ns$zones$fsm <- pmin(k_nosib * cal_ns$zones$idaci_score, 0.95)
+r_dis_ns <- run_sim(cal_ns, year = 2026, rules = list(rule = "priorities", siblings = FALSE))
+fit_y7_ns <- fit_dis(r_dis_ns, y7_target)
+calib_no_siblings <- list(
+  fsm_takeup = k_nosib,
+  fsm_city = weighted.mean(cal_ns$zones$fsm, cal_ns$zones$Oi),
+  dis_k = fit_y7_ns$k, dis_lambda = fit_y7_ns$lambda,
+  note = "Calibration without the priority 3 sibling tier, as used before October 2026")
+rm(cal_ns)
 # What the pre-change pulls give a Year 7 intake under today's map and
 # rules, for the comparison with the offers.
 cal$params$dis <- list(k = fit_pre$k, lambda = fit_pre$lambda)
@@ -970,6 +1021,7 @@ saveRDS(list(
   city = CITY, out_of_city = OUT_OF_CITY,
   elm = elm, hove_park_valley = oi$hove_park_valley,
   catch_memory = catch_memory, attract_basis = attract_basis,
+  sibling_share = SIBLINGS$share, calib_no_siblings = calib_no_siblings,
   built_at = Sys.time()),
   file.path(APP_DIR, "data", "sim_inputs.rds"))
 

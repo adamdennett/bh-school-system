@@ -30,6 +30,8 @@ on top of it.
 | `R/extract_foi_allocations.py` | Turns the FOI 26370589 allocation maps into points. The only Python here; its CSV is committed so the R side never needs it |
 | `R/17_foi_allocations.R` | Those points as data: joined to LSOA, and checked against the published factsheets |
 | `R/18_foi_model_check.R` | The FOI origins against the model’s own flows — the first independent test of the geography the model was never fitted to |
+| `R/20_sibling_share.R` | Priority 3, the sibling link: each community school’s share from the council’s 2026 outturn. `R/05_app_inputs.R` uses it to build the sibling tier into the model (October 2026) |
+| `R/21_sibling_refit.R` | Re-runs the free school meal fits with and without the sibling tier, checks both against the bundle, and scores them against the outturn |
 | `data/` | Self-contained inputs |
 | `docs/` | Rendered site, served by GitHub Pages |
 

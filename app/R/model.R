@@ -230,8 +230,17 @@ tier_accept <- function(ff, fn, name, cap, pan, in_c, s6, com,
   # split is applied to both populations, so siblings can be free school
   # meal eligible or not in the same proportion as the demand they come
   # from.
-  s <- if (is.null(sib)) setNames(rep(0, length(S)), S)
-       else { v <- sib[S]; v[is.na(v)] <- 0; pmin(pmax(v, 0), 1) }
+  #
+  # A school with no share has no siblings: the academies and faith
+  # schools, which keep the proportional ceiling anyway, and CoMArt when a
+  # scenario reopens it, which would have no older brothers and sisters
+  # there in its first intake. Filled by name, because indexing by a
+  # missing name gives NA a name of NA and the lookup below then fails.
+  s <- setNames(rep(0, length(S)), S)
+  if (!is.null(sib)) {
+    hit <- intersect(names(sib), S)
+    s[hit] <- pmin(pmax(sib[hit], 0), 1)
+  }
   k0 <- as.character(name)
   sh <- unname(s[k0])
   ffs <- ff * sh; ffn <- ff - ffs       # FSM: sibling, and not
@@ -352,6 +361,26 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
        tiers = acc$tiers, iterations = i)
 }
 
+#' The bundle as it was calibrated without the sibling tier
+#'
+#' The free school meal take-up and the disadvantage layer were fitted with
+#' priority 3 in place. Switch the tier off and those constants are
+#' answering a different question, so they have to move with it: R/05
+#' fits both, and keeps the no-sibling set in `inp$calib_no_siblings`.
+#' Pass the result to run_sim() and to outcomes() both.
+without_siblings <- function(inp) {
+  c0 <- inp$calib_no_siblings
+  if (is.null(c0)) return(inp)
+  inp$zones$fsm         <- pmin(c0$fsm_takeup * inp$zones$idaci_score, 0.95)
+  inp$rules$fsm_takeup  <- c0$fsm_takeup
+  inp$rules$fsm_city    <- c0$fsm_city
+  inp$rules$siblings    <- FALSE
+  inp$params$dis$k      <- c0$dis_k
+  inp$params$dis$lambda <- c0$dis_lambda
+  inp
+}
+
+
 #' Run one configuration
 #'
 #' @param inp the bundle from R/05_app_inputs.R
@@ -368,8 +397,8 @@ ipf_priorities <- function(flow, orig, name, cap, pan, fsm_share,
 #' @param exclusive NULL for the fitted shares of paired-catchment families
 #'   who would take only one of the two schools, or a multiplier on them
 #' @param rules NULL for the published model's proportional ceiling, or a
-#'   list(rule = "priorities", p6_share, fsm, targeted) for the council's
-#'   oversubscription priorities
+#'   list(rule = "priorities", p6_share, fsm, targeted, siblings,
+#'   sibling_fsm_counts) for the council's oversubscription priorities
 run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
                     design = "Current catchments", year = 2026,
                     capped = TRUE, gamma = NULL, rules = NULL,
@@ -619,13 +648,15 @@ run_sim <- function(inp, w_mult = NULL, pans = NULL, site = "now",
     list(rule = "published",
          p6_share = if (is.null(rl)) 0.05 else rl$p6_share,
          fsm = TRUE, targeted = FALSE,
-         # Priority 3, the sibling link. FALSE reproduces every figure
-         # published before the FOI allocation maps arrived; TRUE gives
-         # it its own tier above the free school meal priorities, where
-         # the council's arrangements put it. Off by default because the
-         # disadvantage layer's lambda was fitted without it - see
+         # Priority 3, the sibling link, as its own tier above the free
+         # school meal priorities, where the council's arrangements put
+         # it. The bundle says whether it is on, because the free school
+         # meal take-up and the disadvantage layer were fitted one way or
+         # the other: a bundle built with it (rules$siblings TRUE, from
+         # October 2026) runs with it. To run without it, use
+         # without_siblings() so the constants move with it - see
          # @sec-siblings.
-         siblings = FALSE,
+         siblings = isTRUE(rl$siblings),
          # When the tier is on, whether eligible siblings count against
          # the free school meal ceiling. TRUE is the rule in force since
          # the 2025/26 round; FALSE is the 2024/25 counting that let

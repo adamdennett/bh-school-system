@@ -1,11 +1,11 @@
-# 21_sibling_refit.R - re-fit the free school meal layers with priority 3 in
+# 21_sibling_refit.R - the free school meal layers, with and without priority 3
 # ---------------------------------------------------------------------------
-# R/20_sibling_share.R gave the model a sibling tier above the free school
-# meal priorities, and left it off, because two things were fitted without
-# it (both in R/05_app_inputs.R, section 10):
+# Since October 2026 the bundle is built with the sibling tier in (R/05,
+# section 10), and both constants that depend on it are fitted there with
+# it in place:
 #
 #   fsm_takeup   k in  zones$fsm = min(k * IDACI, 0.95). The share of each
-#                neighbourhood the TIERS treat as eligible. Bisected so that
+#                neighbourhood the TIERS treat as eligible. Fitted so that
 #                tiers 4 and 5 at the three rationing schools total the 192
 #                priority 4 and 5 offers the council made in 2026.
 #   dis$lambda   per-school pull in the separate disadvantage layer that
@@ -14,19 +14,14 @@
 #                2026 Year 7 free school meal offers. It does not feed the
 #                tiers.
 #
-# Insert a tier above 4 and 5 that seats eligible siblings first, and k is
-# answering a question that no longer exists: at the old k, tiers 4 and 5
-# fall well short of 192, because a share of the eligible children now
-# arrive at 3. So k is re-bisected with the tier in. Lambda then follows,
-# because it is fitted to whatever flows k produces.
+# This script re-runs both fits three ways - without the tier, with it
+# under the 2024/25 counting, and with it under the 2025/26 counting in
+# force - and scores each against the parts of the council's outturn that
+# no fit uses. The first and last must reproduce the two calibrations the
+# bundle carries (inp$calib_no_siblings and the bundle itself), which is
+# the check that this is R/05's procedure and not a near relative.
 #
-# Both fits are re-run here with the sibling tier OFF as well. That run
-# must reproduce the k and lambda already in the bundle - which is the
-# check that this script follows R/05's procedure rather than a near
-# relative of it.
-#
-# Nothing in app/data/sim_inputs.rds is overwritten. The result is written
-# to data/sibling_refit.rds, and with_siblings() applies it to a bundle.
+# It writes data/sibling_refit.rds, for @sec-siblings in the model guide.
 #
 # Run from project root.
 # ---------------------------------------------------------------------------
@@ -34,24 +29,6 @@
 suppressPackageStartupMessages({library(dplyr); library(tidyr)})
 
 OUT <- here::here("data", "sibling_refit.rds")
-
-
-#' Apply the sibling-tier calibration to an input bundle
-#'
-#' Sets everything that has to move together: the sibling shares, the
-#' re-fitted take-up and the city share it implies, the re-fitted
-#' disadvantage layer, and the rule. Using one without the others is the
-#' double-count this script exists to remove.
-with_siblings <- function(inp, fit = readRDS(OUT)) {
-  inp$sibling_share     <- fit$sibling_share
-  inp$zones$fsm         <- pmin(fit$on$k_fsm * inp$zones$idaci_score, 0.95)
-  inp$rules$fsm_takeup  <- fit$on$k_fsm
-  inp$rules$fsm_city    <- fit$on$fsm_city
-  inp$params$dis$k      <- fit$on$dis_k
-  inp$params$dis$lambda <- fit$on$dis_lambda
-  inp$rules$siblings_calibrated <- TRUE
-  inp
-}
 
 
 refit <- function(inp, sibs, counts = TRUE) {
@@ -78,10 +55,9 @@ refit <- function(inp, sibs, counts = TRUE) {
   # Under the corrected counting the response is not monotone: more
   # eligibility puts more eligible siblings above the quota, which then
   # shrinks it, so tiers 4 and 5 rise, peak and fall, and cross 192
-  # twice. R/05's bisection assumes a single crossing. Here a grid finds
-  # the FIRST crossing - the lowest take-up consistent with the offers -
-  # and the bisection works inside that bracket only. With the tier off
-  # the response is monotone and this lands on R/05's answer.
+  # twice. A grid finds the FIRST crossing - the lowest take-up consistent
+  # with the offers - and the bisection works inside that bracket only.
+  # This is the procedure in R/05.
   grid <- seq(0.25, 6, by = 0.25)
   above <- NA
   for (g in grid) if (p45(run_k(g)) >= target) { above <- g; break }
@@ -125,10 +101,12 @@ refit <- function(inp, sibs, counts = TRUE) {
   # ---- what was NOT fitted, against the council's own figures
   y7 <- inp$params$dis$year7_fsm
   t <- r$tiers |> filter(name %in% rationing)
+  p3_cols <- if (is.null(t$p3_sibling)) transmute(t, name, p3 = 0, p3_fsm = 0)
+             else transmute(t, name, p3 = p3_sibling, p3_fsm)
   by_school <- r$schools |> filter(name %in% rationing) |>
     select(name, intake, fsm) |>
-    inner_join(t |> transmute(name, p45 = p45_in + p45_out,
-                              p3 = p3_sibling, p3_fsm), by = "name") |>
+    inner_join(t |> transmute(name, p45 = p45_in + p45_out), by = "name") |>
+    inner_join(p3_cols, by = "name") |>
     inner_join(y7 |> select(name, offers_2026, fsm_2026, fsm_p13_2026,
                             fsm_p45_2026), by = "name") |>
     inner_join(rl$outturn_2026 |> filter(priority %in% 4:5) |>
@@ -142,7 +120,7 @@ refit <- function(inp, sibs, counts = TRUE) {
 }
 
 
-#' What adopting the calibration would move, in the simulator's own Today
+#' What adopting the calibration moved, in the simulator's own Today
 #'
 #' Two kinds of number, kept apart because they answer different
 #' questions. The headline outcomes the analysis argues from - intakes,
@@ -150,13 +128,13 @@ refit <- function(inp, sibs, counts = TRUE) {
 #' sibling tier reorders who gets in rather than how many. The free school
 #' meal share the tiers work with moves a lot, and is checked against the
 #' council's September 2026 Year 7 figures, which neither fit used.
-adoption_effect <- function(inp, fit_out, year = 2026) {
+adoption_effect <- function(inp, year = 2026) {
   source(here::here("app", "R", "model.R"))
   source(here::here("app", "R", "outcomes.R"))
-  inp2 <- with_siblings(inp, fit_out)
-  a <- run_sim(inp,  year = year, rules = list(rule = "priorities"))
-  b <- run_sim(inp2, year = year, rules = list(rule = "priorities", siblings = TRUE))
-  oa <- outcomes(inp, a); ob <- outcomes(inp2, b)
+  inp0 <- without_siblings(inp)
+  a <- run_sim(inp0, year = year, rules = list(rule = "priorities"))
+  b <- run_sim(inp,  year = year, rules = list(rule = "priorities"))
+  oa <- outcomes(inp0, a); ob <- outcomes(inp, b)
   y7 <- inp$params$dis$year7_fsm
   fsm <- a$schools |> select(name, intake_now = intake, fsm_now = fsm) |>
     inner_join(b$schools |> select(name, intake_new = intake, fsm_new = fsm),
@@ -179,24 +157,31 @@ adoption_effect <- function(inp, fit_out, year = 2026) {
 build_sibling_refit <- function() {
   source(here::here("R", "00_core.R"))
   inp <- readRDS(here::here("app", "data", "sim_inputs.rds"))
-  sb  <- readRDS(here::here("data", "sibling_share.rds"))
-  inp$sibling_share <- sb$share
+  stopifnot(isTRUE(inp$rules$siblings), !is.null(inp$sibling_share),
+            !is.null(inp$calib_no_siblings))
 
-  message("Re-fitting with the sibling tier OFF (must reproduce the bundle) ...")
+  message("Re-fitting with the sibling tier OFF ...")
   off <- refit(inp, FALSE)
-  message("Re-fitting with the sibling tier ON, 2025/26 counting ...")
+  message("Re-fitting with the sibling tier ON, 2025/26 counting (the bundle) ...")
   on <- refit(inp, TRUE, counts = TRUE)
   message("Re-fitting with the sibling tier ON, 2024/25 counting (for comparison) ...")
   on_2425 <- refit(inp, TRUE, counts = FALSE)
 
-  # The check: the off fit is R/05's own fit, recomputed.
-  repro <- c(k_fsm = off$k_fsm - inp$rules$fsm_takeup,
-             dis_k = off$dis_k - inp$params$dis$k,
-             lambda = max(abs(off$dis_lambda - inp$params$dis$lambda[names(off$dis_lambda)])))
-  message(sprintf("\nreproduction of the bundle, siblings off: k %+.4f, dis k %+.4f, max lambda %.4f",
-                  repro[["k_fsm"]], repro[["dis_k"]], repro[["lambda"]]))
-  stopifnot(abs(repro[["k_fsm"]]) < 2e-4, abs(repro[["dis_k"]]) < 1e-3,
-            repro[["lambda"]] < 1e-2)
+  # The check: both fits are R/05's own, recomputed.
+  c0 <- inp$calib_no_siblings
+  lam_gap <- function(a, b) max(abs(a - b[names(a)]))
+  repro <- c(k_on = on$k_fsm - inp$rules$fsm_takeup,
+             dis_k_on = on$dis_k - inp$params$dis$k,
+             lambda_on = lam_gap(on$dis_lambda, inp$params$dis$lambda),
+             k_off = off$k_fsm - c0$fsm_takeup,
+             dis_k_off = off$dis_k - c0$dis_k,
+             lambda_off = lam_gap(off$dis_lambda, c0$dis_lambda))
+  message(sprintf(paste("\nreproduction of the bundle: on k %+.5f, dis k %+.5f, lambda %.5f;",
+                        "off k %+.5f, dis k %+.5f, lambda %.5f"),
+                  repro[[1]], repro[[2]], repro[[3]], repro[[4]], repro[[5]], repro[[6]]))
+  stopifnot(abs(repro[c("k_on", "k_off")]) < 2e-4,
+            abs(repro[c("dis_k_on", "dis_k_off")]) < 1e-3,
+            repro[c("lambda_on", "lambda_off")] < 1e-2)
 
   message(sprintf("\ntake-up k: %.4f off -> %.4f on  (city eligible share %.1f%% -> %.1f%%)",
                   off$k_fsm, on$k_fsm, 100 * off$fsm_city, 100 * on$fsm_city))
@@ -217,7 +202,7 @@ build_sibling_refit <- function() {
   }
   show(off, "Siblings OFF - not fitted except the 192 total:")
   show(on_2425, "Siblings ON, re-fitted under the 2024/25 counting:")
-  show(on,  "Siblings ON, re-fitted under the 2025/26 counting - the calibration:")
+  show(on,  "Siblings ON, 2025/26 counting - the calibration in the bundle:")
 
   # One number per fit for how well the unfitted split lands.
   err <- function(f) with(f$by_school, c(
@@ -230,11 +215,10 @@ build_sibling_refit <- function() {
 
   out <- list(off = off, on = on, on_2425 = on_2425, scores = scores,
               lambda = lam, reproduction = repro,
-              sibling_share = sb$share, built_at = Sys.time())
-  saveRDS(out, OUT)   # with_siblings() below reads this
+              sibling_share = inp$sibling_share, built_at = Sys.time())
 
-  ad <- adoption_effect(inp, out)
-  message(sprintf(paste0("\nAdopting it, 2026: intakes move by at most %.1f; tier FSM share ",
+  ad <- adoption_effect(inp)
+  message(sprintf(paste0("\nAdopted, 2026: intakes move by at most %.1f; tier FSM share ",
                          "against the council's Year 7 figures, mean error %.1f -> %.1f points"),
                   ad$intake_shift, ad$fsm_mae_now, ad$fsm_mae_new))
   print(as.data.frame(ad$headline |> mutate(across(where(is.numeric), ~round(.x, 3)))),

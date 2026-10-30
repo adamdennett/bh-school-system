@@ -4295,7 +4295,7 @@ hpc$gap %>%
 
 Geography explains about
 `r sprintf("%.0f", 100 * hp_g("Geography only", "gap") / hp_g("As calibrated", "gap"))`%
-of the gap --- roughly a third --- and all of that comes from one thing:
+of the gap --- well under half --- and all of that comes from one thing:
 **Year 7 is not taught at Hove Park's registered address.** It is taught
 at the Valley Campus on Hangleton Way, `r sprintf("%.1f", hpc$km_valley)`
 km from Blatchington Mill and in Hangleton rather than central Hove. Put
@@ -7203,7 +7203,7 @@ place. "Set" means chosen and stated rather than estimated.
 | Competing destinations | $C_j^{\delta}$, $\delta$ = `r sprintf("%+.1f", cal$delta)` | Fitted in the ladder, against offers | Kept at its ladder value and not re-fitted. It is a small term; @sec-m4 sets out why its sign should not be read as a finding. |
 | Faith schools | Open to every family | --- | Holding half the city ineligible fits the second-preference profile better but stops Cardinal Newman filling, and it fills. |
 | Capacity | A one-sided ceiling; refused demand re-offered to the other school of a pair, then by second preference, to schools with room | Admission numbers in force; catchment preference table, second preferences | Applicants to a full school are cut back in proportion, which is what a random tie-break averages to --- and the council breaks ties at random. Re-offering refused children in proportion to their *first* preferences (M2 to M4) left Stringer short of its number while counting Stringer / Varndean families as displaced. |
-| Admission rules (simulator only) | Optionally, the council's 2026/27 priorities as a tiered ceiling at the six community schools | Admissions guide 2027--28 | FSM eligibility is the IDACI score scaled by one take-up constant, set so FSM-priority offers at the three schools that ration match the 192 made in September 2026. Priority-6 places are not fitted. |
+| Admission rules (simulator only) | Optionally, the council's 2026/27 priorities as a tiered ceiling at the six community schools, including the sibling link (priority 3) as its own tier since October 2026 | Admissions guide 2027--28; council allocation outturn by priority, 2026 | FSM eligibility is the IDACI score scaled by one take-up constant, set so FSM-priority offers at the three schools that ration match the 192 made in September 2026. Each school's sibling share is the council's own; eligible siblings count towards the 30% ceiling, as they have since the 2025/26 round. Priority-6 places are not fitted. |
 | Offer day, not September | Every comparison is with national offer day | @sec-offer-to-september | Six months of appeals and movement follow offer day, so September rolls are not what an allocation produces. The gap is now measured for 2026 entry: about 60 children, three per cent of the cohort, and the model over-predicts the oversubscribed schools against September by about 16 each. |
 
 
@@ -9448,12 +9448,14 @@ intake, already above that at
 `r fmt_pct(100 * wh_s("Longhill", "whitehawk", "share"), 1)`, which adds
 to the index. Varndean's, also above it today at
 `r fmt_pct(100 * wh_s("Varndean", "today", "share"), 1)`, falls to
-`r fmt_pct(100 * wh_s("Varndean", "whitehawk", "share"), 1)`, passing
-below it. Stringer's goes from
+`r fmt_pct(100 * wh_s("Varndean", "whitehawk", "share"), 1)`,
+`r if (wh_s("Varndean", "whitehawk", "share") < wh_city) "passing below it" else "a little closer to it"`.
+Stringer's goes from
 `r fmt_pct(100 * wh_s("Dorothy Stringer", "today", "share"), 1)` to
 `r fmt_pct(100 * wh_s("Dorothy Stringer", "whitehawk", "share"), 1)`,
-further below it again. All three schools end further from the city's
-share than they started, and Gorard's index measures exactly that: it is
+further below it. Longhill and Stringer move further from the city's
+share than Varndean moves towards it, and Gorard's index measures exactly
+that: it is
 `r sprintf("%.3f", wh_g("today"))` today and
 `r sprintf("%.3f", wh_g("whitehawk"))` with the redraw in 2026,
 `r sprintf("%.3f", wh_g("today", 2030))` and

@@ -716,19 +716,20 @@ ggplot(cells, aes(obs_share, modelled)) +
 ```{r fig-tiers}
 #| fig-width: 12
 #| fig-height: 5.6
-TIERS <- c("Free school meals (4, 5)", "Single-school catchment (6)",
-           "In catchment, incl. siblings (3, 7)", "Everyone else (8)")
+TIERS <- c("Siblings (3)", "Free school meals (4, 5)", "Single-school catchment (6)",
+           "In catchment (7)", "Everyone else (8)")
 t_obs <- rl$outturn_2026 |>
-  dplyr::mutate(tier = dplyr::case_when(priority %in% 4:5 ~ TIERS[1], priority == 6 ~ TIERS[2],
-                                        priority %in% c(3, 7) ~ TIERS[3], priority == 8 ~ TIERS[4])) |>
+  dplyr::mutate(tier = dplyr::case_when(priority == 3 ~ TIERS[1], priority %in% 4:5 ~ TIERS[2],
+                                        priority == 6 ~ TIERS[3], priority == 7 ~ TIERS[4],
+                                        priority == 8 ~ TIERS[5])) |>
   dplyr::filter(!is.na(tier)) |>
   dplyr::group_by(School = short_sch(school), tier) |>
   dplyr::summarise(Council = sum(offers), .groups = "drop")
 t_mod <- r26$tiers |>
   dplyr::filter(name %in% rl$rationing) |>
-  dplyr::transmute(School = short_sch(name), p45 = p45_in + p45_out, p6, p7, p8) |>
+  dplyr::transmute(School = short_sch(name), p3 = p3_sibling, p45 = p45_in + p45_out, p6, p7, p8) |>
   tidyr::pivot_longer(-School, names_to = "k", values_to = "Model") |>
-  dplyr::mutate(tier = TIERS[match(k, c("p45", "p6", "p7", "p8"))])
+  dplyr::mutate(tier = TIERS[match(k, c("p3", "p45", "p6", "p7", "p8"))])
 t_obs |>
   dplyr::inner_join(t_mod, by = c("School", "tier")) |>
   tidyr::pivot_longer(c(Council, Model), names_to = "src", values_to = "n") |>
@@ -738,8 +739,8 @@ t_obs |>
   facet_wrap(~ School, nrow = 1) +
   scale_fill_manual(values = c(Council = INK, Model = WARM), name = NULL) +
   labs(x = "Offers, September 2026", y = NULL,
-       title = "Close on catchment and priority 6; too generous on free school meals at Varndean",
-       subtitle = "The three schools that rationed places. The model cannot see siblings, who are admitted before free-school-meal children.") +
+       title = "Close on every tier, now that siblings are admitted before free school meals",
+       subtitle = "The three schools that rationed places. Only the three-school total under priorities 4 and 5 is fitted.\nThe council's priorities 0-2 (SEN, looked-after, exceptional need) sit inside the model's catchment tier.") +
   theme_slide(13) + theme(legend.position = "top", strip.text = element_text(face = "bold", size = 14))
 ```
 

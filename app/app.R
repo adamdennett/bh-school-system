@@ -35,6 +35,9 @@ source(file.path(APP, "R", "model.R"))
 source(file.path(APP, "R", "outcomes.R"))
 
 inp <- readRDS(file.path(APP, "data", "sim_inputs.rds"))
+# The same bundle calibrated without the sibling tier, for the switch that
+# turns it off: the free school meal constants have to move with it.
+INP_NOSIB <- without_siblings(inp)
 CITY <- inp$schools %>% filter(city) %>% arrange(short)
 # Every school with a row in the per-school list: the ten, and CoMArt at
 # the bottom, which is closed unless a scenario or the user opens it.
@@ -279,6 +282,12 @@ ui <- page_sidebar(
                   ticks = FALSE),
       checkboxInput("fsm", "Free school meals priority (4 and 5)", value = TRUE),
       checkboxInput("targeted", "Narrowed to Targeted FSM (2027/28)", value = FALSE),
+      checkboxInput("siblings", "Sibling priority (3), above free school meals", value = TRUE),
+      conditionalPanel(
+        "input.siblings",
+        checkboxInput("sib_counts",
+                      "Eligible siblings count towards the 30% FSM ceiling (from 2025/26)",
+                      value = TRUE)),
       div(class = "note", textOutput("rule_note"))),
     hr(),
     div(strong("Per school")),
@@ -579,7 +588,13 @@ server <- function(input, output, session) {
     rule = input$rule %||% "priorities",
     p6_share = (input$p6 %||% 5) / 100,
     fsm = isTRUE(input$fsm %||% TRUE),
-    targeted = isTRUE(input$targeted %||% FALSE)))
+    targeted = isTRUE(input$targeted %||% FALSE),
+    siblings = isTRUE(input$siblings %||% TRUE),
+    sibling_fsm_counts = isTRUE(input$sib_counts %||% TRUE)))
+
+  # The bundle the run uses. With the sibling tier off, the one calibrated
+  # without it, so the free school meal constants are not double-counting.
+  inp_run <- reactive(if (isTRUE(input$siblings %||% TRUE)) inp else INP_NOSIB)
 
   output$comart_note <- renderText(sprintf(paste(
     "CoMArt closed in 2005. Open it and it is back on its old site in East Brighton, sharing",
@@ -619,12 +634,12 @@ server <- function(input, output, session) {
     req(input$design, input$site, input$year)
     w <- w_now(); p <- pan_now()
     req(all(is.finite(w)), all(is.finite(p)))
-    run_sim(inp, w_mult = w, pans = p, site = input$site, hp_site = hp_now(),
+    run_sim(inp_run(), w_mult = w, pans = p, site = input$site, hp_site = hp_now(),
             design = input$design, year = input$year, gamma = gamma_now(),
             exclusive = input$exclusive, rules = rule_args(),
             closed = closed_now())
   })
-  met <- reactive(outcomes(inp, sim()))
+  met <- reactive(outcomes(inp_run(), sim()))
 
   # ---- Download this run -------------------------------------------------
   output$download_xlsx <- downloadHandler(
@@ -638,10 +653,12 @@ server <- function(input, output, session) {
                        rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
                        fsm = isTRUE(input$fsm %||% TRUE),
                        targeted = isTRUE(input$targeted %||% FALSE),
+                       siblings = isTRUE(input$siblings %||% TRUE),
+                       sibling_fsm_counts = isTRUE(input$sib_counts %||% TRUE),
                        w_basis = input$w_basis %||% "att8",
                        closed = closed_now())
       writexl::write_xlsx(
-        scenario_export(inp, sim(), met(), input$preset, settings, w_now(), pan_now()),
+        scenario_export(inp_run(), sim(), met(), input$preset, settings, w_now(), pan_now()),
         file)
     })
 
@@ -691,7 +708,7 @@ server <- function(input, output, session) {
     base <- inp$designs[["Current catchments"]]$zone
     z <- inp$designs[[input$design]]$zone
     regrouped <- sum(z[names(base)] != base, na.rm = TRUE)
-    now <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
+    now <- run_sim(inp_run(), w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
                    design = "Current catchments", year = input$year,
                    gamma = gamma_now(), exclusive = input$exclusive,
                    rules = rule_args(), closed = closed_now())
@@ -1108,13 +1125,21 @@ server <- function(input, output, session) {
     if (is.null(r$tiers)) return("")
     t <- r$tiers
     held <- (input$p6 %||% 5) / 100 * sum(r$cap[t$name])
-    sprintf("Priority 6 fills %s of the %s places it holds at the six community schools; %s children are placed under the FSM priority.",
-            fmt_n(sum(t$p6)), fmt_n(held), fmt_n(sum(t$p45_in + t$p45_out)))
+    sib <- if (is.null(t$p3_sibling)) 0 else sum(t$p3_sibling)
+    sprintf("Priority 6 fills %s of the %s places it holds at the six community schools; %s children are placed under the FSM priority%s.",
+            fmt_n(sum(t$p6)), fmt_n(held), fmt_n(sum(t$p45_in + t$p45_out)),
+            if (sib > 0) sprintf(", and %s under the sibling link, %s of them eligible for FSM",
+                                 fmt_n(sib), fmt_n(sum(t$p3_fsm))) else "")
   })
 
-  PRIO_COL <- c(`FSM (4-5)` = "#1baf7a",
+  # The sibling link has its own bucket now the model has its own tier
+  # for it; the council's priorities 0-2 (SEN, looked-after, exceptional
+  # need) are still inside the catchment, where most of those children
+  # live.
+  PRIO_COL <- c(`Siblings (3)` = "#e0892b",
+                `FSM (4-5)` = "#1baf7a",
                 `Single-school catchments (6)` = "#7b61c9",
-                `Catchment, with siblings, SEN, looked-after (1-3, 7)` = "#2a78d6",
+                `Catchment, SEN, looked-after (0-2, 7)` = "#2a78d6",
                 `Other (8)` = "#9aa5b1")
 
   output$p_priority <- renderPlot({
@@ -1128,18 +1153,20 @@ server <- function(input, output, session) {
     b <- names(PRIO_COL)
     mod <- r$tiers
     long <- dplyr::bind_rows(
-      tibble(school = mod$name, src = "model", bucket = b[1], n = mod$p45_in + mod$p45_out),
-      tibble(school = mod$name, src = "model", bucket = b[2], n = mod$p6),
-      # With the sibling tier on, priority 3 is its own column; it belongs
-      # in the same bucket as the council's 1-3. Zero when the tier is off.
-      tibble(school = mod$name, src = "model", bucket = b[3],
-             n = mod$p7 + (if (is.null(mod$p3_sibling)) 0 else mod$p3_sibling)),
-      tibble(school = mod$name, src = "model", bucket = b[4], n = mod$p8),
+      # Zero when the sibling tier is switched off: the siblings are then
+      # dissolved into the catchment and the rest, as before October 2026.
+      tibble(school = mod$name, src = "model", bucket = b[1],
+             n = if (is.null(mod$p3_sibling)) 0 else mod$p3_sibling),
+      tibble(school = mod$name, src = "model", bucket = b[2], n = mod$p45_in + mod$p45_out),
+      tibble(school = mod$name, src = "model", bucket = b[3], n = mod$p6),
+      tibble(school = mod$name, src = "model", bucket = b[4], n = mod$p7),
+      tibble(school = mod$name, src = "model", bucket = b[5], n = mod$p8),
       inp$rules$outturn_2026 %>%
-        mutate(bucket = dplyr::case_when(priority %in% 4:5 ~ b[1],
-                                         priority == 6 ~ b[2],
-                                         priority == 8 ~ b[4],
-                                         TRUE ~ b[3])) %>%
+        mutate(bucket = dplyr::case_when(priority == 3 ~ b[1],
+                                         priority %in% 4:5 ~ b[2],
+                                         priority == 6 ~ b[3],
+                                         priority == 8 ~ b[5],
+                                         TRUE ~ b[4])) %>%
         group_by(school, bucket) %>%
         summarise(n = sum(offers), .groups = "drop") %>%
         mutate(src = "September 2026 offers"))
@@ -1154,12 +1181,13 @@ server <- function(input, output, session) {
       geom_col(width = 0.72, colour = "white", linewidth = 0.5,
                position = position_stack(reverse = TRUE)) +
       scale_fill_manual(values = PRIO_COL, name = NULL, drop = FALSE) +
+      guides(fill = guide_legend(nrow = 2)) +
       labs(x = "Places", y = NULL,
            title = "How each community school's places are filled",
            subtitle = paste(strwrap(paste(
              "Under the rules as set. The published September 2026 offers sit under the three",
              "schools that rationed, for comparison rather than as a target: they were made to",
-             "a different cohort, and the model cannot separate priorities 1-3 from the catchment."),
+             "a different cohort, and the model cannot separate priorities 0-2 from the catchment."),
              width = 100), collapse = "\n")) +
       theme_minimal(11) +
       theme(legend.position = "top", legend.text = element_text(size = 9),
@@ -1169,24 +1197,33 @@ server <- function(input, output, session) {
   })
 
   output$priority_note <- renderUI({
-    rl <- inp$rules
+    rl <- inp_run()$rules
     HTML(sprintf(paste0(
       "<p><b>How the priorities run.</b> At the six community schools a full ",
-      "school is filled tier by tier - FSM children up to 30%% of places, then ",
-      "children from single-school catchments up to the priority-6 share, then ",
-      "the catchment, then everyone else - and by lottery within each tier. ",
-      "The two academies and the two faith schools keep the published model's ",
-      "single lottery; their own criteria are not in published data.</p>",
+      "school is filled tier by tier - children with a sibling there, then FSM ",
+      "children up to 30%% of places, then children from single-school catchments ",
+      "up to the priority-6 share, then the catchment, then everyone else - and ",
+      "by lottery within each tier. The two academies and the two faith schools ",
+      "keep the published model's single lottery; their own criteria are not in ",
+      "published data.</p>",
+      "<p><b>Siblings and the FSM ceiling.</b> The sibling link (priority 3) ",
+      "comes above free school meals, so a child who is both is admitted as a ",
+      "sibling. Each school's sibling share is the council's own, from the ",
+      "September 2026 offers. Since the 2025/26 round those eligible siblings ",
+      "count towards the 30%% ceiling; untick that box to see the 2024/25 ",
+      "counting, when they did not and Varndean went well past 30%%.</p>",
       "<p><b>What is fitted, and what is not.</b> Who is eligible for FSM and ",
       "claims it is not published by neighbourhood. The IDACI score gives the ",
-      "shape, and one constant (%.2f times it, %.0f%%%% of the city's children) ",
-      "sets the level so that the model's FSM offers at Blatchington Mill, ",
-      "Stringer and Varndean together match the %d the council made in ",
-      "September 2026. How those places split between the three, and ",
-      "everything under priority 6, is not fitted.</p>",
-      "<p><b>What is left out.</b> Siblings, SEN and looked-after children ",
-      "(priorities 1-3) sit inside the catchment tier, which is where most of ",
-      "them live. Families are held to the same preferences whatever the ",
+      "shape, and one constant (%.2f times it, %.0f%% of the city's children) ",
+      "sets the level so that the model's FSM offers under priorities 4 and 5 at ",
+      "Blatchington Mill, Stringer and Varndean together match the %d the council ",
+      "made in September 2026. How those places split between the three, the ",
+      "eligible children who arrive as siblings, and everything under ",
+      "priority 6, are not fitted. Switch the sibling priority off and the model ",
+      "uses the constant fitted without it.</p>",
+      "<p><b>What is left out.</b> SEN, looked-after children and exceptional ",
+      "need (priorities 0-2) sit inside the catchment tier, which is where most ",
+      "of them live. Families are held to the same preferences whatever the ",
       "rules, when in practice a family with a real chance at a school is more ",
       "likely to name it.</p>"),
       rl$fsm_takeup, 100 * rl$fsm_city,
@@ -1232,12 +1269,12 @@ server <- function(input, output, session) {
     m <- met()
     live <- ""
     if (identical(input$rule, "priorities") && (input$p6 %||% 5) > 0) {
-      r0 <- run_sim(inp, w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
+      r0 <- run_sim(inp_run(), w_mult = w_now(), pans = pan_now(), site = input$site, hp_site = hp_now(),
                     design = input$design, year = input$year, gamma = gamma_now(),
                     exclusive = input$exclusive,
                     rules = utils::modifyList(rule_args(), list(p6_share = 0)),
                     closed = closed_now())
-      g0 <- outcomes(inp, r0)$gorard
+      g0 <- outcomes(inp_run(), r0)$gorard
       live <- sprintf(paste0(
         "<p><b>In this run:</b> Gorard %.3f with priority 6 at %d%% of places, ",
         "against %.3f with it switched off (%+.1f%%), and %s children placed under it.</p>"),

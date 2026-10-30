@@ -31,7 +31,7 @@ scenario_defaults <- function(inp, preset) {
 #' The workbook, as a named list of data frames
 #'
 #' @param settings list(design, site, year, gamma, exclusive, rule, p6,
-#'   fsm, targeted) as used in the run
+#'   fsm, targeted, siblings, sibling_fsm_counts) as used in the run
 #' @param w_used,pans_used named per-school attractiveness multipliers and
 #'   admission numbers as used in the run
 scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
@@ -74,6 +74,9 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     c("Places for single-school catchments, priority 6 (%)", s$p6 %||% 5, settings$p6),
     c("Free school meals priority (4 and 5)", chr(s$fsm %||% TRUE), chr(settings$fsm)),
     c("Narrowed to Targeted FSM", chr(s$targeted %||% FALSE), chr(settings$targeted)),
+    c("Sibling priority (3)", chr(s$siblings %||% TRUE), chr(settings$siblings %||% TRUE)),
+    c("Eligible siblings count towards the FSM ceiling",
+      chr(s$sibling_fsm_counts %||% TRUE), chr(settings$sibling_fsm_counts %||% TRUE)),
     c("Schools closed", paste(sort(def$closed), collapse = ", "),
       paste(sort(settings$closed %||% def$closed), collapse = ", ")),
     c("Total places in the city (open schools)",

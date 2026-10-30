@@ -28,8 +28,9 @@
 #
 # This script derives the share of each school's demand that carries a
 # sibling link, from the council's own allocation outturn by priority.
-# It writes data/sibling_share.rds; R/05_app_inputs.R picks it up and
-# run_sim() uses it only when rules$siblings is TRUE.
+# R/05_app_inputs.R calls sibling_share() to build the tier into the
+# bundle (since October 2026). Run on its own, it writes
+# data/sibling_share.rds with the stacking demonstration for the guide.
 #
 # Run from project root.
 # ---------------------------------------------------------------------------
