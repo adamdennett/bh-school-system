@@ -40,6 +40,7 @@ suppressPackageStartupMessages({
 })
 
 CSV  <- here::here("data-raw", "foi_allocations_points.csv")
+OOC  <- here::here("data-raw", "foi_out_of_catchment.csv")
 LSOA <- here::here("data", "lsoa.geojson")
 OUT  <- here::here("data", "foi_allocations.rds")
 
@@ -118,8 +119,60 @@ to_lsoa <- function(pts) {
 }
 
 
+#' The table printed on each map, beside the map
+#'
+#' Every page carries a small cross-tab headed "Pupils allocated from
+#' outside the catchment area": out-of-catchment allocations by preference
+#' and by the admission criterion that got the child the place - EHCP, LAC
+#' (looked after), EX (exceptional), SIB (sibling), FSM OUT, OPEN, OUT, and
+#' DIRECTED. None of that is in the dots, which carry preference only.
+#'
+#' These are raster images with no text layer, so they are transcribed by
+#' hand into data-raw/foi_out_of_catchment.csv rather than parsed. Each
+#' school's total is checked against the total printed on its own map,
+#' which is an arithmetic check on the transcription that the transcriber
+#' cannot fudge.
+read_out_of_catchment <- function(path = OOC) {
+  printed <- c(
+    "Brighton Aldridge Community Academy" = 86, "Blatchington Mill School" = 34,
+    "Dorothy Stringer School" = 76, "Hove Park School" = 58,
+    "Longhill High School" = 21, "Portslade Aldridge Community Academy" = 42,
+    "Patcham High School" = 44, "Varndean School" = 35)
+  d <- read_csv(path, show_col_types = FALSE)
+  chk <- d |> count(school, wt = pupils, name = "transcribed") |>
+    mutate(printed = printed[school])
+  bad <- chk |> filter(transcribed != printed)
+  if (nrow(bad)) {
+    stop("transcription does not match the totals printed on the maps:\n",
+         paste(sprintf("  %s: %d transcribed, %d printed",
+                       bad$school, bad$transcribed, bad$printed), collapse = "\n"))
+  }
+  attr(d, "totals") <- chk
+  d
+}
+
+
+#' Own-catchment share from the published table rather than from the dots
+#'
+#' This is the figure to use. The dots give an estimate of it; the council
+#' prints the exact out-of-catchment count on every map, and the factsheets
+#' give the offer total, so the share is arithmetic. Comparing the two says
+#' how far the dot-derived shares can be trusted - and the answer is: not
+#' very far, school by school, though Longhill happens to come out exact.
+own_catchment_published <- function(ooc, factsheets, year) {
+  tot <- ooc |> count(school, wt = pupils, name = "out_of_catchment")
+  factsheets |>
+    filter(year == !!year, name %in% tot$school) |>
+    select(school = name, offers = off_total) |>
+    inner_join(tot, by = "school") |>
+    mutate(own = offers - out_of_catchment,
+           own_pct = round(100 * own / offers))
+}
+
+
 build_foi_allocations <- function() {
   pts <- read_points()
+  ooc <- read_out_of_catchment()
   fs  <- readRDS(here::here("data", "factsheet_panel.rds"))$factsheets |>
     filter(name != "Total")
 
@@ -136,9 +189,15 @@ build_foi_allocations <- function() {
   message("\n", nrow(ls$by_lsoa), " school x LSOA x preference rows; ",
           ls$outside, " points fell outside the city's LSOAs")
 
+  ocp <- own_catchment_published(ooc, fs, year)
+  message("\nOut-of-catchment allocations, from the tables printed on the maps:")
+  print(as.data.frame(ocp |> arrange(own_pct)), row.names = FALSE)
+
   out <- list(
     points      = pts,
     by_lsoa     = ls$by_lsoa,
+    out_of_catchment = ooc,
+    own_published    = ocp,
     validation  = val,
     year_match  = yr,
     entry_year  = year,

@@ -211,6 +211,29 @@ build_foi_model_check <- function() {
   # comes from its own catchment, observed against modelled.
   # The schools table calls the catchment `group`; it is the same labelling
   # the zones use.
+  #
+  # Own-catchment share, model against the figure the council PRINTS on
+  # each map. This is the comparison that counts: the maps carry an exact
+  # out-of-catchment total, so the observed share is arithmetic rather
+  # than estimated from dots. The dot-derived column sits beside it to
+  # show how far the extraction can be trusted on this quantity - which
+  # turns out not to be far, school by school.
+  own_pub <- cf |>
+    inner_join(inp$schools |> select(school = name, home = group), by = "school") |>
+    filter(catchment == home) |>
+    transmute(school, model_pct = round(100 * mod_share),
+              dots_pct = round(100 * obs_share)) |>
+    inner_join(foi$own_published |> select(school, offers, out_of_catchment,
+                                           published_pct = own_pct),
+               by = "school") |>
+    mutate(gap = model_pct - published_pct,
+           dots_error = dots_pct - published_pct) |>
+    arrange(desc(abs(gap))) |>
+    select(school, offers, out_of_catchment, published_pct, model_pct, gap,
+           dots_pct, dots_error)
+  message("\nOwn-catchment share, model against the council's printed figure:")
+  print(as.data.frame(own_pub), row.names = FALSE)
+
   own <- cf |>
     inner_join(inp$schools |> select(school = name, home = group),
                by = "school") |>
@@ -252,7 +275,7 @@ build_foi_model_check <- function() {
           sum(cross$children))
   print(as.data.frame(cross), row.names = FALSE)
 
-  out <- list(cells = s, by_school = fit, by_catchment = cf,
+  out <- list(cells = s, by_school = fit, by_catchment = cf, own_published = own_pub,
               catchment_fit = cfit, own_catchment = own, distance = dis,
               memory_sweep = sweep, cross_boundary = cross,
               overall = overall, entry_year = foi$entry_year,

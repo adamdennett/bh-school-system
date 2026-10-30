@@ -4865,31 +4865,48 @@ one to use, and it is also the unit the argument is conducted in.
 
 ### Where it is wrong: Longhill
 
-One school stands out, and it is the one the strategic question turns on.
+This one does not need the dots at all. Every map carries a small table
+beside it headed *"Pupils allocated from outside the catchment area"*,
+giving the exact out-of-catchment count by preference and by the
+admission criterion that got each child the place. With the offer total
+from the factsheets, the observed own-catchment share is arithmetic.
 
 ```{r end-origin-own}
-#| tbl-cap: "Share of each school's intake drawn from its own catchment, observed against modelled. `Recovered` is how much of the council's published offer count the extraction found for that school."
-fmc$own_catchment %>%
+#| tbl-cap: "Share of each school's intake drawn from its own catchment. `Published` is the council's own figure, from the table printed on each map against the offer total. `Dots` is what the extracted points give, and `Dot error` is how far that estimate is out."
+fmc$own_published %>%
   transmute(School = short_sch(school),
-            `Observed %` = obs_pct, `Modelled %` = mod_pct,
+            Offers = offers, `Out of catch.` = out_of_catchment,
+            `Published %` = published_pct, `Model %` = model_pct,
             `Gap` = sprintf("%+d", gap),
-            `Recovered %` = recovered) %>%
-  knitr::kable(align = "lrrrr")
+            `Dots %` = dots_pct, `Dot error` = sprintf("%+d", dots_error)) %>%
+  knitr::kable(align = "lrrrrrrr")
 ```
 
-The model is **systematically too catchment-bound**: for seven of the
-eight schools it keeps more of the intake inside the catchment than the
-maps show. For most of them the gap is small, and the recovery column is
-the reason to be cautious about it — the dots the extraction loses sit in
-the dense core of a catchment, so a school at 79% recovery probably has
-a truer own-catchment share than the table says, and a smaller gap.
+Two things follow, and the second corrects the first impression.
 
-Longhill is different on both counts. Its gap is
-`r abs(fmc$own_catchment$gap[fmc$own_catchment$school == "Longhill High School"])`
-points, and its extraction recovers
-`r fmc$own_catchment$recovered[fmc$own_catchment$school == "Longhill High School"]`%
-of published offers — there is nothing material missing, so the caveat
-that rescues the others does not apply here.
+**The dots are not reliable for this quantity.** They are out by up to
+`r max(abs(fmc$own_published$dots_error))` points, in both directions.
+That is the overplotting again: the symbols that merge are the ones in
+the dense core of a catchment, and whether that inflates or deflates the
+own-catchment share depends on where a school's density happens to sit.
+Positions are trustworthy; a share built by counting them is not. The
+published table is used from here on.
+
+**The model's error is not systematic.** Against the council's own
+figures it runs from
+`r sprintf("%+d", max(fmc$own_published$gap))` at Brighton Aldridge to
+`r sprintf("%+d", min(fmc$own_published$gap))` at Patcham — too
+catchment-bound at some schools, not enough at others. There is no single
+correction to make.
+
+Longhill is the largest of the positive errors, at
+`r sprintf("%+d", fmc$own_published$gap[fmc$own_published$school == "Longhill High School"])`
+points, and it is the one that matters, because it is the school every
+strategic option in @sec-scenarios is about. The council allocated
+`r fmc$own_published$out_of_catchment[fmc$own_published$school == "Longhill High School"]`
+of its `r fmc$own_published$offers[fmc$own_published$school == "Longhill High School"]`
+places to children from outside the catchment — a quarter of the school.
+The model allocates under a tenth.
 
 The whole of that gap is one flow. By catchment of origin:
 
@@ -4911,6 +4928,29 @@ catchment; the model sends about five. Those nineteen are concentrated in
 the six neighbourhoods that were moved **out** of Longhill's catchment in
 2024 — the ones @sec-gamma's catchment-memory term already exists to
 handle. One LSOA alone sends eleven children the model gives under one.
+
+The printed table says *how* each of those children got in, which the
+dots cannot:
+
+```{r end-origin-crit}
+#| tbl-cap: "Longhill's out-of-catchment allocations by admission criterion. SIB is a sibling already at the school, FSM OUT the free school meal priority applied out of catchment, OPEN the 5% open quota, OUT the ordinary out-of-catchment criterion, DIRECTED a place directed by the council."
+foi$out_of_catchment %>%
+  filter(school == "Longhill High School") %>%
+  count(Criterion = criterion, wt = pupils, name = "Pupils") %>%
+  arrange(desc(Pupils)) %>%
+  knitr::kable(align = "lr")
+```
+
+That breaks the shortfall into three parts with different fixes.
+`r sum(foi$out_of_catchment$pupils[foi$out_of_catchment$school == "Longhill High School" & foi$out_of_catchment$criterion == "SIB"])`
+are siblings, and the model has no sibling rule at all — across all eight
+schools the criterion accounts for
+`r sum(foi$out_of_catchment$pupils[foi$out_of_catchment$criterion == "SIB"])`
+out-of-catchment places, nearly half of them at Brighton Aldridge and
+Portslade. Six more are children from Lewes, which the model cannot
+produce for a different reason set out below. The rest are the ordinary
+and free-school-meal out-of-catchment criteria, which is the part the
+memory term is actually about.
 
 ### Can the memory term absorb it?
 
@@ -4944,6 +4984,20 @@ population outside Brighton & Hove, so it cannot produce them at any
 value of any parameter. On a modelled intake of 87 that is seven per
 cent of the school, and it is roughly five of the seventeen points.
 
+Adding them was tried and abandoned, and the reason is worth recording
+because it is not the obvious one. The missing piece is not the
+population — that could be had from the census. It is $c_{ij}$. The
+travel matrix in @sec-cij is routed on the real road network and the
+real bus timetable for the 195 city zones, and the routing inputs are
+not small enough to live in this repository. A new origin would need
+either that pipeline re-run, or journey times approximated from
+straight-line distance — and approximating them is precisely the thing
+@sec-cij exists to avoid. Telscombe to Longhill is a short hop along the
+coast; Telscombe to Varndean is not, in a way no straight line
+describes. A fudged cost for these zones would put children into
+Longhill for the wrong reason and make the model look better while
+knowing less.
+
 ::: callout-note
 ## What was changed: nothing
 
@@ -4952,11 +5006,14 @@ the origin geography by breaking the intake total, and it would be
 fitting the right number for the wrong reason, because a third of the
 discrepancy is cross-boundary in-flow that the term does not represent.
 
-What would change that judgement: an origin population for the Lewes
-LSOAs that feed Longhill, so the two causes could be separated. With
-that in place the memory share could be re-fitted against the FOI
-origins without the cross-boundary children loading onto it, and the
-right value is likely to be higher than
+What would change that judgement, in order of how much each would buy:
+a **sibling rule**, which is the single largest named criterion in the
+printed tables and which the model does not represent at all; **routed
+journey times for the Lewes origins**, which needs the @sec-cij pipeline
+re-run rather than any new assumption; and only then a re-fit of the
+memory share against the FOI origins, with the siblings and the
+cross-boundary children no longer loading onto it. Its right value is
+likely to be higher than
 `r inp$catch_memory$share`.
 
 Until then the honest statement is the one the tables above make.
