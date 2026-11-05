@@ -127,6 +127,16 @@ pupil records are used anywhere.
 
 [Talks]{.section-label}
 
+::: {.talk-video}
+```{=html}
+<div class="talk-video-frame">
+<iframe src="https://www.youtube.com/embed/AT5JeNhU4fU?start=2050" title="Can we model our way out of this? Brighton AI, 4 November 2026" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
+```
+
+[**Watch the talk.** *Can we model our way out of this?* at Brighton AI, Plus X Innovation, 4 November 2026. The video starts at the talk, 34 minutes into the evening's recording. The slides are [here](https://adamdennett.github.io/school_attainment_tool/brighton_ai_talk.html){target="_blank"}.]{.talk-video-caption}
+:::
+
 ::: {.cards}
 
 ::: {.card-link .featured}
