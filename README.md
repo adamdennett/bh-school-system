@@ -95,3 +95,11 @@ unmapped key.
 - [The open Brightopia model](https://adamdennett.github.io/bh-school-model/) — the technical companion to section 7
 
 Adam Dennett, UCL Centre for Advanced Spatial Analysis.
+
+## Deploying the simulator
+
+The live app is on Posit Connect Cloud:
+<https://adamdennett-bh-school-system.share.connect.posit.cloud/>. It republishes
+from GitHub when `main` is pushed, using `app/manifest.json`, so refresh that with
+`rsconnect::writeManifest("app")` before pushing any new file in `app/`. The page
+can show errors for a minute or so while it swaps over.
