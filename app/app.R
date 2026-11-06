@@ -86,6 +86,16 @@ total_grid <- function(total) list(
 
 OK <- "#1baf7a"; BAD <- "#d03b3b"; WARN <- "#eda100"; INK <- "#1f3b57"
 
+# What a saved scenario may hold: see R/state.R.
+PUBLIC_URL <- "https://adam-dennett.shinyapps.io/brighton-school-simulator/"
+STATE_CTX <- list(
+  presets = names(inp$presets), designs = names(inp$designs),
+  sites = c("now", "elm"), hp_sites = c("auto", "valley", "nevill"),
+  bases = names(W_BASIS), rules = c("priorities", "published"),
+  years = range(inp$demand$year), gammas = names(CATCH_LAB),
+  schools = as.data.frame(SCH[, c("urn", "name", "pan", "hypothetical")]),
+  model = as.character(inp$built_at))
+
 # ---- Map colours: demand against places ---------------------------------
 # Green for every school at its admission number was misleading: it made a
 # school that just fills - the goldilocks case - look the same as one
@@ -336,6 +346,16 @@ ui <- page_sidebar(
                    class = "btn-sm btn-outline-primary"),
     div(class = "note", style = "margin-top:4px",
         "A report of this run as a web page: what you changed, the headline figures, the charts and tables, and the model's limits. Open it in any browser, then print it or save it as a PDF."),
+    div(style = "margin-top:12px", strong("Save or share this scenario")),
+    div(style = "display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px",
+        downloadButton("download_state", "Save scenario",
+                       class = "btn-sm btn-outline-primary"),
+        actionButton("share_link", "Share a link", icon = icon("link"),
+                     class = "btn-sm btn-outline-primary")),
+    fileInput("load_file", NULL, accept = ".json", width = "100%",
+              buttonLabel = "Load…", placeholder = "A saved scenario file"),
+    div(class = "note", style = "margin-top:-12px",
+        "Save keeps every control in a small file that can be loaded here later. It stores the settings, not the results."),
     hr(),
     selectInput("solve_for", "How attractive would a school have to be to fill?",
                 choices = c("—", CITY$short)),
@@ -499,6 +519,8 @@ server <- function(input, output, session) {
     updateSliderInput(session, "p6", value = s$p6 %||% 5)
     updateCheckboxInput(session, "fsm", value = s$fsm %||% TRUE)
     updateCheckboxInput(session, "targeted", value = s$targeted %||% FALSE)
+    updateCheckboxInput(session, "siblings", value = s$siblings %||% TRUE)
+    updateCheckboxInput(session, "sib_counts", value = s$sibling_fsm_counts %||% TRUE)
     # A scenario that does not say which schools are closed means CoMArt
     # closed and every school of today open.
     closed_s <- s$closed %||% HYP
@@ -521,8 +543,160 @@ server <- function(input, output, session) {
     }
     set_pans(base, final, closed_s)
   }
-  observeEvent(input$preset, apply_preset(input$preset))
+
+  # ---- A saved scenario: the controls, out and back in -------------------
+  state_now <- reactive(list(
+    format = STATE_FORMAT, version = STATE_VERSION, model = STATE_CTX$model,
+    preset = input$preset, title = input$report_title %||% "",
+    notes = input$report_notes %||% "",
+    design = input$design, site = input$site, hp_site = input$hp_site,
+    w_basis = input$w_basis %||% "att8", year = input$year,
+    gamma = input$gamma %||% 1,
+    gamma_each = as.list(setNames(unname(gamma_each()), names(CATCH_LAB))),
+    exclusive = input$exclusive, rule = input$rule %||% "priorities",
+    p6 = input$p6 %||% 5, fsm = isTRUE(input$fsm %||% TRUE),
+    targeted = isTRUE(input$targeted %||% FALSE),
+    siblings = isTRUE(input$siblings %||% TRUE),
+    sib_counts = isTRUE(input$sib_counts %||% TRUE),
+    schools = setNames(lapply(seq_len(nrow(SCH)), function(i) list(
+      w = unname(w_user()[SCH$name[i]]), pan = unname(pan_now()[SCH$name[i]]),
+      closed = SCH$name[i] %in% closed_now())), as.character(SCH$urn))))
+
+  # As apply_preset(), from the file's values. Admission numbers go through
+  # set_pans() like everything else, or a half-applied set is taken for a
+  # hand edit and every school is rescaled.
+  apply_state <- function(st) {
+    updateSelectInput(session, "design", selected = st$design)
+    updateSelectInput(session, "site", selected = st$site)
+    updateSelectInput(session, "hp_site", selected = st$hp_site)
+    updateSelectInput(session, "w_basis", selected = st$w_basis)
+    updateSliderInput(session, "year", value = st$year)
+    updateSliderInput(session, "gamma", value = st$gamma)
+    for (nm in names(CATCH_LAB))
+      updateSliderInput(session, paste0("gamma_", nm), value = st$gamma_each[[nm]])
+    updateSliderInput(session, "exclusive", value = st$exclusive)
+    updateRadioButtons(session, "rule", selected = st$rule)
+    updateSliderInput(session, "p6", value = st$p6)
+    updateCheckboxInput(session, "fsm", value = st$fsm)
+    updateCheckboxInput(session, "targeted", value = st$targeted)
+    updateCheckboxInput(session, "siblings", value = st$siblings)
+    updateCheckboxInput(session, "sib_counts", value = st$sib_counts)
+    updateTextInput(session, "report_title", value = st$title)
+    updateTextAreaInput(session, "report_notes", value = st$notes)
+    sc <- st$schools[as.character(SCH$urn)]
+    for (i in seq_len(nrow(SCH))) {
+      updateSliderInput(session, paste0("w_", SCH$urn[i]), value = sc[[i]]$w)
+      updateCheckboxInput(session, paste0("closed_", SCH$urn[i]), value = sc[[i]]$closed)
+    }
+    pans <- setNames(vapply(sc, function(s) as.numeric(s$pan), numeric(1)), SCH$name)
+    set_pans(pans, pans, SCH$name[vapply(sc, function(s) isTRUE(s$closed), logical(1))])
+  }
+
+  # Changing the scenario menu applies that scenario, which would overwrite
+  # a load. So a load that needs a different menu entry waits here, and the
+  # menu's own event applies it in place of the preset.
+  held_state <- NULL
+  load_state <- function(st) {
+    if (identical(st$preset, isolate(input$preset))) return(apply_state(st))
+    held_state <<- st
+    updateSelectInput(session, "preset", selected = st$preset)
+  }
+  read_state <- function(get_text) {
+    tryCatch({
+      p <- state_parse(get_text(), STATE_CTX)
+      for (n in p$notes) showNotification(n, type = "warning", duration = 15)
+      p$state
+    }, error = function(e) {
+      showNotification(conditionMessage(e), type = "error", duration = 15)
+      NULL
+    })
+  }
+
+  started <- FALSE
+  observeEvent(input$preset, {
+    if (!started) {
+      started <<- TRUE
+      link <- getQueryString(session)$s
+      st <- if (!is.null(link)) read_state(function() state_from_link(link))
+      if (!is.null(st)) return(load_state(st))
+    }
+    if (!is.null(held_state)) {
+      st <- held_state
+      held_state <<- NULL
+      apply_state(st)
+    } else apply_preset(input$preset)
+  })
   observeEvent(input$reset, apply_preset(input$preset))
+
+  output$download_state <- downloadHandler(
+    filename = function()
+      sprintf("bh-school-scenario_%s_%s.json",
+              gsub("[^A-Za-z0-9]+", "-", input$preset %||% "run"),
+              format(Sys.time(), "%Y%m%d-%H%M")),
+    content = function(file) {
+      con <- base::file(file, open = "wb")
+      on.exit(close(con))
+      writeLines(enc2utf8(state_to_json(state_now())), con, useBytes = TRUE)
+    })
+
+  observeEvent(input$load_file, {
+    path <- input$load_file$datapath
+    st <- read_state(function() {
+      if (file.size(path) > STATE_MAX_BYTES)
+        stop("That file is too large to be a saved scenario.", call. = FALSE)
+      paste(readLines(path, encoding = "UTF-8", warn = FALSE), collapse = "\n")
+    })
+    if (!is.null(st)) {
+      load_state(st)
+      showNotification("Scenario loaded.", type = "message")
+    }
+  })
+
+  # ---- Share by link ------------------------------------------------------
+  # The app's public address when it is deployed, because shinyapps.io runs
+  # the app in a frame whose own address is not the one to give anybody.
+  app_url <- function() {
+    cd <- session$clientData
+    if (endsWith(cd$url_hostname, "shinyapps.io")) return(PUBLIC_URL)
+    paste0(cd$url_protocol, "//", cd$url_hostname,
+           if (nzchar(cd$url_port)) paste0(":", cd$url_port), cd$url_pathname)
+  }
+
+  observeEvent(input$share_link, {
+    st <- state_now()
+    code <- state_to_link(st)
+    dropped <- nchar(code) > STATE_MAX_LINK
+    if (dropped) {
+      st$notes <- ""
+      code <- state_to_link(st)
+    }
+    link <- paste0(app_url(), "?s=", code)
+    name <- if (nzchar(trimws(st$title))) trimws(st$title) else st$preset
+    k <- kpis()
+    body <- paste0(
+      "A scenario from the Brighton secondary schools policy simulator: ", name, "\n\n",
+      "Places filled ", k$fill$value, ", ", k$short$value, " schools short of their number, ",
+      "city-wide annual balance ", k$money$value, ", mean journey ", k$travel$value, ".\n\n",
+      "Open it here:\n", link, "\n\n",
+      "Every number in it is modelled, and the simulator is in beta: nothing should yet be taken as reliable.")
+    mailto <- paste0("mailto:?subject=",
+                     utils::URLencode(paste("Brighton schools scenario:", name), reserved = TRUE),
+                     "&body=", utils::URLencode(enc2utf8(body), reserved = TRUE))
+    showModal(modalDialog(
+      title = "Share this scenario", easyClose = TRUE,
+      footer = modalButton("Close"),
+      p("The link holds every setting, so whoever opens it sees this run. Nothing is stored."),
+      if (dropped) p(tags$b("Your notes were too long to fit in a link, so it leaves them out.")),
+      tags$input(id = "share_url", type = "text", readonly = NA, value = link,
+                 class = "form-control", onclick = "this.select()"),
+      div(style = "margin-top:10px;display:flex;gap:8px",
+          tags$button(type = "button", class = "btn btn-sm btn-primary",
+                      onclick = "var b=this;navigator.clipboard.writeText(document.getElementById('share_url').value).then(function(){b.textContent='Copied'})",
+                      "Copy link"),
+          tags$a(href = mailto, class = "btn btn-sm btn-outline-primary", "Email this link")),
+      div(class = "note", style = "margin-top:10px",
+          "Email opens your own mail program with the link filled in. To send the report as well, download it and attach it. Save it to Google Drive the same way as any other file.")))
+  })
 
   output$preset_note <- renderText(inp$presets[[input$preset]]$note)
 

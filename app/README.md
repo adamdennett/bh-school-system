@@ -37,6 +37,7 @@ It currently agrees to 0.00 children across all ten schools.
 | `R/outcomes.R` | scoring a run on places, money, fairness and travel |
 | `R/export.R` | one run as a workbook: the Excel download, and the tables in the report |
 | `R/report.R` | one run as a self-contained HTML page to print or save as a PDF |
+| `R/state.R` | the controls as a saved file or a share link, and reading them back |
 | `tests/check.R` | agreement with the published model — kept out of `R/`, which Shiny auto-sources |
 | `www/map.js` | the map, in plain Leaflet, fed lon/lat and GeoJSON by the server |
 | `www/leaflet/` | Leaflet itself, so the app needs no CDN and no geospatial R packages |

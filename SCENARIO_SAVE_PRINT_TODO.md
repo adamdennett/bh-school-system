@@ -4,10 +4,14 @@ Written 2026-11-06. Nothing here is built yet. To run it, open a session in
 this repo and say: "Do `SCENARIO_SAVE_PRINT_TODO.md`, starting at Stage 1."
 Delete this file once the work is finished.
 
-**Progress:** Stage 1 (print) is done: `app/R/report.R`. It also closed some
-export gaps listed below: `hp_site` is in the workbook, "changed" is judged on
-the sliders, and catchment multipliers are matched by name. `p_catch_map` turned
-out to be a bar chart, so the report draws its own map (`static_map()`).
+**Progress:** Stages 1 to 3 are built and tested locally: `app/R/report.R`,
+`app/R/state.R`, and the print, save, load and share controls in the sidebar.
+The export gaps below are closed too. `p_catch_map` turned out to be a bar
+chart, so the report draws its own map (`static_map()`).
+
+**Still to do:** deploy the app, then open a share link on shinyapps.io. Links
+could only be tested on localhost, and they rely on shinyapps.io passing `?s=`
+through to the app. Delete this file once that works.
 
 ## What Adam asked for
 

@@ -23,6 +23,7 @@ source(file.path(ROOT, "app", "R", "model.R"))
 source(file.path(ROOT, "app", "R", "outcomes.R"))
 source(file.path(ROOT, "app", "R", "export.R"))
 source(file.path(ROOT, "app", "R", "report.R"))
+source(file.path(ROOT, "app", "R", "state.R"))
 
 inp <- readRDS(file.path(ROOT, "app", "data", "sim_inputs.rds"))
 mt  <- readRDS(file.path(ROOT, "data", "model_terms.rds"))
@@ -460,6 +461,46 @@ if (!grepl("Every number here is modelled", rep_txt, fixed = TRUE) ||
     !grepl("<p>limits</p>", rep_txt, fixed = TRUE))
   fail <- c(fail, "the report has lost its warnings")
 note(sprintf("report: %s", format(structure(file.size(rep_file), class = "object_size"), units = "KB")))
+
+# ---- A saved scenario, there and back --------------------------------
+sch_all <- as.data.frame(inp$schools[inp$schools$city | inp$schools$hypothetical %in% TRUE,
+                                     c("urn", "name", "pan", "hypothetical")])
+ctx <- list(presets = names(inp$presets), designs = names(inp$designs),
+            sites = c("now", "elm"), hp_sites = c("auto", "valley", "nevill"),
+            bases = c("att8", "value_added"), rules = c("priorities", "published"),
+            years = range(inp$demand$year), gammas = names(inp$params$gamma),
+            schools = sch_all, model = "m1")
+st0 <- list(format = STATE_FORMAT, version = STATE_VERSION, model = "m1",
+            preset = ctx$presets[2], title = "Títle & <b>", notes = "two\nlines",
+            design = ctx$designs[2], site = "elm", hp_site = "nevill",
+            w_basis = "value_added", year = 2030, gamma = 1.2,
+            gamma_each = setNames(as.list(rep(c(1, 1.5), 3)), ctx$gammas),
+            exclusive = 0.5, rule = "published", p6 = 12, fsm = FALSE, targeted = TRUE,
+            siblings = FALSE, sib_counts = FALSE,
+            schools = setNames(lapply(seq_len(nrow(sch_all)), function(i)
+              list(w = 1 + i / 20, pan = sch_all$pan[i] + 15,
+                   closed = i == 2)), as.character(sch_all$urn)))
+same <- function(a, b) isTRUE(all.equal(a, b, check.attributes = FALSE))
+p1 <- state_parse(state_to_json(st0), ctx)
+if (!same(p1$state[names(st0)], st0) || length(p1$notes))
+  fail <- c(fail, "a saved scenario does not come back as it went out")
+p2 <- state_parse(state_from_link(state_to_link(st0)), ctx)
+if (!same(p2$state[names(st0)], st0))
+  fail <- c(fail, "a scenario link does not come back as it went out")
+bad <- st0; bad$year <- 1900; bad$gamma <- "x"; bad$design <- "Gone"; bad$model <- "m0"
+bad$schools[[1]] <- NULL
+p3 <- state_parse(state_to_json(bad), ctx)
+if (p3$state$year != ctx$years[1] || p3$state$gamma != 1 ||
+    p3$state$design != ctx$designs[1] || length(p3$notes) < 5)
+  fail <- c(fail, "a damaged scenario is not put right and reported")
+rejected <- function(f) inherits(try(f(), silent = TRUE), "try-error")
+if (!rejected(function() state_parse("not json", ctx)) ||
+    !rejected(function() state_parse('{"a":1}', ctx)) ||
+    !rejected(function() state_parse(sub('"version":1', '"version":99', state_to_json(st0)), ctx)) ||
+    !rejected(function() state_from_link("abc")))
+  fail <- c(fail, "something that is not a scenario was accepted")
+note(sprintf("saved scenario: %d bytes as a file, %d characters as a link",
+             nchar(state_to_json(st0), "bytes"), nchar(state_to_link(st0))))
 
 if (length(fail)) {
   message("\nFAILED:")
