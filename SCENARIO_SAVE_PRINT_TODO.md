@@ -4,6 +4,11 @@ Written 2026-11-06. Nothing here is built yet. To run it, open a session in
 this repo and say: "Do `SCENARIO_SAVE_PRINT_TODO.md`, starting at Stage 1."
 Delete this file once the work is finished.
 
+**Progress:** Stage 1 (print) is done: `app/R/report.R`. It also closed some
+export gaps listed below: `hp_site` is in the workbook, "changed" is judged on
+the sliders, and catchment multipliers are matched by name. `p_catch_map` turned
+out to be a bar chart, so the report draws its own map (`static_map()`).
+
 ## What Adam asked for
 
 Once someone has moved the levers and has a scenario worth sharing, they

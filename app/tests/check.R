@@ -433,6 +433,34 @@ note(sprintf("download: %d sheets, %s, %d settings and %d school marked changed"
              length(wb), format(structure(file.size(tmp), class = "object_size"), units = "KB"),
              sum(wb$Scenario$Changed == "changed"), sum(wb$Schools$Changed == "changed")))
 
+# Changing what families choose on is a setting, not a change to any school.
+pre <- names(inp$presets)[vapply(inp$presets, function(s) identical(s$w_basis, "value_added"), TRUE)][1]
+w_b <- w_x * inp$attract_basis$value_added$mult[names(w_x)]
+w_b[is.na(w_b)] <- 1
+wb_b <- scenario_export(inp, rx, outcomes(inp, rx), pre,
+                        utils::modifyList(st, list(w_basis = "value_added")), w_b, p_x,
+                        w_slider = scenario_defaults(inp, pre)$w)
+if (any(wb_b$Schools$Changed == "changed" &
+        wb_b$Schools$`Admission number used` == wb_b$Schools$`Scenario admission number`))
+  fail <- c(fail, "the value added basis marks schools as changed when no slider moved")
+
+# ---- The printable report ------------------------------------------
+rep_file <- tempfile(fileext = ".html")
+scenario_report(
+  wb, kpis = list(a = list(value = "1", label = "A", detail = "d", colour = "#000")),
+  figures = list(list(plot = ggplot2::ggplot() + ggplot2::geom_blank(), height = 2)),
+  tables = list(T = data.frame(x = 1)), title = "<b>A & B</b>", notes = "n",
+  caveats = htmltools::HTML("<p>limits</p>"), file = rep_file)
+rep_txt <- paste(readLines(rep_file, encoding = "UTF-8", warn = FALSE), collapse = " ")
+if (!grepl("<style>", rep_txt, fixed = TRUE) || !grepl("data:image/png;base64", rep_txt, fixed = TRUE))
+  fail <- c(fail, "the report is missing its styles or its charts")
+if (grepl("<b>A & B</b>", rep_txt, fixed = TRUE))
+  fail <- c(fail, "the report does not escape what the user typed")
+if (!grepl("Every number here is modelled", rep_txt, fixed = TRUE) ||
+    !grepl("<p>limits</p>", rep_txt, fixed = TRUE))
+  fail <- c(fail, "the report has lost its warnings")
+note(sprintf("report: %s", format(structure(file.size(rep_file), class = "object_size"), units = "KB")))
+
 if (length(fail)) {
   message("\nFAILED:")
   for (f in fail) message("  - ", f)
