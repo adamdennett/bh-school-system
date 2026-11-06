@@ -1723,25 +1723,31 @@
   },
   "files": {
     "app.R": {
-      "checksum": "172e99afc2f0d8875dba047629f6d931"
+      "checksum": "922a75b7e954d64df308e3174d7cf3f8"
     },
     "data/sim_inputs.rds": {
-      "checksum": "5ab3817613842d9ca9a8c12b8bcb675d"
+      "checksum": "0bf4a6ea9181b26d781a8a41b5da2876"
     },
     "R/export.R": {
-      "checksum": "f94b0a3cca4dcb00f17cfe1bab0ffd56"
+      "checksum": "b3e43b9457bdbe15e103562d41aa9d74"
     },
     "R/model.R": {
-      "checksum": "24e58857e6265e3c277bc9e7d027ceb0"
+      "checksum": "cf0df0c1e2d4b000d47172d5ca452a6b"
     },
     "R/outcomes.R": {
       "checksum": "e8549399c0b475179c65c9e6af5a78b3"
     },
+    "R/report.R": {
+      "checksum": "7d9b0e72aa0ee9bd6f8f32aa3ffbf394"
+    },
+    "R/state.R": {
+      "checksum": "4f9cd6f5af189eb0a33aab501e11bf5d"
+    },
     "README.md": {
-      "checksum": "2c0a235e3f3f5434d1931c6af124ef6d"
+      "checksum": "c727da159269500eae863b743ac37495"
     },
     "tests/check.R": {
-      "checksum": "a87ae639c686ce624fef6d2b4dbfa2e5"
+      "checksum": "4bbe9e6f104d5052b7a33b70074c85f6"
     },
     "www/leaflet/images/layers-2x.png": {
       "checksum": "4f0283c6ce28e888000e978e537a6a56"

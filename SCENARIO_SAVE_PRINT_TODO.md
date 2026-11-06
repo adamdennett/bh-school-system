@@ -9,9 +9,10 @@ Delete this file once the work is finished.
 The export gaps below are closed too. `p_catch_map` turned out to be a bar
 chart, so the report draws its own map (`static_map()`).
 
-**Still to do:** deploy the app, then open a share link on shinyapps.io. Links
-could only be tested on localhost, and they rely on shinyapps.io passing `?s=`
-through to the app. Delete this file once that works.
+**Deployment:** the live app is on Posit Connect Cloud, at
+<https://adamdennett-bh-school-system.share.connect.posit.cloud/>. It republishes
+from GitHub when `main` is pushed, using `app/manifest.json`, so refresh that
+with `rsconnect::writeManifest("app")` whenever files in `app/` are added.
 
 ## What Adam asked for
 
@@ -25,8 +26,7 @@ should be able to:
 
 ## Where things stand
 
-The app is `app/app.R`, deployed to
-<https://adam-dennett.shinyapps.io/brighton-school-simulator/>.
+The app is `app/app.R`, deployed to Posit Connect Cloud (see above).
 
 **Already built:** the "Download this run (Excel)" button (`app/app.R:326`,
 handler at `:645`). It calls `scenario_export()` in `app/R/export.R`, which

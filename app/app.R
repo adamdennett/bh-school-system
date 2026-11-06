@@ -87,7 +87,7 @@ total_grid <- function(total) list(
 OK <- "#1baf7a"; BAD <- "#d03b3b"; WARN <- "#eda100"; INK <- "#1f3b57"
 
 # What a saved scenario may hold: see R/state.R.
-PUBLIC_URL <- "https://adam-dennett.shinyapps.io/brighton-school-simulator/"
+PUBLIC_URL <- "https://adamdennett-bh-school-system.share.connect.posit.cloud/"
 STATE_CTX <- list(
   presets = names(inp$presets), designs = names(inp$designs),
   sites = c("now", "elm"), hp_sites = c("auto", "valley", "nevill"),
@@ -653,11 +653,11 @@ server <- function(input, output, session) {
   })
 
   # ---- Share by link ------------------------------------------------------
-  # The app's public address when it is deployed, because shinyapps.io runs
-  # the app in a frame whose own address is not the one to give anybody.
+  # The app's public address when it is deployed, because a hosted app can
+  # run in a frame whose own address is not the one to give anybody.
   app_url <- function() {
     cd <- session$clientData
-    if (endsWith(cd$url_hostname, "shinyapps.io")) return(PUBLIC_URL)
+    if (!cd$url_hostname %in% c("localhost", "127.0.0.1")) return(PUBLIC_URL)
     paste0(cd$url_protocol, "//", cd$url_hostname,
            if (nzchar(cd$url_port)) paste0(":", cd$url_port), cd$url_pathname)
   }
