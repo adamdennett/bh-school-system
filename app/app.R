@@ -327,6 +327,15 @@ ui <- page_sidebar(
                        class = "btn-sm btn-outline-primary")),
     div(class = "note", style = "margin-top:4px",
         "A workbook of this run: the base scenario, every setting as the scenario had it and as used here (marked where changed), each school's numbers, where each catchment's children go, the headline outcomes, the money and the fixed parameters."),
+    div(style = "margin-top:12px", strong("Print this scenario")),
+    textInput("report_title", NULL, placeholder = "A title for the report (optional)",
+              width = "100%"),
+    textAreaInput("report_notes", NULL, rows = 3, width = "100%",
+                  placeholder = "Why this scenario matters (optional)"),
+    downloadButton("download_report", "Download a printable report",
+                   class = "btn-sm btn-outline-primary"),
+    div(class = "note", style = "margin-top:4px",
+        "A report of this run as a web page: what you changed, the headline figures, the charts and tables, and the model's limits. Open it in any browser, then print it or save it as a PDF."),
     hr(),
     selectInput("solve_for", "How attractive would a school have to be to fill?",
                 choices = c("—", CITY$short)),
@@ -641,6 +650,22 @@ server <- function(input, output, session) {
   })
   met <- reactive(outcomes(inp_run(), sim()))
 
+  # The run as a workbook: the Excel download, and the tables in the report.
+  run_workbook <- reactive({
+    settings <- list(design = input$design, site = input$site,
+                     hp_site = input$hp_site %||% "auto", year = input$year,
+                     gamma = gamma_now(), exclusive = input$exclusive,
+                     rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
+                     fsm = isTRUE(input$fsm %||% TRUE),
+                     targeted = isTRUE(input$targeted %||% FALSE),
+                     siblings = isTRUE(input$siblings %||% TRUE),
+                     sibling_fsm_counts = isTRUE(input$sib_counts %||% TRUE),
+                     w_basis = input$w_basis %||% "att8",
+                     closed = closed_now())
+    scenario_export(inp_run(), sim(), met(), input$preset, settings, w_now(), pan_now(),
+                    w_slider = w_user())
+  })
+
   # ---- Download this run -------------------------------------------------
   output$download_xlsx <- downloadHandler(
     filename = function()
@@ -648,18 +673,42 @@ server <- function(input, output, session) {
               gsub("[^A-Za-z0-9]+", "-", input$preset %||% "run"),
               format(Sys.time(), "%Y%m%d-%H%M")),
     content = function(file) {
-      settings <- list(design = input$design, site = input$site, year = input$year,
-                       gamma = gamma_now(), exclusive = input$exclusive,
-                       rule = input$rule %||% "priorities", p6 = input$p6 %||% 5,
-                       fsm = isTRUE(input$fsm %||% TRUE),
-                       targeted = isTRUE(input$targeted %||% FALSE),
-                       siblings = isTRUE(input$siblings %||% TRUE),
-                       sibling_fsm_counts = isTRUE(input$sib_counts %||% TRUE),
-                       w_basis = input$w_basis %||% "att8",
-                       closed = closed_now())
-      writexl::write_xlsx(
-        scenario_export(inp_run(), sim(), met(), input$preset, settings, w_now(), pan_now()),
-        file)
+      writexl::write_xlsx(run_workbook(), file)
+    })
+
+  # ---- Print this scenario -----------------------------------------------
+  # One self-contained HTML file. It takes its tables from the same workbook
+  # as the Excel download and its charts from the same builders as the
+  # tabs, so the three cannot disagree about a run.
+  output$download_report <- downloadHandler(
+    filename = function()
+      sprintf("bh-school-simulator-report_%s_%s.html",
+              gsub("[^A-Za-z0-9]+", "-", input$preset %||% "run"),
+              format(Sys.time(), "%Y%m%d-%H%M")),
+    content = function(file) {
+      withProgress(message = "Building the report", value = 0, {
+        moved <- any(abs(w_user()[CITY$name] - 1) > 0.01)
+        figs <- c(
+          list(list(plot = plot_cohort(), height = 3.4)),
+          list(list(plot = plot_map(), height = 6.4,
+                    caption = "Dot area is the modelled intake. Colour is demand against places. The shading is the catchment map in this run.")),
+          list(list(plot = plot_places(), height = 4.4)),
+          list(list(plot = plot_catch(), height = 5.4)),
+          if (!is.null(sim()$tiers)) list(list(plot = plot_priority(), height = 5)),
+          list(list(plot = plot_money(), height = 4.4)),
+          list(list(plot = plot_fair(), height = 4.4)),
+          list(list(plot = plot_att(), height = 5)),
+          if (moved) list(list(plot = plot_att_live(), height = 3.6)),
+          if (moved && !on_va()) list(list(plot = plot_abs_live(), height = 3.6)),
+          list(list(plot = plot_travel(), height = 4.2)))
+        scenario_report(
+          wb = run_workbook(), kpis = kpis(), figures = figs,
+          tables = list(Places = tab_places(), Money = tab_money(),
+                        Catchments = tab_catch(), Attainment = tab_att()),
+          title = input$report_title, notes = input$report_notes,
+          caveats = caveats_html, file = file,
+          on_figure = function(n) incProgress(1 / n))
+      })
     })
 
   # ---- Headline strip ------------------------------------------------
@@ -669,36 +718,37 @@ server <- function(input, output, session) {
         div(class = "l", label),
         if (!is.null(detail)) div(class = "d", detail))
 
-  output$kpi_fill <- renderUI({ m <- met()
-    kpi(sprintf("%.0f%%", 100 * m$fill), "Places filled",
-        sprintf("%s of %s", fmt_n(m$intake), fmt_n(m$pan)),
-        if (m$fill >= 0.95) OK else if (m$fill >= 0.85) WARN else BAD) })
-
-  output$kpi_short <- renderUI({ m <- met()
-    kpi(m$below_pan, "Schools short of their number",
-        sprintf("%s empty places", fmt_n(m$empty)),
-        if (m$below_pan == 0) OK else if (m$below_pan <= 3) WARN else BAD) })
-
-  output$kpi_money <- renderUI({ m <- met()
-    kpi(gbp_app(m$city_gap), "City-wide annual balance",
-        sprintf("%d school%s in deficit", m$in_deficit,
-                if (m$in_deficit == 1) "" else "s"),
-        if (m$city_gap >= 0) OK else BAD) })
-
-  output$kpi_seg <- renderUI({ m <- met()
-    kpi(sprintf("%.3f", m$gorard), "Segregation of intakes",
-        sprintf("%.0f%% to %.0f%% deprived", 100 * m$intake_lo, 100 * m$intake_hi),
-        if (m$gorard <= 0.15) OK else if (m$gorard <= 0.25) WARN else BAD) })
-
-  output$kpi_travel <- renderUI({ m <- met()
-    kpi(sprintf("%.1f min", m$mean_min), "Mean journey",
-        sprintf("%.0f%% over 40 min", 100 * m$over_40),
-        if (m$mean_min <= 30) OK else if (m$mean_min <= 36) WARN else BAD) })
-
-  output$kpi_gap <- renderUI({ m <- met()
-    kpi(sprintf("%+.1f min", m$dep_gap), "Deprived children travel",
-        "further than everyone else",
-        if (m$dep_gap <= 0) OK else if (m$dep_gap <= 5) WARN else BAD) })
+  # The six headline figures as data, so the strip and the printed report
+  # show the same numbers in the same colours.
+  kpis <- reactive({
+    m <- met()
+    list(
+      fill = list(value = sprintf("%.0f%%", 100 * m$fill), label = "Places filled",
+                  detail = sprintf("%s of %s", fmt_n(m$intake), fmt_n(m$pan)),
+                  colour = if (m$fill >= 0.95) OK else if (m$fill >= 0.85) WARN else BAD),
+      short = list(value = m$below_pan, label = "Schools short of their number",
+                   detail = sprintf("%s empty places", fmt_n(m$empty)),
+                   colour = if (m$below_pan == 0) OK else if (m$below_pan <= 3) WARN else BAD),
+      money = list(value = gbp_app(m$city_gap), label = "City-wide annual balance",
+                   detail = sprintf("%d school%s in deficit", m$in_deficit,
+                                    if (m$in_deficit == 1) "" else "s"),
+                   colour = if (m$city_gap >= 0) OK else BAD),
+      seg = list(value = sprintf("%.3f", m$gorard), label = "Segregation of intakes",
+                 detail = sprintf("%.0f%% to %.0f%% deprived", 100 * m$intake_lo, 100 * m$intake_hi),
+                 colour = if (m$gorard <= 0.15) OK else if (m$gorard <= 0.25) WARN else BAD),
+      travel = list(value = sprintf("%.1f min", m$mean_min), label = "Mean journey",
+                    detail = sprintf("%.0f%% over 40 min", 100 * m$over_40),
+                    colour = if (m$mean_min <= 30) OK else if (m$mean_min <= 36) WARN else BAD),
+      gap = list(value = sprintf("%+.1f min", m$dep_gap), label = "Deprived children travel",
+                 detail = "further than everyone else",
+                 colour = if (m$dep_gap <= 0) OK else if (m$dep_gap <= 5) WARN else BAD))
+  })
+  output$kpi_fill   <- renderUI(do.call(kpi, kpis()$fill))
+  output$kpi_short  <- renderUI(do.call(kpi, kpis()$short))
+  output$kpi_money  <- renderUI(do.call(kpi, kpis()$money))
+  output$kpi_seg    <- renderUI(do.call(kpi, kpis()$seg))
+  output$kpi_travel <- renderUI(do.call(kpi, kpis()$travel))
+  output$kpi_gap    <- renderUI(do.call(kpi, kpis()$gap))
 
   # How much work the chosen map is doing. Without this the design
   # control looks inert, when what is actually true is that it moves
@@ -753,7 +803,7 @@ server <- function(input, output, session) {
   # Figure 11 of the report, with the admission numbers the sliders are
   # currently set to drawn across it. The gap between the line and the
   # bar is the surplus, and it is the thing the whole app is about.
-  output$p_cohort <- renderPlot({
+  plot_cohort <- reactive({
     ob <- inp$cohort$observed
     places <- sum(open_of(pan_now(), closed_now()))
     yr <- input$year
@@ -803,6 +853,7 @@ server <- function(input, output, session) {
             plot.subtitle = element_text(colour = "grey35", size = 9),
             plot.margin = margin(2, 8, 2, 2))
   })
+  output$p_cohort <- renderPlot(plot_cohort())
 
   # ---- Map ------------------------------------------------------------
   # There is no renderLeaflet here. The map is Leaflet proper, set up in
@@ -810,7 +861,7 @@ server <- function(input, output, session) {
   # why. Redrawing is a message rather than a re-render, so the view the
   # user has panned to survives every slider move, exactly as
   # leafletProxy() used to arrange.
-  observe({
+  map_schools <- reactive({
     s <- sim()
     sch <- s$schools %>% filter(city) %>%
       inner_join(inp$schools %>% select(name, lon, lat, elm_lon, elm_lat,
@@ -854,7 +905,10 @@ server <- function(input, output, session) {
                            if (hp_here) "Valley Campus, Hangleton Way"
                            else "Nevill Campus, Nevill Road")
     }
+    sch
+  })
 
+  map_geojson <- reactive({
     dname <- switch(input$design,
                     "Current catchments" = "Current catchments",
                     "Power diagram" = "Power diagram (proximity and capacity)",
@@ -864,10 +918,13 @@ server <- function(input, output, session) {
                     # Maps whose outlines are built in R/05_app_inputs.R under their own name.
                     input$design)
     gj <- unname(inp$design_geojson[dname])
-    if (is.na(gj)) gj <- NULL
+    if (is.na(gj)) NULL else gj
+  })
 
+  observe({
+    sch <- map_schools()
     session$sendCustomMessage("map_draw", list(
-      geojson = gj,
+      geojson = map_geojson(),
       legend = MAP_LEGEND,
       dots = unname(lapply(seq_len(nrow(sch)), function(i) list(
         lon = sch$mlon[i],
@@ -877,8 +934,13 @@ server <- function(input, output, session) {
         lab = sch$lab[i])))))
   })
 
+  # The same map as a still picture for the printed report, because the
+  # Leaflet one exists only in the browser. Same outlines, dots and colour
+  # scale; no tiles, which would have to be fetched from outside the app.
+  plot_map <- reactive(static_map(map_schools(), map_geojson(), PRESSURE_STOPS))
+
   # ---- Places ---------------------------------------------------------
-  output$p_places <- renderPlot({
+  plot_places <- reactive({
     s <- sim()$schools %>% filter(city) %>%
       mutate(short = stats::reorder(short, fill))
     ggplot(s, aes(fill, short)) +
@@ -897,8 +959,9 @@ server <- function(input, output, session) {
       theme(panel.grid.major.y = element_blank(),
             plot.title = element_text(face = "bold"))
   })
+  output$p_places <- renderPlot(plot_places())
 
-  output$t_places <- renderTable({
+  tab_places <- reactive({
     # The disadvantaged share of each intake comes from the same layer the
     # Fairness tab uses, so the two always agree. It responds to the
     # admission rules because the rules decide who gets the places: the
@@ -915,10 +978,11 @@ server <- function(input, output, session) {
                 `% FSM (est)` = ifelse(is.na(dep_share), "—",
                                        sprintf("%.1f%%", 100 * dep_share)),
                 `Mean journey` = sprintf("%.0f min", mean_min))
-  }, striped = TRUE, width = "100%")
+  })
+  output$t_places <- renderTable(tab_places(), striped = TRUE, width = "100%")
 
   # ---- Money -----------------------------------------------------------
-  output$p_money <- renderPlot({
+  plot_money <- reactive({
     f <- met()$by_school %>%
       mutate(short = stats::reorder(short, gap_pct))
     ggplot(f, aes(gap_pct, short)) +
@@ -940,8 +1004,9 @@ server <- function(input, output, session) {
             plot.title = element_text(face = "bold"),
             plot.subtitle = element_text(colour = "grey35", size = 10))
   })
+  output$p_money <- renderPlot(plot_money())
 
-  output$t_money <- renderTable({
+  tab_money <- reactive({
     met()$by_school %>% arrange(gap_pct) %>%
       transmute(School = short,
                 `Roll now` = fmt_n(funded_roll),
@@ -957,7 +1022,8 @@ server <- function(input, output, session) {
                   years_left == 0 ~ "overdrawn",
                   years_left > 20 ~ "20+",
                   TRUE ~ sprintf("%.1f", years_left)))
-  }, striped = TRUE, width = "100%")
+  })
+  output$t_money <- renderTable(tab_money(), striped = TRUE, width = "100%")
 
   # ---- Who gets a place in their own catchment -------------------------
   # Blue and orange rather than green and red: the map already uses green
@@ -1024,7 +1090,7 @@ server <- function(input, output, session) {
             axis.title.x = element_text(size = base * 0.8, colour = "grey35"))
   }
 
-  output$p_catch <- renderPlot({
+  plot_catch <- reactive({
     catch_plot(met()$catchment$by_catch,
                "Who has to leave their catchment, and why",
                paste(strwrap(paste(
@@ -1035,16 +1101,18 @@ server <- function(input, output, session) {
                  "and did not get it, with the partner school perhaps still open to them."),
                  width = 84), collapse = "\n"))
   })
+  output$p_catch <- renderPlot(plot_catch())
 
-  output$p_catch_map <- renderPlot({
+  plot_catch_map <- reactive({
     catch_plot(met()$catchment$by_catch,
                "Who leaves their catchment, and why",
                paste("Greys and sand chose to go; dark orange met a full catchment,",
                      "pale orange named one school of a pair."),
                base = 9.5)
   })
+  output$p_catch_map <- renderPlot(plot_catch_map())
 
-  output$t_catch <- renderTable({
+  tab_catch <- reactive({
     m <- met()$catchment
     b <- m$by_catch
     # This was a pivot_wider. The long frame holds exactly one row per
@@ -1075,7 +1143,8 @@ server <- function(input, output, session) {
                   fmt_n(dsp(label, "one_of_pair")),
                 `Outside` = sprintf("%.0f%%", 100 * outside_share),
                 `of which displaced` = sprintf("%.0f%%", 100 * displaced_share))
-  }, striped = TRUE, width = "100%")
+  })
+  output$t_catch <- renderTable(tab_catch(), striped = TRUE, width = "100%")
 
   output$catch_note <- renderUI({
     m <- met()$catchment
@@ -1142,7 +1211,7 @@ server <- function(input, output, session) {
                 `Catchment, SEN, looked-after (0-2, 7)` = "#2a78d6",
                 `Other (8)` = "#9aa5b1")
 
-  output$p_priority <- renderPlot({
+  plot_priority <- reactive({
     r <- sim()
     if (is.null(r$tiers))
       return(ggplot() +
@@ -1195,6 +1264,7 @@ server <- function(input, output, session) {
             plot.title = element_text(face = "bold"),
             plot.subtitle = element_text(colour = "grey35", size = 9))
   })
+  output$p_priority <- renderPlot(plot_priority())
 
   output$priority_note <- renderUI({
     rl <- inp_run()$rules
@@ -1231,7 +1301,7 @@ server <- function(input, output, session) {
   })
 
   # ---- Fairness --------------------------------------------------------
-  output$p_fair <- renderPlot({
+  plot_fair <- reactive({
     m <- met()
     d <- m$mix %>% filter(name %in% inp$city, n > 0) %>%
       inner_join(inp$schools %>% select(name, short), by = "name") %>%
@@ -1258,6 +1328,7 @@ server <- function(input, output, session) {
             plot.title = element_text(face = "bold"),
             plot.subtitle = element_text(colour = "grey35", size = 10))
   })
+  output$p_fair <- renderPlot(plot_fair())
 
   # ---- Why priority 6 can raise segregation ------------------------------
   # Found by moving the slider: 0% to 15% under the council's priorities
@@ -1305,7 +1376,7 @@ server <- function(input, output, session) {
   })
 
   # ---- Travel ----------------------------------------------------------
-  output$p_travel <- renderPlot({
+  plot_travel <- reactive({
     # City schools only, like the journey figures: the routed times to the
     # East Sussex schools go through Brighton by bus.
     f <- sim()$flows %>% filter(name %in% inp$city)
@@ -1328,6 +1399,7 @@ server <- function(input, output, session) {
       theme(plot.title = element_text(face = "bold"),
             plot.subtitle = element_text(colour = "grey35", size = 10))
   })
+  output$p_travel <- renderPlot(plot_travel())
 
   # ---- The two live bars beside the map --------------------------------
   # Moving a school's attractiveness slider says, implicitly, that its
@@ -1392,7 +1464,7 @@ server <- function(input, output, session) {
             plot.margin = margin(4, 8, 2, 2))
   }
 
-  output$p_att_live <- renderPlot({
+  plot_att_live <- reactive({
     if (on_va()) {
       d <- live()
       rng <- range(c(d$va, d$va_new), na.rm = TRUE)
@@ -1409,8 +1481,9 @@ server <- function(input, output, session) {
                       q[["10%"]], q[["50%"]], q[["90%"]]),
               lims = inp$attain$att8_lims, digits = 1)
   })
+  output$p_att_live <- renderPlot(plot_att_live())
 
-  output$p_abs_live <- renderPlot({
+  plot_abs_live <- reactive({
     # Absence drives the RAW score. The value added measure is already
     # net of absence and intake, so "the absence that would go with it"
     # has no meaning once families are reading value added, and drawing
@@ -1437,6 +1510,7 @@ server <- function(input, output, session) {
                       q[["10%"]], q[["50%"]], q[["90%"]]),
               lims = inp$attain$abs_lims, digits = 1)
   })
+  output$p_abs_live <- renderPlot(plot_abs_live())
 
   # ---- Attainment ------------------------------------------------------
   # What each school's attractiveness is worth in the one published
@@ -1466,7 +1540,7 @@ server <- function(input, output, session) {
     })) %>% mutate(gap = needed - att8)
   })
 
-  output$p_att <- renderPlot({
+  plot_att <- reactive({
     a <- att_tab() %>% mutate(short = stats::reorder(short, att8))
     if (on_va()) {
       return(ggplot(a, aes(y = short)) +
@@ -1518,8 +1592,9 @@ server <- function(input, output, session) {
             plot.title = element_text(face = "bold"),
             plot.subtitle = element_text(colour = "grey35", size = 10))
   })
+  output$p_att <- renderPlot(plot_att())
 
-  output$t_att <- renderTable({
+  tab_att <- reactive({
     a <- att_tab() %>% arrange(desc(gap))
     if (on_va()) {
       # No national distribution of value added is published, so the
@@ -1555,7 +1630,8 @@ server <- function(input, output, session) {
                   is.na(needed), "—",
                   sprintf("top %.0f%% in England",
                           pmax(1, round(100 - att8_percentile(inp, needed))))))
-  }, striped = TRUE, width = "100%")
+  })
+  output$t_att <- renderTable(tab_att(), striped = TRUE, width = "100%")
 
   output$att_note <- renderUI({
     if (on_va()) return(HTML(paste0(
@@ -1634,7 +1710,7 @@ server <- function(input, output, session) {
     }
   })
 
-  output$caveats <- renderUI(HTML(paste0(
+  caveats_html <- HTML(paste0(
     "<p><b>This simulator is in beta.</b> Its outputs have not been fully ",
     "validated, so none of them should yet be taken as reliable. It shows ",
     "what a tool like this could do and the kinds of answers it could give, ",
@@ -1718,7 +1794,8 @@ server <- function(input, output, session) {
     "always how a school can grow or shrink. The map colours compare demand ",
     "the model generates before places are rationed with each school's ",
     "admission number, so a blue school is one the model says is ",
-    "over-subscribed, not a count of real applications.</p>")))
+    "over-subscribed, not a count of real applications.</p>"))
+  output$caveats <- renderUI(caveats_html)
 }
 
 shinyApp(ui, server)

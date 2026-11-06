@@ -22,6 +22,7 @@ ROOT <- here::here()
 source(file.path(ROOT, "app", "R", "model.R"))
 source(file.path(ROOT, "app", "R", "outcomes.R"))
 source(file.path(ROOT, "app", "R", "export.R"))
+source(file.path(ROOT, "app", "R", "report.R"))
 
 inp <- readRDS(file.path(ROOT, "app", "data", "sim_inputs.rds"))
 mt  <- readRDS(file.path(ROOT, "data", "model_terms.rds"))

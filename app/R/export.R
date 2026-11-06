@@ -23,7 +23,10 @@ scenario_defaults <- function(inp, preset) {
   w <- stats::setNames(rep(1, nrow(city)), city$name)
   if (!is.null(s$w)) {
     k <- intersect(names(s$w), names(w))
-    w[k] <- round(s$w[k], 2)
+    # As the sliders hold them, not as the scenario wrote them: a slider
+    # moves in steps of 0.05 and stops at 4, so a scenario value between
+    # steps, or above the top, would otherwise read as a change nobody made.
+    w[k] <- pmin(pmax(round(s$w[k] / 0.05) * 0.05, 0.25), 4)
   }
   list(s = s, pans = pans, w = w, closed = closed)
 }
@@ -34,8 +37,11 @@ scenario_defaults <- function(inp, preset) {
 #'   fsm, targeted, siblings, sibling_fsm_counts) as used in the run
 #' @param w_used,pans_used named per-school attractiveness multipliers and
 #'   admission numbers as used in the run
+#' @param w_slider the per-school sliders on their own. w_used also carries
+#'   what families are choosing on, which is a setting and not a change to
+#'   any one school, so "changed" is judged on the sliders.
 scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
-                            generated = Sys.time()) {
+                            w_slider = w_used, generated = Sys.time()) {
   def <- scenario_defaults(inp, preset)
   s <- def$s
   val <- function(x) if (is.null(x) || length(x) == 0) NA else x
@@ -52,7 +58,8 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
   gam <- function(g) {
     if (is.null(g) || length(g) == 0) return("1")
     if (length(g) == 1) return(as.character(round(as.numeric(g), 2)))
-    paste(sprintf("%s %.2f", names(g), as.numeric(g)), collapse = "; ")
+    lab <- m$catchment$by_catch$label[match(names(g), m$catchment$by_catch$home)]
+    paste(sprintf("%s %.2f", ifelse(is.na(lab), names(g), lab), as.numeric(g)), collapse = "; ")
   }
   basis_lab <- function(b) {
     if (is.null(b) || !nzchar(b)) b <- "att8"
@@ -60,14 +67,20 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     if (is.null(lab)) b else lab
   }
   site_lab <- c(now = "Ovingdean (as now)", elm = "Elm Grove (relocated)")
+  hp_lab <- c(auto = "Follows the entry year", valley = "Valley Campus (to 2027)",
+              nevill = "Nevill Road (from 2028)")
   rule_lab <- c(published = "Everyone has the same chance (the published model)",
                 priorities = "The council's priorities (2026/27 arrangements)")
 
   rows <- list(
     c("Catchment map", s$design, settings$design),
     c("Longhill's site", site_lab[[s$site]], site_lab[[settings$site]]),
+    c("Hove Park's Year 7 site", hp_lab[[s$hp_site %||% "auto"]],
+      hp_lab[[settings$hp_site %||% "auto"]]),
     c("Entry year", s$year, settings$year),
-    c("How much living in the catchment counts (x fitted)", gam(s$gamma), gam(settings$gamma)),
+    c("How much living in the catchment counts (x fitted)",
+      gam(if (is.null(s$gamma_each)) s$gamma else (s$gamma %||% 1) * unlist(s$gamma_each)),
+      gam(settings$gamma)),
     c("What families are choosing on", basis_lab(s$w_basis), basis_lab(settings$w_basis)),
     c("Paired-catchment families who would take only one (x fitted)", s$exclusive %||% 1, settings$exclusive),
     c("When a school is full", rule_lab[[s$rule %||% "priorities"]], rule_lab[[settings$rule]]),
@@ -98,7 +111,7 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
              "Schools changed from the scenario", "Generated", "Model", "Status"),
     Value = c(preset, val(s$note),
               sum(scen$Changed == "changed"),
-              sum(abs(w_used[names(def$w)] - def$w) > 1e-9 |
+              sum(abs(w_slider[names(def$w)] - def$w) > 1e-9 |
                     abs(pans_used[names(def$pans)] - def$pans) > 1e-9),
               format(generated, "%Y-%m-%d %H:%M %Z"),
               "Brighton secondary schools policy simulator: M5, the calibrated spatial interaction model of the strategic view, section 7",
@@ -107,6 +120,8 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
 
   prm <- inp$params
   g <- prm$gamma
+  # One number, or one per catchment: by name, as the two need not share an order.
+  g_mult <- if (length(settings$gamma) > 1) unname(settings$gamma[names(g)]) else settings$gamma
   fixed <- rbind(
     data.frame(Parameter = c("Distance decay (beta)", "Competing destinations (delta)",
                              "Competition distance exponent (sigma)"),
@@ -114,7 +129,7 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
                `Multiplier used` = NA_real_, `Value used` = c(prm$beta, prm$delta, prm$sigma),
                check.names = FALSE),
     data.frame(Parameter = "Catchment term (gamma)", Group = names(g), Fitted = unname(g),
-               `Multiplier used` = settings$gamma, `Value used` = unname(g) * settings$gamma,
+               `Multiplier used` = g_mult, `Value used` = unname(g) * g_mult,
                check.names = FALSE),
     if (!is.null(prm$exclusive) && nrow(prm$exclusive))
       data.frame(Parameter = paste("Would take only", prm$exclusive$school),
@@ -130,9 +145,10 @@ scenario_export <- function(inp, r, m, preset, settings, w_used, pans_used,
     `Scenario admission number` = unname(def$pans[city$name]),
     `Admission number used` = unname(pans_used[city$name]),
     `Scenario attractiveness (x)` = unname(def$w[city$name]),
+    `Attractiveness slider (x)` = unname(w_slider[city$name]),
     `Attractiveness used (x)` = unname(w_used[city$name]),
     Changed = ifelse(abs(unname(pans_used[city$name]) - unname(def$pans[city$name])) > 1e-9 |
-                       abs(unname(w_used[city$name]) - unname(def$w[city$name])) > 1e-9, "changed", ""),
+                       abs(unname(w_slider[city$name]) - unname(def$w[city$name])) > 1e-9, "changed", ""),
     `Demand before the ceiling` = round(as.numeric(wanted[city$name]), 2),
     Intake = round(city$intake, 2),
     `Share of places filled` = round(city$fill, 4),
