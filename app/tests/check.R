@@ -222,7 +222,7 @@ tp <- rp$tiers
 out <- inp$rules$outturn_2026
 
 fsm_m <- sum((tp$p45_in + tp$p45_out)[tp$name %in% RATION])
-fsm_p <- sum(out$offers[out$priority %in% 4:5])
+fsm_p <- sum(out$offers[out$priority %in% 4:5 & out$school %in% RATION])
 note(sprintf("priorities: FSM places at the three rationing schools %.1f, published %d (calibrated)",
              fsm_m, fsm_p))
 if (abs(fsm_m - fsm_p) > 1)

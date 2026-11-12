@@ -1428,9 +1428,9 @@ server <- function(input, output, session) {
       labs(x = "Places", y = NULL,
            title = "How each community school's places are filled",
            subtitle = paste(strwrap(paste(
-             "Under the rules as set. The published September 2026 offers sit under the three",
-             "schools that rationed, for comparison rather than as a target: they were made to",
-             "a different cohort, and the model cannot separate priorities 0-2 from the catchment."),
+             "Under the rules as set. The published September 2026 offers sit under each school,",
+             "for comparison rather than as a target: they were made to a different cohort, and",
+             "the model cannot separate priorities 0-2 from the catchment."),
              width = 100), collapse = "\n")) +
       theme_minimal(11) +
       theme(legend.position = "top", legend.text = element_text(size = 9),
@@ -1471,7 +1471,7 @@ server <- function(input, output, session) {
       "rules, when in practice a family with a real chance at a school is more ",
       "likely to name it.</p>"),
       rl$fsm_takeup, 100 * rl$fsm_city,
-      sum(rl$outturn_2026$offers[rl$outturn_2026$priority %in% 4:5])))
+      sum(rl$outturn_2026$offers[rl$outturn_2026$priority %in% 4:5 & rl$outturn_2026$school %in% rl$rationing])))
   })
 
   # ---- Fairness --------------------------------------------------------

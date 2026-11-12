@@ -692,15 +692,25 @@ RATIONING <- c("Blatchington Mill School", "Dorothy Stringer School",
                "Varndean School")
 
 OUTTURN_2026 <- local({
-  # SEN, then priorities 1 to 8
+  # SEN (EHCP), then priorities 1 to 8: national offer day, September 2026 entry.
+  # The three rationing schools were first taken from the council's answer to the
+  # adjudicator (item 6); the council's Year 7 allocation factsheet for September 2026
+  # (table 4) now gives all six community schools, and agrees for those three.
   w <- rbind(`Blatchington Mill School` = c(7, 3, 0, 73, 45, 14, 17, 171, 0),
              `Dorothy Stringer School`  = c(11, 3, 2, 65, 35, 32, 17, 148, 17),
+             `Hove Park School`         = c(11, 3, 0, 22, 18, 19, 9, 42, 12),
+             `Longhill High School`     = c(2, 0, 0, 17, 18, 9, 1, 28, 6),
+             `Patcham High School`      = c(12, 3, 0, 54, 17, 18, 8, 87, 5),
              `Varndean School`          = c(19, 8, 1, 70, 61, 5, 15, 121, 0))
-  tibble(school = rep(rownames(w), each = 9), priority = rep(0:8, times = 3),
+  tibble(school = rep(rownames(w), each = 9), priority = rep(0:8, times = nrow(w)),
          offers = as.vector(t(w)))
 })
-stopifnot(all(tapply(OUTTURN_2026$offers, OUTTURN_2026$school, sum) ==
-                schools$pan[match(sort(RATIONING), schools$name)]))
+# Each school's priorities add up to its offers in the factsheet's table 1; the three
+# that rationed filled their admission numbers
+OFFERS_2026 <- c(`Blatchington Mill School` = 330, `Dorothy Stringer School` = 330, `Hove Park School` = 136,
+                 `Longhill High School` = 81, `Patcham High School` = 204, `Varndean School` = 300)
+stopifnot(all(tapply(OUTTURN_2026$offers, OUTTURN_2026$school, sum)[names(OFFERS_2026)] == OFFERS_2026),
+          all(OFFERS_2026[RATIONING] == schools$pan[match(RATIONING, schools$name)]))
 
 RULES <- list(
   community = COMMUNITY, rationing = RATIONING,
@@ -804,12 +814,12 @@ SIBLINGS <- sibling_share(list(rules = RULES, schools = schools))
 RULES$siblings <- TRUE
 cal$rules <- RULES
 cal$sibling_share <- SIBLINGS$share
-message(sprintf("  sibling link: %s of offers at the rationing schools; city mean %.1f%% elsewhere",
+message(sprintf("  sibling link: %s of offers (council, September 2026); city mean %.1f%% for any community school without a published row",
                 paste(sprintf("%s %.1f%%", short_sch(SIBLINGS$observed$school),
                               100 * SIBLINGS$observed$share), collapse = ", "),
                 100 * SIBLINGS$city))
 
-fsm_target <- sum(OUTTURN_2026$offers[OUTTURN_2026$priority %in% 4:5])
+fsm_target <- sum(OUTTURN_2026$offers[OUTTURN_2026$priority %in% 4:5 & OUTTURN_2026$school %in% RATIONING])   # the three that rationed
 fsm_places <- function(k, sibs = TRUE) {
   cal$zones$fsm <- pmin(k * cal$zones$idaci_score, 0.95)
   t <- run_sim(cal, year = 2026,

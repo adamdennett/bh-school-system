@@ -95,7 +95,7 @@ sibling_share <- function(inp) {
 sibling_effect <- function(inp, share, cap = inp$rules$fsm_city) {
   source(here::here("app", "R", "model.R"))
   inp$sibling_share <- share
-  rationing <- names(share)[share > 0 &
+  rationing <- names(share)[share > 0 & names(share) %in% inp$rules$rationing &
                             names(share) %in% inp$rules$outturn_2026$school]
 
   # The stacking demonstration asks for the 2024/25 counting explicitly -

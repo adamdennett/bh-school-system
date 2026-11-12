@@ -36,7 +36,7 @@ refit <- function(inp, sibs, counts = TRUE) {
   source(here::here("app", "R", "outcomes.R"))
   rl <- inp$rules
   rationing <- rl$rationing
-  target <- sum(rl$outturn_2026$offers[rl$outturn_2026$priority %in% 4:5])
+  target <- sum(rl$outturn_2026$offers[rl$outturn_2026$priority %in% 4:5 & rl$outturn_2026$school %in% rationing])
   # `counts` is the counting rule for eligible siblings against the free
   # school meal ceiling. The 2026 offers being fitted were made under the
   # corrected rule, so that is the calibration; the other is kept to show
