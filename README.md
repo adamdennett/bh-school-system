@@ -101,21 +101,39 @@ Adam Dennett, UCL Centre for Advanced Spatial Analysis.
 The live app is at <https://apps.adamdennett.co.uk/bh_school_system/>,
 served from a Shiny Server in Docker on the NAS. A `rocker/shiny` container
 serves every folder in the NAS's `web/apps/` directory, mounted read-only, and
-a Cloudflare tunnel publishes it at `apps.adamdennett.co.uk`. Pushing to
-GitHub does **not** update the app. To deploy, copy `app/` over to the NAS
-share (mapped over Tailscale as `N:`), then touch `restart.txt` so Shiny
-Server reloads the app on the next visit:
+a Cloudflare tunnel publishes it at `apps.adamdennett.co.uk`. Pushing to GitHub does **not** update the app. To deploy, run `deploy.ps1`
+from the repo root. The NAS share must be reachable, which means Tailscale is
+connected and the share is mapped as `N:` (set `SHINY_NAS_ROOT` if it is
+mapped elsewhere):
 
 ```powershell
-robocopy app N:\web\apps\bh_school_system /MIR
-New-Item N:\web\apps\bh_school_system\restart.txt -ItemType File -Force
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -DryRun
 ```
 
-`/MIR` makes the NAS copy match `app/` exactly, deleting files removed here.
-The container installs R packages from the list in `web/Dockerfile` on the
-NAS. If the app starts using a new package, add it there and rebuild the
-`shiny` service (`docker compose up -d --build` in `web/`) before copying the
-app across.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1
+```
+
+The dry run lists what would change and touches nothing. The real run:
+
+1. checks that every R package `app/` loads is in the NAS image (the
+   `install2.r` list in `web/Dockerfile` on the NAS);
+2. mirrors `app/` to `web/apps/bh_school_system/` with `robocopy /MIR`, so files deleted
+   here are deleted there (it skips `rsconnect/`, `tests/` and `manifest.json`);
+3. writes `restart.txt` there, with the time and git commit, so Shiny Server
+   restarts the app on its next visit;
+4. loads the live URL and fails if the app does not start.
+
+If the app needs a new R package, the script stops and names it. Rerun with
+`-AddPackages` to append it to `web/Dockerfile`, rebuild the `shiny` service on
+the NAS (`docker compose up -d --build` in `web/`, or rebuild it in the NAS's
+Docker manager), then deploy again. If the app fails to start, run it locally
+with `shiny::runApp("app")`. Its log on the NAS is in the container:
+`docker exec shiny ls -t /var/log/shiny-server`.
+
+The same `deploy.ps1` is in `school_value_added`, `school_attainment_tool` and
+`bh_school_system`, differing only in the app name. Change all three together.
+
 
 `app/manifest.json` and `app/rsconnect/` are kept as a fallback, for
 redeploying to Posit Connect Cloud or shinyapps.io. Refresh the manifest with
