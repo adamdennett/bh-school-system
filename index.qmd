@@ -94,7 +94,7 @@ pupil records are used anywhere.
 
 [Move a catchment, change an admission number, relocate a school, switch what families read when they choose — and watch the whole city re-allocate, this year and out to 2035.]{.card-desc}
 
-[](https://adamdennett-bh-school-system.share.connect.posit.cloud/){.stretched-link target="_blank"}
+[](https://apps.adamdennett.co.uk/bh_school_system/){.stretched-link target="_blank"}
 :::
 
 ::: {.card-link}

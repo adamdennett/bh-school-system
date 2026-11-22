@@ -17,7 +17,7 @@ abstract: |
 ## Try the options yourself
 
 Everything in this document comes out of one model, and that model runs in a
-browser. **[Open the school places simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/){target="_blank"}**
+browser. **[Open the school places simulator](https://apps.adamdennett.co.uk/bh_school_system/){target="_blank"}**
 to change admission numbers, catchments, Longhill's site or the
 oversubscription priorities, and watch what happens to each school's intake,
 to journey times, to the mix of pupils and to school budgets.
@@ -4612,7 +4612,7 @@ the cheapest thing in this document to change.**
 :::
 
 You can run this yourself. The simulator has a
-[control for what families are choosing on](https://adamdennett-bh-school-system.share.connect.posit.cloud/),
+[control for what families are choosing on](https://apps.adamdennett.co.uk/bh_school_system/),
 with the scenario "Families choose on value added", and the per-school
 attractiveness sliders work on top of it.
 

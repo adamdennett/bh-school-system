@@ -103,7 +103,7 @@ sch_city <- inp$schools[inp$schools$city & !(inp$schools$hypothetical %in% TRUE)
 - Built from **published data only** --- no pupil-level records.
 - The full working, every source and every caveat: [The Brighton Secondary School System: a strategic view](https://adamdennett.github.io/bh-school-system/)
 - Every stage of the model, opened up for checking: [The model, stage by stage](https://adamdennett.github.io/bh-school-system/model-guide.html)
-- Try any option yourself: [the policy simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/)
+- Try any option yourself: [the policy simulator](https://apps.adamdennett.co.uk/bh_school_system/)
 
 # The situation {background-color="#17204d"}
 
@@ -268,7 +268,7 @@ ggplot(rp, aes(year, reserve_pct)) +
 ![](assets/simulator-front.png){fig-align="center" width="88%"}
 
 Every option in this deck is a run of this, in a browser, with no login.
-[Try your own.](https://adamdennett-bh-school-system.share.connect.posit.cloud/)
+[Try your own.](https://apps.adamdennett.co.uk/bh_school_system/)
 
 ## Why a simulator
 
@@ -1221,4 +1221,4 @@ tibble::tibble(id = elm_rows) |>
 - The academies and faith schools modelled as **responding to demand**, not setting their own numbers.
 - **The direction of each finding is more reliable than its size.**
 
-[Full document](https://adamdennett.github.io/bh-school-system/) · [The model, stage by stage](https://adamdennett.github.io/bh-school-system/model-guide.html) · [Simulator](https://adamdennett-bh-school-system.share.connect.posit.cloud/) · [Code and data](https://github.com/adamdennett/bh-school-system)
+[Full document](https://adamdennett.github.io/bh-school-system/) · [The model, stage by stage](https://adamdennett.github.io/bh-school-system/model-guide.html) · [Simulator](https://apps.adamdennett.co.uk/bh_school_system/) · [Code and data](https://github.com/adamdennett/bh-school-system)

@@ -87,7 +87,7 @@ total_grid <- function(total) list(
 OK <- "#1baf7a"; BAD <- "#d03b3b"; WARN <- "#eda100"; INK <- "#1f3b57"
 
 # What a saved scenario may hold: see R/state.R.
-PUBLIC_URL <- "https://adamdennett-bh-school-system.share.connect.posit.cloud/"
+PUBLIC_URL <- "https://apps.adamdennett.co.uk/bh_school_system/"
 STATE_CTX <- list(
   presets = names(inp$presets), designs = names(inp$designs),
   sites = c("now", "elm"), hp_sites = c("auto", "valley", "nevill"),
