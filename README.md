@@ -98,8 +98,25 @@ Adam Dennett, UCL Centre for Advanced Spatial Analysis.
 
 ## Deploying the simulator
 
-The live app is on Posit Connect Cloud:
-<https://apps.adamdennett.co.uk/bh_school_system/>. It republishes
-from GitHub when `main` is pushed, using `app/manifest.json`, so refresh that with
-`rsconnect::writeManifest("app")` before pushing any new file in `app/`. The page
-can show errors for a minute or so while it swaps over.
+The live app is at <https://apps.adamdennett.co.uk/bh_school_system/>,
+served from a Shiny Server in Docker on the NAS. A `rocker/shiny` container
+serves every folder in the NAS's `web/apps/` directory, mounted read-only, and
+a Cloudflare tunnel publishes it at `apps.adamdennett.co.uk`. Pushing to
+GitHub does **not** update the app. To deploy, copy `app/` over to the NAS
+share (mapped over Tailscale as `N:`), then touch `restart.txt` so Shiny
+Server reloads the app on the next visit:
+
+```powershell
+robocopy app N:\web\apps\bh_school_system /MIR
+New-Item N:\web\apps\bh_school_system\restart.txt -ItemType File -Force
+```
+
+`/MIR` makes the NAS copy match `app/` exactly, deleting files removed here.
+The container installs R packages from the list in `web/Dockerfile` on the
+NAS. If the app starts using a new package, add it there and rebuild the
+`shiny` service (`docker compose up -d --build` in `web/`) before copying the
+app across.
+
+`app/manifest.json` and `app/rsconnect/` are kept as a fallback, for
+redeploying to Posit Connect Cloud or shinyapps.io. Refresh the manifest with
+`rsconnect::writeManifest("app")` only if you go back to one of those hosts.
